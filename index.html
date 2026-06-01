@@ -93,6 +93,8 @@ a{color:var(--navy)}
 /* ── DEAL CARD ── */
 .deal-card{border:1px solid var(--rule);background:var(--paper);transition:border-color .25s}
 .deal-card.has-winner{border-color:var(--gold)}
+.deal-card.is-mine{border-color:var(--navy);border-width:2px}
+.deal-card.is-mine .dc-head{background:linear-gradient(90deg,rgba(28,43,74,.06),transparent)}
 .deal-card.is-closed{opacity:.85}
 .dc-head{padding:11px 16px;border-bottom:1px solid var(--rule);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .dc-info{flex:1;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
@@ -674,7 +676,8 @@ function buildDealCard(deal){
     ? `최저가 <strong>${esc(best.t.company||best.t.name)}</strong> · ${fmt(best.total)}`
     : '아직 입찰 없음';
 
-  return `<section class="deal-card ${closed?'is-closed':''} ${winner?'has-winner':''}" data-id="${deal.id}">
+  const isMine = deal.created_by === me.id;
+  return `<section class="deal-card ${closed?'is-closed':''} ${winner?'has-winner':''} ${isMine?'is-mine':''}" data-id="${deal.id}">
     <div class="dc-head">
       <div class="dc-info">
         <div class="dc-field"><span class="lbl">VSL</span><span class="val">${esc(deal.vsl||'—')}</span></div>
