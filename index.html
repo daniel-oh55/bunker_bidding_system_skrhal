@@ -351,9 +351,11 @@ async function initApp(){
     alert('Firebase 초기화 실패: '+e.message);
     return;
   }
+  showScreen('login');
+  bindLogin();
   auth.onAuthStateChanged(async user=>{
     if(user) await routeUser(user);
-    else { showScreen('login'); bindLogin(); }
+    else showScreen('login');
   });
 }
 
@@ -514,6 +516,12 @@ function buildDealCard(deal){
   const dq    = quotesMap[deal.id]||{};
   const noFo  = !deal.fo_qty  || Number(deal.fo_qty)===0;
   const noMgo = !deal.mgo_qty || Number(deal.mgo_qty)===0;
+  const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  const deadlineExpired = deadlineMs && Date.now()>deadlineMs;
+  const deadlineStr = deadlineMs
+    ? new Date(deadlineMs).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})
+    : null;
 
   const rows = traders.map(t=>{
     const q = dq[t.id]||null;
@@ -564,6 +572,7 @@ function buildDealCard(deal){
         <div class="dc-field"><span class="lbl">FO TYPE</span><span class="val">${esc(deal.fo_type||'—')}</span></div>
         <div class="dc-field"><span class="lbl">FO QTY</span><span class="val">${fmt(deal.fo_qty)} MT</span></div>
         <div class="dc-field"><span class="lbl">MGO QTY</span><span class="val">${fmt(deal.mgo_qty)} MT</span></div>
+        ${deadlineStr?`<div class="dc-field"><span class="lbl">마감</span><span class="val" style="color:${deadlineExpired?'var(--red)':'var(--gold)'}">${deadlineStr}${deadlineExpired?' (종료)':''}</span></div>`:''}
       </div>
       <div class="dc-actions">
         <span class="badge ${closed?'closed':'open'}">${closed?'마감':'OPEN'}</span>
@@ -715,7 +724,8 @@ function showNewDealModal(){
        </div>
        <div class="field"><label>FO QTY (MT)</label><input id="nd-foqty" type="text" inputmode="numeric" placeholder="0"></div>
        <div class="field"><label>MGO QTY (MT)</label><input id="nd-mgoqty" type="text" inputmode="numeric" placeholder="0"></div>
-     </div>`,
+     </div>
+     <div class="field"><label>입찰 마감 시간 (분 · 생략 시 무제한)</label><input id="nd-deadline" type="text" inputmode="numeric" placeholder="예: 30"></div>`,
     `<button class="btn ghost" id="nd-cancel">취소</button><button class="btn primary" id="nd-ok">등록</button>`);
 
   // ── 드롭존 ──
@@ -765,9 +775,10 @@ function showNewDealModal(){
   bg.querySelector('#nd-ok').addEventListener('click', async ()=>{
     const vsl     = bg.querySelector('#nd-vsl').value.trim();
     const port    = bg.querySelector('#nd-port').value.trim();
-    const fo_type = bg.querySelector('#nd-fotype').value;
-    const fo_qty  = parseFloat(bg.querySelector('#nd-foqty').value)||0;
-    const mgo_qty = parseFloat(bg.querySelector('#nd-mgoqty').value)||0;
+    const fo_type    = bg.querySelector('#nd-fotype').value;
+    const fo_qty     = parseFloat(bg.querySelector('#nd-foqty').value)||0;
+    const mgo_qty    = parseFloat(bg.querySelector('#nd-mgoqty').value)||0;
+    const deadline_m = parseInt(bg.querySelector('#nd-deadline').value)||0;
     const btn = bg.querySelector('#nd-ok');
     btn.disabled=true; btn.textContent='등록 중…';
     try{
@@ -775,6 +786,9 @@ function showNewDealModal(){
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
         created_by: me.id,
         vsl, port, fo_type, fo_qty, mgo_qty,
+        deadline_at: deadline_m>0
+          ? firebase.firestore.Timestamp.fromDate(new Date(Date.now()+deadline_m*60000))
+          : null,
         status_closed: false, winner_id: null
       });
       bg.remove(); toast('새 입찰이 등록되었습니다');
@@ -835,9 +849,42 @@ function subscribeTrader(){
 }
 
 // ════════════════════════════════════════════════════════
+// COUNTDOWN TIMER MANAGEMENT
+// ════════════════════════════════════════════════════════
+const _timerMap = {};
+function stopTimers(){
+  Object.values(_timerMap).forEach(id=>clearInterval(id));
+  Object.keys(_timerMap).forEach(k=>delete _timerMap[k]);
+}
+function startTimers(){
+  traderDeals.forEach(deal=>{
+    const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+      || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+    if(!deadlineMs || deal.status_closed) return;
+    const el = document.querySelector(`.countdown[data-deal-id="${deal.id}"]`);
+    if(!el) return;
+    function tick(){
+      const rem = deadlineMs - Date.now();
+      if(rem <= 0){
+        el.textContent = '00:00'; el.style.color = 'var(--red)';
+        clearInterval(_timerMap[deal.id]); delete _timerMap[deal.id];
+        renderTrader();
+        return;
+      }
+      const m = Math.floor(rem/60000), s = Math.floor((rem%60000)/1000);
+      el.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      el.style.color = rem < 300000 ? 'var(--red)' : 'var(--gold)';
+    }
+    tick();
+    _timerMap[deal.id] = setInterval(tick, 1000);
+  });
+}
+
+// ════════════════════════════════════════════════════════
 // TRADER — RENDER
 // ════════════════════════════════════════════════════════
 function renderTrader(){
+  stopTimers();
   const wrap = document.getElementById('trader-deals');
   if(!traderDeals.length){
     wrap.innerHTML = `<div class="empty-state">
@@ -853,13 +900,17 @@ function renderTrader(){
   });
   wrap.innerHTML = traderDeals.map(d=>buildTraderCard(d, saved)).join('');
   wireTraderEvents(wrap);
+  startTimers();
 }
 
 function buildTraderCard(deal, saved={}){
   const q     = myQuotes[deal.id]||null;
   const noFo  = !deal.fo_qty  || Number(deal.fo_qty)===0;
   const noMgo = !deal.mgo_qty || Number(deal.mgo_qty)===0;
-  const closed = deal.status_closed;
+  const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  const deadlineExpired = deadlineMs && Date.now()>deadlineMs;
+  const closed = deal.status_closed || deadlineExpired;
   const iWon   = deal.winner_id === me.id;
 
   const foVal  = saved[deal.id+':fo_price']  ?? (q?.fo_price  ?? '');
@@ -883,7 +934,8 @@ function buildTraderCard(deal, saved={}){
         <div class="td-field"><span class="lbl">FO TYPE</span><span class="val">${esc(deal.fo_type||'—')}</span></div>
       </div>
       ${iWon?`<span style="color:var(--gold);font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.04em">★ 낙찰</span>`:''}
-      <span class="badge ${closed?'closed':'open'}">${closed?'마감':'OPEN'}</span>
+      ${deadlineMs&&!deal.status_closed?`<span class="countdown" data-deal-id="${deal.id}" style="font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.06em;min-width:52px;text-align:right">--:--</span>`:''}
+      <span class="badge ${closed?'closed':'open'}">${deadlineExpired&&!deal.status_closed?'시간초과':closed?'마감':'OPEN'}</span>
     </div>
     <div class="td-body">
       <div class="qty-row">
@@ -975,12 +1027,16 @@ async function submitQuote(e){
 // ════════════════════════════════════════════════════════
 function showSignUpModal(){
   const bg = mkModal('회원가입',
-    `<p>가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다.</p>
+    `<p>가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다. 역할은 <strong>트레이더</strong>로 자동 설정됩니다.</p>
+     <div class="grid3">
+       <div class="field"><label>이름</label><input id="su-name" type="text" placeholder="홍길동"></div>
+       <div class="field" style="grid-column:span 2"><label>회사명</label><input id="su-company" type="text" placeholder="ASIA OIL"></div>
+     </div>
      <div class="field"><label>이메일</label><input id="su-email" type="email" placeholder="user@company.com"></div>
-     <div class="field"><label>비밀번호</label><input id="su-pw" type="password" placeholder="6자 이상"></div>
-     <div class="field"><label>비밀번호 확인</label><input id="su-pw2" type="password" placeholder="비밀번호 재입력"></div>
-     <div class="field"><label>이름</label><input id="su-name" type="text" placeholder="홍길동"></div>
-     <div class="field"><label>회사명</label><input id="su-company" type="text" placeholder="ASIA OIL"></div>
+     <div class="grid3">
+       <div class="field" style="grid-column:span 2"><label>비밀번호</label><input id="su-pw" type="password" placeholder="6자 이상"></div>
+       <div class="field"><label>비밀번호 확인</label><input id="su-pw2" type="password" placeholder="재입력"></div>
+     </div>
      <div class="err" id="su-err"></div>`,
     `<button class="btn ghost" id="su-cancel">취소</button><button class="btn primary" id="su-ok">가입 신청</button>`);
 
