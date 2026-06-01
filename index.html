@@ -750,10 +750,13 @@ function showDeadlineModal(dealId){
   const curStr = curMs
     ? new Date(curMs).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})
     : '미설정';
-  const bg = mkModal('마감 시간 수정',
+  const curTimeStr = curMs
+    ? `${String(new Date(curMs).getHours()).padStart(2,'0')}:${String(new Date(curMs).getMinutes()).padStart(2,'0')}`
+    : '';
+  const bg = mkModal('마감 시각 수정',
     `<p>현재: <strong>${curStr}</strong></p>
-     <div class="field"><label>지금부터 N분 후로 설정</label>
-       <input id="dl-min" type="text" inputmode="numeric" placeholder="예: 30">
+     <div class="field"><label>마감 시각 (24시간)</label>
+       <input id="dl-time" type="time" value="${curTimeStr}" style="font-family:var(--mono);font-size:14px;letter-spacing:.06em">
      </div>`,
     `<button class="btn ghost" id="dl-cancel">취소</button>
      ${curMs?`<button class="btn danger tiny" id="dl-clear">마감 제거</button>`:''}
@@ -765,19 +768,17 @@ function showDeadlineModal(dealId){
     bg.remove(); toast('마감 시간이 제거되었습니다');
   });
   bg.querySelector('#dl-ok').addEventListener('click', async ()=>{
-    const min = parseInt(bg.querySelector('#dl-min').value)||0;
-    if(!min){ bg.querySelector('#dl-min').style.borderBottomColor='var(--red)'; return; }
+    const val = bg.querySelector('#dl-time').value;
+    const ts = timeToTimestamp(val);
+    if(!ts){ bg.querySelector('#dl-time').style.borderBottomColor='var(--red)'; return; }
     const btn=bg.querySelector('#dl-ok');
     btn.disabled=true; btn.textContent='설정 중…';
     try{
-      await db.collection('deals').doc(dealId).update({
-        deadline_at: firebase.firestore.Timestamp.fromDate(new Date(Date.now()+min*60000))
-      });
-      bg.remove(); toast('마감 시간이 설정되었습니다');
+      await db.collection('deals').doc(dealId).update({deadline_at:ts});
+      bg.remove(); toast('마감 시각이 설정되었습니다');
     } catch(err){ toast('오류: '+err.message); btn.disabled=false; btn.textContent='설정'; }
   });
-  bg.querySelector('#dl-min').addEventListener('keydown',e=>{ if(e.key==='Enter') bg.querySelector('#dl-ok').click(); });
-  bg.querySelector('#dl-min').focus();
+  bg.querySelector('#dl-time').focus();
 }
 
 // ════════════════════════════════════════════════════════
@@ -847,6 +848,15 @@ function parseMsgBuffer(arrayBuffer){
 // EMAIL BODY PARSER — extracts VSL / PORT / ETA / fuel qtys
 // ════════════════════════════════════════════════════════
 const FUEL_FO_OPTIONS = ['VLSFO','HSFO','ULSFO','LSFO'];
+
+function timeToTimestamp(val){
+  if(!val) return null;
+  const [h,m] = val.split(':').map(Number);
+  if(isNaN(h)||isNaN(m)) return null;
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return firebase.firestore.Timestamp.fromDate(d);
+}
 function extractBidInfo(body){
   const out={vsl:'',port:'',eta:'',fuels:[]};
   const vsl=body.match(/-?\s*VSL\s*[:/：]\s*([^\r\n]+)/i);
@@ -890,7 +900,7 @@ function showNewDealModal(){
        <div class="field"><label>FO QTY (MT)</label><input id="nd-foqty" type="text" inputmode="numeric" placeholder="0"></div>
        <div class="field"><label>MGO QTY (MT)</label><input id="nd-mgoqty" type="text" inputmode="numeric" placeholder="0"></div>
      </div>
-     <div class="field"><label>입찰 마감 시간 (분 · 생략 시 무제한)</label><input id="nd-deadline" type="text" inputmode="numeric" placeholder="예: 30"></div>`,
+     <div class="field"><label>입찰 마감 시각 (생략 시 무제한)</label><input id="nd-deadline" type="time" style="font-family:var(--mono);font-size:14px;letter-spacing:.06em"></div>`,
     `<button class="btn ghost" id="nd-cancel">취소</button><button class="btn primary" id="nd-ok">등록</button>`);
 
   // ── 드롭존 ──
@@ -943,7 +953,8 @@ function showNewDealModal(){
     const fo_type    = bg.querySelector('#nd-fotype').value;
     const fo_qty     = parseFloat(bg.querySelector('#nd-foqty').value)||0;
     const mgo_qty    = parseFloat(bg.querySelector('#nd-mgoqty').value)||0;
-    const deadline_m = parseInt(bg.querySelector('#nd-deadline').value)||0;
+    const deadlineVal = bg.querySelector('#nd-deadline').value;
+    const deadline_at = timeToTimestamp(deadlineVal);
     const btn = bg.querySelector('#nd-ok');
     btn.disabled=true; btn.textContent='등록 중…';
     try{
@@ -951,9 +962,7 @@ function showNewDealModal(){
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
         created_by: me.id,
         vsl, port, fo_type, fo_qty, mgo_qty,
-        deadline_at: deadline_m>0
-          ? firebase.firestore.Timestamp.fromDate(new Date(Date.now()+deadline_m*60000))
-          : null,
+        deadline_at,
         status_closed: false, winner_id: null
       });
       bg.remove(); toast('새 입찰이 등록되었습니다');
