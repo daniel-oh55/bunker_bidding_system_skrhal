@@ -231,6 +231,10 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
       </div>
       <button class="btn primary full" id="login-btn">로그인</button>
       <div class="err" id="login-err"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:14px">
+        <button class="btn ghost tiny" id="signup-btn">회원가입</button>
+        <button class="btn ghost tiny" id="forgot-btn">비밀번호 찾기</button>
+      </div>
     </div>
   </div>
 </div>
@@ -245,6 +249,8 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
     </div>
     <div class="hd-actions">
       <div class="avatar" id="buyer-avatar"></div>
+      <button class="btn ghost tiny" id="user-mgmt-btn">사용자 관리</button>
+      <button class="btn ghost tiny" id="buyer-chpw-btn">비밀번호 변경</button>
       <button class="btn ghost tiny" id="buyer-logout-btn">로그아웃</button>
       <button class="btn primary" id="btn-new-deal">+ 새 입찰</button>
     </div>
@@ -273,6 +279,7 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
     </div>
     <div class="hd-actions">
       <div class="avatar" id="trader-avatar"></div>
+      <button class="btn ghost tiny" id="trader-chpw-btn">비밀번호 변경</button>
       <button class="btn ghost tiny" id="trader-logout-btn">로그아웃</button>
     </div>
   </header>
@@ -354,7 +361,20 @@ async function routeUser(user){
   try{
     const doc = await db.collection('profiles').doc(user.uid).get();
     if(!doc.exists){ toast('프로필 없음. 관리자에게 문의하세요.'); await auth.signOut(); return; }
-    me = { id:user.uid, email:user.email, ...doc.data() };
+    const profile = doc.data();
+    if(profile.status==='pending'){
+      await auth.signOut();
+      showScreen('login'); bindLogin();
+      document.getElementById('login-err').textContent='승인 대기 중입니다. 관리자의 승인을 기다려주세요.';
+      return;
+    }
+    if(profile.status==='rejected'){
+      await auth.signOut();
+      showScreen('login'); bindLogin();
+      document.getElementById('login-err').textContent='가입이 거절되었습니다. 관리자에게 문의하세요.';
+      return;
+    }
+    me = { id:user.uid, email:user.email, ...profile };
     if(me.role==='buyer') initBuyer();
     else initTrader();
   } catch(e){ toast('프로필 로드 실패: '+e.message); }
@@ -383,6 +403,8 @@ function bindLogin(){
       if(e.key==='Enter') loginBtn.click();
     });
   });
+  document.getElementById('signup-btn').addEventListener('click', showSignUpModal);
+  document.getElementById('forgot-btn').addEventListener('click', showForgotPasswordModal);
 }
 
 async function doLogout(){
@@ -401,6 +423,8 @@ async function initBuyer(){
   document.getElementById('buyer-name-lbl').textContent = dispName;
   document.getElementById('buyer-avatar').textContent   = initials(dispName);
   document.getElementById('buyer-logout-btn').addEventListener('click', doLogout);
+  document.getElementById('user-mgmt-btn').addEventListener('click', showUserManagementModal);
+  document.getElementById('buyer-chpw-btn').addEventListener('click', showChangePasswordModal);
   document.getElementById('btn-new-deal').addEventListener('click', showNewDealModal);
   await loadTraders();
   document.getElementById('stat-traders').textContent = traders.length;
@@ -410,6 +434,7 @@ async function initBuyer(){
 async function loadTraders(){
   const snap = await db.collection('profiles').where('role','==','trader').get();
   traders = snap.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(t=>!t.status||t.status==='approved')
     .sort((a,b)=>(a.company||'').localeCompare(b.company||''));
 }
 
@@ -773,6 +798,7 @@ function initTrader(){
   document.getElementById('trader-company-lbl').textContent = dispName;
   document.getElementById('trader-date-lbl').textContent    = today();
   document.getElementById('trader-avatar').textContent      = initials(dispName);
+  document.getElementById('trader-chpw-btn').addEventListener('click', showChangePasswordModal);
   document.getElementById('trader-logout-btn').addEventListener('click', doLogout);
   subscribeTrader();
 }
@@ -890,7 +916,7 @@ function buildTraderCard(deal, saved={}){
       </div>
       <div class="submit-row">
         ${savedAt?`<span class="saved-at">최근 저장 ${savedAt}</span>`:''}
-        ${!closed?`<button class="btn primary submit-btn" data-deal-id="${deal.id}">가격 제출</button>`:''}
+        ${!closed?`<button class="btn ${q?'ghost':'primary'} submit-btn" data-deal-id="${deal.id}">${q?'가격 수정':'가격 제출'}</button>`:''}
       </div>
     </div>
     ${iWon?`<div class="won-banner">★ 낙찰되었습니다 — 바이어가 귀사를 선정하였습니다</div>`
@@ -942,6 +968,171 @@ async function submitQuote(e){
     toast('가격이 제출되었습니다');
   } catch(err){ toast('저장 실패: '+err.message); }
   btn.disabled=false; btn.textContent='가격 제출';
+}
+
+// ════════════════════════════════════════════════════════
+// SIGN UP
+// ════════════════════════════════════════════════════════
+function showSignUpModal(){
+  const bg = mkModal('회원가입',
+    `<p>가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다.</p>
+     <div class="field"><label>이메일</label><input id="su-email" type="email" placeholder="user@company.com"></div>
+     <div class="field"><label>비밀번호</label><input id="su-pw" type="password" placeholder="6자 이상"></div>
+     <div class="field"><label>비밀번호 확인</label><input id="su-pw2" type="password" placeholder="비밀번호 재입력"></div>
+     <div class="field"><label>이름</label><input id="su-name" type="text" placeholder="홍길동"></div>
+     <div class="field"><label>회사명</label><input id="su-company" type="text" placeholder="ASIA OIL"></div>
+     <div class="err" id="su-err"></div>`,
+    `<button class="btn ghost" id="su-cancel">취소</button><button class="btn primary" id="su-ok">가입 신청</button>`);
+
+  bg.querySelector('#su-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#su-ok').addEventListener('click', async ()=>{
+    const email   = bg.querySelector('#su-email').value.trim();
+    const pw      = bg.querySelector('#su-pw').value;
+    const pw2     = bg.querySelector('#su-pw2').value;
+    const name    = bg.querySelector('#su-name').value.trim();
+    const company = bg.querySelector('#su-company').value.trim();
+    const errEl   = bg.querySelector('#su-err');
+    if(!email||!pw||!name||!company){ errEl.textContent='모든 항목을 입력하세요'; return; }
+    if(pw!==pw2){ errEl.textContent='비밀번호가 일치하지 않습니다'; return; }
+    if(pw.length<6){ errEl.textContent='비밀번호는 6자 이상이어야 합니다'; return; }
+    const btn=bg.querySelector('#su-ok');
+    btn.disabled=true; btn.textContent='신청 중…';
+    try{
+      const cred = await auth.createUserWithEmailAndPassword(email, pw);
+      await db.collection('profiles').doc(cred.user.uid).set({
+        name, company, role:'trader', status:'pending',
+        created_at: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await auth.signOut();
+      bg.remove();
+      toast('가입 신청이 완료되었습니다. 관리자 승인 후 로그인 가능합니다.', 5000);
+    } catch(err){
+      errEl.textContent = err.message;
+      btn.disabled=false; btn.textContent='가입 신청';
+    }
+  });
+  bg.querySelector('#su-email').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// FORGOT PASSWORD
+// ════════════════════════════════════════════════════════
+function showForgotPasswordModal(){
+  const bg = mkModal('비밀번호 찾기',
+    `<p>가입한 이메일을 입력하면 비밀번호 재설정 링크를 보내드립니다.</p>
+     <div class="field"><label>이메일</label><input id="fp-email" type="email" placeholder="user@company.com"></div>
+     <div class="err" id="fp-err"></div>`,
+    `<button class="btn ghost" id="fp-cancel">취소</button><button class="btn primary" id="fp-ok">재설정 메일 전송</button>`);
+
+  bg.querySelector('#fp-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#fp-ok').addEventListener('click', async ()=>{
+    const email = bg.querySelector('#fp-email').value.trim();
+    const errEl = bg.querySelector('#fp-err');
+    if(!email){ errEl.textContent='이메일을 입력하세요'; return; }
+    const btn=bg.querySelector('#fp-ok');
+    btn.disabled=true; btn.textContent='전송 중…';
+    try{
+      await auth.sendPasswordResetEmail(email);
+      bg.remove();
+      toast('비밀번호 재설정 이메일을 발송했습니다.', 4000);
+    } catch(err){
+      errEl.textContent = err.message;
+      btn.disabled=false; btn.textContent='재설정 메일 전송';
+    }
+  });
+  bg.querySelector('#fp-email').addEventListener('keydown',e=>{ if(e.key==='Enter') bg.querySelector('#fp-ok').click(); });
+  bg.querySelector('#fp-email').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// CHANGE PASSWORD
+// ════════════════════════════════════════════════════════
+function showChangePasswordModal(){
+  const bg = mkModal('비밀번호 변경',
+    `<div class="field"><label>현재 비밀번호</label><input id="cp-cur" type="password" placeholder="현재 비밀번호"></div>
+     <div class="field"><label>새 비밀번호</label><input id="cp-new" type="password" placeholder="새 비밀번호 (6자 이상)"></div>
+     <div class="field"><label>새 비밀번호 확인</label><input id="cp-new2" type="password" placeholder="새 비밀번호 재입력"></div>
+     <div class="err" id="cp-err"></div>`,
+    `<button class="btn ghost" id="cp-cancel">취소</button><button class="btn primary" id="cp-ok">변경</button>`);
+
+  bg.querySelector('#cp-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#cp-ok').addEventListener('click', async ()=>{
+    const cur  = bg.querySelector('#cp-cur').value;
+    const nw   = bg.querySelector('#cp-new').value;
+    const nw2  = bg.querySelector('#cp-new2').value;
+    const errEl = bg.querySelector('#cp-err');
+    if(!cur||!nw||!nw2){ errEl.textContent='모든 항목을 입력하세요'; return; }
+    if(nw!==nw2){ errEl.textContent='새 비밀번호가 일치하지 않습니다'; return; }
+    if(nw.length<6){ errEl.textContent='비밀번호는 6자 이상이어야 합니다'; return; }
+    const btn=bg.querySelector('#cp-ok');
+    btn.disabled=true; btn.textContent='변경 중…';
+    try{
+      const cred = firebase.auth.EmailAuthProvider.credential(me.email, cur);
+      await auth.currentUser.reauthenticateWithCredential(cred);
+      await auth.currentUser.updatePassword(nw);
+      bg.remove();
+      toast('비밀번호가 변경되었습니다');
+    } catch(err){
+      errEl.textContent = err.code==='auth/wrong-password'||err.code==='auth/invalid-credential'
+        ? '현재 비밀번호가 올바르지 않습니다' : err.message;
+      btn.disabled=false; btn.textContent='변경';
+    }
+  });
+  bg.querySelector('#cp-cur').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// USER MANAGEMENT (buyer only)
+// ════════════════════════════════════════════════════════
+async function showUserManagementModal(){
+  const bg = mkModal('사용자 관리',
+    `<p style="color:var(--ink-3);font-size:12px">불러오는 중…</p>`,
+    `<button class="btn ghost" id="um-close">닫기</button>`, true);
+  bg.querySelector('#um-close').addEventListener('click',()=>bg.remove());
+
+  try{
+    const snap = await db.collection('profiles').get();
+    const users = snap.docs.map(d=>({id:d.id,...d.data()}))
+      .filter(u=>u.id!==me.id)
+      .sort((a,b)=>{
+        const o={pending:0,approved:1,rejected:2};
+        return (o[a.status??'approved']??1)-(o[b.status??'approved']??1);
+      });
+
+    const modal = bg.querySelector('.modal');
+    const statusLabel = s=>({pending:'승인 대기',approved:'승인됨',rejected:'정지됨'})[s||'approved']||'승인됨';
+    const statusColor = s=>({pending:'var(--gold)',approved:'var(--green)',rejected:'var(--red)'})[s||'approved']||'var(--green)';
+
+    modal.querySelector('p').outerHTML = users.length
+      ? `<div id="um-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+          ${users.map(u=>`
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--rule)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:500;font-size:13px">${esc(u.company||u.name||'—')}</div>
+                <div style="font-size:11px;color:var(--ink-3);margin-top:2px;font-family:var(--mono)">${esc(u.email||'')} · ${u.role==='buyer'?'바이어':'트레이더'}</div>
+              </div>
+              <span style="font-size:10px;letter-spacing:.08em;color:${statusColor(u.status)};white-space:nowrap">${statusLabel(u.status)}</span>
+              ${u.status==='pending'?`<button class="btn tiny primary" data-act="approve" data-uid="${u.id}">승인</button><button class="btn tiny danger" data-act="reject" data-uid="${u.id}">거절</button>`:''}
+              ${u.status==='approved'||!u.status?`<button class="btn tiny danger" data-act="reject" data-uid="${u.id}">정지</button>`:''}
+              ${u.status==='rejected'?`<button class="btn tiny ghost" data-act="approve" data-uid="${u.id}">복구</button>`:''}
+            </div>`).join('')}
+        </div>`
+      : `<p style="color:var(--ink-3)">등록된 사용자가 없습니다.</p>`;
+
+    if(!users.length) return;
+    bg.querySelector('#um-list').addEventListener('click', async e=>{
+      const btn=e.target.closest('[data-act]');
+      if(!btn) return;
+      btn.disabled=true;
+      try{
+        await db.collection('profiles').doc(btn.dataset.uid).update({
+          status: btn.dataset.act==='approve'?'approved':'rejected'
+        });
+        toast(btn.dataset.act==='approve'?'승인 완료':'처리 완료');
+        bg.remove(); showUserManagementModal();
+      } catch(err){ toast('오류: '+err.message); btn.disabled=false; }
+    });
+  } catch(err){ toast('불러오기 실패: '+err.message); }
 }
 
 // ════════════════════════════════════════════════════════
