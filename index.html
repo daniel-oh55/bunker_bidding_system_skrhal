@@ -1151,15 +1151,30 @@ function buildTraderCard(deal, saved={}){
 }
 
 function wireTraderEvents(root){
-  root.querySelectorAll('.price-inp').forEach(inp=>{
-    inp.addEventListener('input', updateLiveTotal);
-    inp.addEventListener('keydown', e=>{
-      if(e.key==='Enter'||e.key==='Tab'){
-        if(e.key==='Enter') e.preventDefault();
-        const all=[...root.querySelectorAll('.price-inp:not([disabled])')];
-        const idx=all.indexOf(e.target);
-        if(idx>=0&&idx+1<all.length){ all[idx+1].focus(); all[idx+1].select(); }
-      }
+  const FIELDS = ['fo_price','mgo_price','barge'];
+
+  function dIds(){ return [...root.querySelectorAll('.td-card')].map(c=>c.dataset.dealId); }
+  function inp(dealId,field){
+    return root.querySelector(`.price-inp[data-deal-id="${dealId}"][data-field="${field}"]:not([disabled])`);
+  }
+  function moveNext(ids,di,fi){
+    for(let f=fi+1;f<FIELDS.length;f++){ const t=inp(ids[di],FIELDS[f]); if(t){t.focus();t.select();return;} }
+    for(let d=di+1;d<ids.length;d++){ for(let f=0;f<FIELDS.length;f++){ const t=inp(ids[d],FIELDS[f]); if(t){t.focus();t.select();return;} } }
+  }
+  function movePrev(ids,di,fi){
+    for(let f=fi-1;f>=0;f--){ const t=inp(ids[di],FIELDS[f]); if(t){t.focus();t.select();return;} }
+    for(let d=di-1;d>=0;d--){ for(let f=FIELDS.length-1;f>=0;f--){ const t=inp(ids[d],FIELDS[f]); if(t){t.focus();t.select();return;} } }
+  }
+
+  root.querySelectorAll('.price-inp').forEach(el=>{
+    el.addEventListener('input', updateLiveTotal);
+    el.addEventListener('keydown', e=>{
+      const ids=dIds(), di=ids.indexOf(el.dataset.dealId), fi=FIELDS.indexOf(el.dataset.field);
+      if(e.key==='Tab'||e.key==='Enter'){
+        e.preventDefault();
+        e.shiftKey ? movePrev(ids,di,fi) : moveNext(ids,di,fi);
+      } else if(e.key==='ArrowDown'){ e.preventDefault(); for(let d=di+1;d<ids.length;d++){ const t=inp(ids[d],el.dataset.field); if(t){t.focus();t.select();break;} } }
+        else if(e.key==='ArrowUp'){   e.preventDefault(); for(let d=di-1;d>=0;d--){      const t=inp(ids[d],el.dataset.field); if(t){t.focus();t.select();break;} } }
     });
   });
   root.querySelectorAll('.submit-btn').forEach(btn=>btn.addEventListener('click', submitQuote));
