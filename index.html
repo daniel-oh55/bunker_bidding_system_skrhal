@@ -381,6 +381,8 @@ function bindConfig(){
     let raw = document.getElementById('cfg-json').value.trim();
     const m = raw.match(/\{[\s\S]*\}/);
     if(m) raw = m[0];
+    // JS object literal → JSON (unquoted keys → quoted keys)
+    raw = raw.replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
     let cfg;
     try{ cfg = JSON.parse(raw); } catch(e){
       document.getElementById('cfg-err').textContent = 'JSON 오류: '+e.message; return;
