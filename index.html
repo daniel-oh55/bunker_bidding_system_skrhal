@@ -180,6 +180,12 @@ pre.code-block{background:var(--paper-2);border:1px solid var(--rule);padding:12
 code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);font-size:11px;
   border:1px solid var(--rule)}
 
+/* ── DATE NAV ── */
+.date-nav{display:flex;align-items:center;gap:8px;padding:7px 20px;
+  border-bottom:1px solid var(--rule);background:var(--paper)}
+.date-nav .date-lbl{font-family:var(--mono);font-size:12px;letter-spacing:.06em;
+  color:var(--ink-2);flex:1;text-align:center}
+
 /* ── EMAIL DROPZONE ── */
 .nd-dz{border:1.5px dashed var(--rule-2);padding:18px 12px;text-align:center;cursor:pointer;
   margin-bottom:16px;transition:border-color .15s,background .15s;color:var(--ink-3);font-size:12px;letter-spacing:.03em}
@@ -265,6 +271,12 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
     <div class="stat-cell">낙찰 <strong id="stat-winner">—</strong></div>
     <div class="stat-cell">트레이더 <strong id="stat-traders">—</strong></div>
   </div>
+  <div class="date-nav">
+    <button class="btn ghost tiny" id="date-prev">‹ 이전</button>
+    <span class="date-lbl" id="date-display"></span>
+    <button class="btn ghost tiny" id="date-next">다음 ›</button>
+    <button class="btn ghost tiny" id="date-today">오늘</button>
+  </div>
   <div class="main">
     <div id="deals-grid"></div>
   </div>
@@ -343,6 +355,8 @@ let db = null, auth = null, me = null;
 let traders = [], deals = [], quotesMap = {}, traderDeals = [], myQuotes = {};
 let _unsubDeals = null, _unsubQuotes = null;
 let _signingUp = false;
+let _selectedDate = null;
+let _buyerTimerMap = {};
 
 // ════════════════════════════════════════════════════════
 // BOOT
@@ -456,9 +470,36 @@ async function initBuyer(){
   document.getElementById('user-mgmt-btn').addEventListener('click', showUserManagementModal);
   document.getElementById('buyer-chpw-btn').addEventListener('click', showChangePasswordModal);
   document.getElementById('btn-new-deal').addEventListener('click', showNewDealModal);
+
+  _selectedDate = new Date(); _selectedDate.setHours(0,0,0,0);
+  updateDateDisplay();
+  document.getElementById('date-prev').addEventListener('click',()=>{
+    _selectedDate = new Date(_selectedDate.getTime()-86400000);
+    updateDateDisplay(); subscribeBuyer();
+  });
+  document.getElementById('date-next').addEventListener('click',()=>{
+    const tomorrow = new Date(); tomorrow.setHours(0,0,0,0); tomorrow.setDate(tomorrow.getDate()+1);
+    if(_selectedDate >= tomorrow) return;
+    _selectedDate = new Date(_selectedDate.getTime()+86400000);
+    updateDateDisplay(); subscribeBuyer();
+  });
+  document.getElementById('date-today').addEventListener('click',()=>{
+    _selectedDate = new Date(); _selectedDate.setHours(0,0,0,0);
+    updateDateDisplay(); subscribeBuyer();
+  });
+
   await loadTraders();
   document.getElementById('stat-traders').textContent = traders.length;
   subscribeBuyer();
+}
+
+function updateDateDisplay(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isToday = _selectedDate.getTime() === today.getTime();
+  const d = _selectedDate;
+  const str = `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('date-display').textContent = str + (isToday?' (오늘)':'');
+  document.getElementById('date-next').disabled = isToday;
 }
 
 async function loadTraders(){
@@ -472,9 +513,18 @@ async function loadTraders(){
 // BUYER — REALTIME
 // ════════════════════════════════════════════════════════
 function subscribeBuyer(){
-  const dot = document.getElementById('rt-dot-buyer');
+  if(_unsubDeals){ _unsubDeals(); _unsubDeals=null; }
+  if(_unsubQuotes){ _unsubQuotes(); _unsubQuotes=null; }
+  deals=[]; quotesMap={}; stopBuyerTimers();
+  renderBuyer(); updateStats();
 
-  _unsubDeals = db.collection('deals').orderBy('created_at','desc')
+  const dot = document.getElementById('rt-dot-buyer');
+  const start = firebase.firestore.Timestamp.fromDate(_selectedDate);
+  const end   = firebase.firestore.Timestamp.fromDate(new Date(_selectedDate.getTime()+86400000));
+
+  _unsubDeals = db.collection('deals')
+    .where('created_at','>=',start).where('created_at','<',end)
+    .orderBy('created_at','desc')
     .onSnapshot(snap=>{
       snap.docChanges().forEach(chg=>{
         const d = {id:chg.doc.id,...chg.doc.data()};
@@ -507,9 +557,40 @@ function updateStats(){
 }
 
 // ════════════════════════════════════════════════════════
+// BUYER TIMER
+// ════════════════════════════════════════════════════════
+function stopBuyerTimers(){
+  Object.values(_buyerTimerMap).forEach(id=>clearInterval(id));
+  Object.keys(_buyerTimerMap).forEach(k=>delete _buyerTimerMap[k]);
+}
+function startBuyerTimers(){
+  deals.forEach(deal=>{
+    const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+      || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+    if(!deadlineMs||deal.status_closed) return;
+    const el = document.querySelector(`.buyer-countdown[data-deal-id="${deal.id}"]`);
+    if(!el) return;
+    function tick(){
+      const rem = deadlineMs-Date.now();
+      if(rem<=0){
+        el.textContent='시간초과'; el.style.color='var(--red)';
+        clearInterval(_buyerTimerMap[deal.id]); delete _buyerTimerMap[deal.id];
+        return;
+      }
+      const m=Math.floor(rem/60000), s=Math.floor((rem%60000)/1000);
+      el.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      el.style.color=rem<300000?'var(--red)':'var(--gold)';
+    }
+    tick();
+    _buyerTimerMap[deal.id]=setInterval(tick,1000);
+  });
+}
+
+// ════════════════════════════════════════════════════════
 // BUYER — RENDER
 // ════════════════════════════════════════════════════════
 function renderBuyer(){
+  stopBuyerTimers();
   const grid = document.getElementById('deals-grid');
   if(!deals.length){
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
@@ -521,6 +602,7 @@ function renderBuyer(){
   }
   grid.innerHTML = deals.map(buildDealCard).join('');
   wireCardEvents(grid);
+  startBuyerTimers();
 }
 
 function rerenderCard(dealId){
@@ -600,7 +682,17 @@ function buildDealCard(deal){
         <div class="dc-field"><span class="lbl">FO TYPE</span><span class="val">${esc(deal.fo_type||'—')}</span></div>
         <div class="dc-field"><span class="lbl">FO QTY</span><span class="val">${fmt(deal.fo_qty)} MT</span></div>
         <div class="dc-field"><span class="lbl">MGO QTY</span><span class="val">${fmt(deal.mgo_qty)} MT</span></div>
-        ${deadlineStr?`<div class="dc-field"><span class="lbl">마감</span><span class="val" style="color:${deadlineExpired?'var(--red)':'var(--gold)'}">${deadlineStr}${deadlineExpired?' (종료)':''}</span></div>`:''}
+        <div class="dc-field">
+          <span class="lbl">마감</span>
+          <div style="display:flex;align-items:center;gap:5px">
+            ${deadlineMs&&!closed
+              ? `<span class="buyer-countdown" data-deal-id="${deal.id}" style="font-family:var(--mono);font-size:12px;color:var(--gold);font-weight:500">--:--</span>`
+              : deadlineStr
+                ? `<span style="font-family:var(--mono);font-size:12px;color:var(--red)">${deadlineStr} 종료</span>`
+                : `<span style="font-size:11px;color:var(--ink-3)">미설정</span>`}
+            <button class="btn tiny ghost" data-act="edit-deadline" data-deal-id="${deal.id}" style="font-size:9px;padding:2px 6px">⏱</button>
+          </div>
+        </div>
       </div>
       <div class="dc-actions">
         <span class="badge ${closed?'closed':'open'}">${closed?'마감':'OPEN'}</span>
@@ -629,6 +721,7 @@ async function handleCardAction(e){
   const {act, dealId, traderId} = el.dataset;
   const deal = deals.find(d=>d.id===dealId);
   if(!deal) return;
+  if(act==='edit-deadline'){ showDeadlineModal(dealId); return; }
   el.disabled=true;
   try{
     if(act==='close')         await db.collection('deals').doc(dealId).update({status_closed:true});
@@ -641,6 +734,47 @@ async function handleCardAction(e){
     }
   } catch(err){ toast('오류: '+err.message); }
   el.disabled=false;
+}
+
+// ════════════════════════════════════════════════════════
+// DEADLINE MODAL
+// ════════════════════════════════════════════════════════
+function showDeadlineModal(dealId){
+  const deal = deals.find(d=>d.id===dealId);
+  if(!deal) return;
+  const curMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  const curStr = curMs
+    ? new Date(curMs).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})
+    : '미설정';
+  const bg = mkModal('마감 시간 수정',
+    `<p>현재: <strong>${curStr}</strong></p>
+     <div class="field"><label>지금부터 N분 후로 설정</label>
+       <input id="dl-min" type="text" inputmode="numeric" placeholder="예: 30">
+     </div>`,
+    `<button class="btn ghost" id="dl-cancel">취소</button>
+     ${curMs?`<button class="btn danger tiny" id="dl-clear">마감 제거</button>`:''}
+     <button class="btn primary" id="dl-ok">설정</button>`);
+
+  bg.querySelector('#dl-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#dl-clear')?.addEventListener('click', async ()=>{
+    await db.collection('deals').doc(dealId).update({deadline_at:null});
+    bg.remove(); toast('마감 시간이 제거되었습니다');
+  });
+  bg.querySelector('#dl-ok').addEventListener('click', async ()=>{
+    const min = parseInt(bg.querySelector('#dl-min').value)||0;
+    if(!min){ bg.querySelector('#dl-min').style.borderBottomColor='var(--red)'; return; }
+    const btn=bg.querySelector('#dl-ok');
+    btn.disabled=true; btn.textContent='설정 중…';
+    try{
+      await db.collection('deals').doc(dealId).update({
+        deadline_at: firebase.firestore.Timestamp.fromDate(new Date(Date.now()+min*60000))
+      });
+      bg.remove(); toast('마감 시간이 설정되었습니다');
+    } catch(err){ toast('오류: '+err.message); btn.disabled=false; btn.textContent='설정'; }
+  });
+  bg.querySelector('#dl-min').addEventListener('keydown',e=>{ if(e.key==='Enter') bg.querySelector('#dl-ok').click(); });
+  bg.querySelector('#dl-min').focus();
 }
 
 // ════════════════════════════════════════════════════════
