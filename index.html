@@ -229,6 +229,10 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
         <label>비밀번호</label>
         <input id="login-pw" type="password" placeholder="••••••••">
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
+        <input type="checkbox" id="remember-me" style="width:13px;height:13px;accent-color:var(--navy);cursor:pointer">
+        <label for="remember-me" style="font-size:12px;color:var(--ink-3);cursor:pointer;user-select:none;letter-spacing:.04em">아이디 저장</label>
+      </div>
       <button class="btn primary full" id="login-btn">로그인</button>
       <div class="err" id="login-err"></div>
       <div style="display:flex;justify-content:space-between;margin-top:14px">
@@ -338,6 +342,7 @@ const FIREBASE_CONFIG = {
 let db = null, auth = null, me = null;
 let traders = [], deals = [], quotesMap = {}, traderDeals = [], myQuotes = {};
 let _unsubDeals = null, _unsubQuotes = null;
+let _signingUp = false;
 
 // ════════════════════════════════════════════════════════
 // BOOT
@@ -354,8 +359,13 @@ async function initApp(){
   showScreen('login');
   bindLogin();
   auth.onAuthStateChanged(async user=>{
+    if(_signingUp) return;
     if(user) await routeUser(user);
-    else showScreen('login');
+    else {
+      showScreen('login');
+      const btn = document.getElementById('login-btn');
+      if(btn){ btn.disabled=false; btn.textContent='로그인'; }
+    }
   });
 }
 
@@ -385,18 +395,36 @@ async function routeUser(user){
 // ════════════════════════════════════════════════════════
 // LOGIN SCREEN
 // ════════════════════════════════════════════════════════
+const LOGIN_ERR = {
+  'auth/invalid-credential':  '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.',
+  'auth/user-not-found':      '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.',
+  'auth/wrong-password':      '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.',
+  'auth/too-many-requests':   '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.',
+  'auth/user-disabled':       '비활성화된 계정입니다. 관리자에게 문의하세요.',
+  'auth/invalid-email':       '올바르지 않은 이메일 형식입니다.',
+};
+
 function bindLogin(){
-  const loginBtn = document.getElementById('login-btn');
-  const errEl    = document.getElementById('login-err');
+  const loginBtn  = document.getElementById('login-btn');
+  const emailEl   = document.getElementById('login-email');
+  const errEl     = document.getElementById('login-err');
+  const rememberEl = document.getElementById('remember-me');
+
+  // 저장된 아이디 복원
+  const savedEmail = localStorage.getItem('saved_login_email');
+  if(savedEmail){ emailEl.value = savedEmail; rememberEl.checked = true; }
+
   loginBtn.addEventListener('click', async ()=>{
-    const email = document.getElementById('login-email').value.trim();
+    const email = emailEl.value.trim();
     const pw    = document.getElementById('login-pw').value;
     if(!email||!pw){ errEl.textContent='이메일과 비밀번호를 입력하세요'; return; }
+    if(rememberEl.checked) localStorage.setItem('saved_login_email', email);
+    else localStorage.removeItem('saved_login_email');
     loginBtn.disabled=true; loginBtn.textContent='로그인 중…';
     try{
       await auth.signInWithEmailAndPassword(email, pw);
     } catch(e){
-      errEl.textContent = '로그인 실패: '+e.message;
+      errEl.textContent = LOGIN_ERR[e.code] || '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.';
       loginBtn.disabled=false; loginBtn.textContent='로그인';
     }
   });
@@ -1030,7 +1058,7 @@ function showSignUpModal(){
     `<p>가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다. 역할은 <strong>트레이더</strong>로 자동 설정됩니다.</p>
      <div class="grid3">
        <div class="field"><label>이름</label><input id="su-name" type="text" placeholder="홍길동"></div>
-       <div class="field" style="grid-column:span 2"><label>회사명</label><input id="su-company" type="text" placeholder="ASIA OIL"></div>
+       <div class="field" style="grid-column:span 2"><label>회사명</label><input id="su-company" type="text" placeholder=""></div>
      </div>
      <div class="field"><label>이메일</label><input id="su-email" type="email" placeholder="user@company.com"></div>
      <div class="grid3">
@@ -1053,6 +1081,7 @@ function showSignUpModal(){
     if(pw.length<6){ errEl.textContent='비밀번호는 6자 이상이어야 합니다'; return; }
     const btn=bg.querySelector('#su-ok');
     btn.disabled=true; btn.textContent='신청 중…';
+    _signingUp = true;
     try{
       const cred = await auth.createUserWithEmailAndPassword(email, pw);
       await db.collection('profiles').doc(cred.user.uid).set({
@@ -1060,9 +1089,11 @@ function showSignUpModal(){
         created_at: firebase.firestore.FieldValue.serverTimestamp()
       });
       await auth.signOut();
+      _signingUp = false;
       bg.remove();
-      toast('가입 신청이 완료되었습니다. 관리자 승인 후 로그인 가능합니다.', 5000);
+      toast('신청 완료. 관리자 승인 후 로그인 가능합니다.', 5000);
     } catch(err){
+      _signingUp = false;
       errEl.textContent = err.message;
       btn.disabled=false; btn.textContent='가입 신청';
     }
