@@ -215,24 +215,6 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
 </head>
 <body>
 
-<!-- ═══════════ CONFIG SCREEN ═══════════ -->
-<div id="screen-config" class="screen">
-  <div class="card-center">
-    <div class="auth-card">
-      <div class="brand">Spot Bidding</div>
-      <div class="sub">Online · Firebase 연동 설정</div>
-      <div class="field">
-        <label>Firebase 설정 JSON</label>
-        <textarea id="cfg-json" rows="7" placeholder='{"apiKey":"AIza...","authDomain":"your-app.firebaseapp.com","projectId":"your-app","storageBucket":"your-app.appspot.com","messagingSenderId":"123456","appId":"1:123:web:abc..."}'></textarea>
-        <small>Firebase Console → 프로젝트 설정 → 내 앱 → SDK 설정 및 구성 → Config 선택 후 전체 복사</small>
-      </div>
-      <button class="btn primary full" id="cfg-save-btn">저장 및 시작</button>
-      <button class="btn ghost full" id="cfg-guide-btn" style="margin-top:8px">Firebase 설정 가이드</button>
-      <div class="err" id="cfg-err"></div>
-    </div>
-  </div>
-</div>
-
 <!-- ═══════════ LOGIN SCREEN ═══════════ -->
 <div id="screen-login" class="screen">
   <div class="card-center">
@@ -249,9 +231,6 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
       </div>
       <button class="btn primary full" id="login-btn">로그인</button>
       <div class="err" id="login-err"></div>
-      <div style="margin-top:14px;text-align:center">
-        <button class="btn ghost tiny" id="cfg-reset-btn">Firebase 설정 변경</button>
-      </div>
     </div>
   </div>
 </div>
@@ -266,7 +245,6 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
     </div>
     <div class="hd-actions">
       <div class="avatar" id="buyer-avatar"></div>
-      <button class="btn ghost tiny" id="buyer-guide-btn">설정</button>
       <button class="btn ghost tiny" id="buyer-logout-btn">로그아웃</button>
       <button class="btn primary" id="btn-new-deal">+ 새 입찰</button>
     </div>
@@ -336,12 +314,16 @@ function pulseDot(id){
 }
 
 // ════════════════════════════════════════════════════════
-// CONFIG
+// FIREBASE CONFIG
 // ════════════════════════════════════════════════════════
-const CFG_KEY = 'fb_cfg_v1';
-function getConfig(){ try{ return JSON.parse(localStorage.getItem(CFG_KEY)||'null'); }catch(e){ return null; } }
-function setConfig(cfg){ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
-function clearConfig(){ localStorage.removeItem(CFG_KEY); location.reload(); }
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBIg6bx4T8If-B_vAdG0KDiKi6v6FBgf9g",
+  authDomain: "spot-bidding-skrhal.firebaseapp.com",
+  projectId: "spot-bidding-skrhal",
+  storageBucket: "spot-bidding-skrhal.firebasestorage.app",
+  messagingSenderId: "15661804253",
+  appId: "1:15661804253:web:b25db5c4bf8681a2760934"
+};
 
 // ════════════════════════════════════════════════════════
 // APP STATE
@@ -354,14 +336,12 @@ let _unsubDeals = null, _unsubQuotes = null;
 // BOOT
 // ════════════════════════════════════════════════════════
 async function initApp(){
-  const cfg = getConfig();
-  if(!cfg){ showScreen('config'); bindConfig(); return; }
   try{
-    if(!firebase.apps.length) firebase.initializeApp(cfg);
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore();
     auth = firebase.auth();
   } catch(e){
-    clearConfig();
+    alert('Firebase 초기화 실패: '+e.message);
     return;
   }
   auth.onAuthStateChanged(async user=>{
@@ -378,28 +358,6 @@ async function routeUser(user){
     if(me.role==='buyer') initBuyer();
     else initTrader();
   } catch(e){ toast('프로필 로드 실패: '+e.message); }
-}
-
-// ════════════════════════════════════════════════════════
-// CONFIG SCREEN
-// ════════════════════════════════════════════════════════
-function bindConfig(){
-  document.getElementById('cfg-save-btn').addEventListener('click', ()=>{
-    let raw = document.getElementById('cfg-json').value.trim();
-    const m = raw.match(/\{[\s\S]*\}/);
-    if(m) raw = m[0];
-    // JS object literal → JSON (unquoted keys → quoted keys)
-    raw = raw.replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
-    let cfg;
-    try{ cfg = JSON.parse(raw); } catch(e){
-      document.getElementById('cfg-err').textContent = 'JSON 오류: '+e.message; return;
-    }
-    if(!cfg.apiKey||!cfg.projectId){
-      document.getElementById('cfg-err').textContent = 'apiKey와 projectId가 필요합니다'; return;
-    }
-    setConfig(cfg); location.reload();
-  });
-  document.getElementById('cfg-guide-btn').addEventListener('click', showSetupGuide);
 }
 
 // ════════════════════════════════════════════════════════
@@ -420,7 +378,6 @@ function bindLogin(){
       loginBtn.disabled=false; loginBtn.textContent='로그인';
     }
   });
-  document.getElementById('cfg-reset-btn').addEventListener('click', clearConfig);
   ['login-email','login-pw'].forEach(id=>{
     document.getElementById(id).addEventListener('keydown', e=>{
       if(e.key==='Enter') loginBtn.click();
@@ -444,7 +401,6 @@ async function initBuyer(){
   document.getElementById('buyer-name-lbl').textContent = dispName;
   document.getElementById('buyer-avatar').textContent   = initials(dispName);
   document.getElementById('buyer-logout-btn').addEventListener('click', doLogout);
-  document.getElementById('buyer-guide-btn').addEventListener('click', showSetupGuide);
   document.getElementById('btn-new-deal').addEventListener('click', showNewDealModal);
   await loadTraders();
   document.getElementById('stat-traders').textContent = traders.length;
