@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spot Bidding · Online</title>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F1EA;--paper-2:#EDE9DF;--paper-3:#E5E1D6;
+  --ink:#1A1916;--ink-2:#4A4840;--ink-3:#8A8678;
+  --navy:#1C2B4A;--gold:#B8860B;--green:#2E7D4F;--red:#C0392B;
+  --rule:#D8D4C8;--rule-2:#C8C4B8;
+  --green-soft:#E8F2EC;--selected:#FFF8E7;--gold-soft:#FEF9EC;
+  --sans:"IBM Plex Sans KR",sans-serif;
+  --mono:"IBM Plex Mono",monospace;
+  --serif:"IBM Plex Serif",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;min-height:100vh}
+a{color:var(--navy)}
+.screen{display:none}.screen.active{display:block}
+
+/* ── BUTTONS ── */
+.btn{border:1px solid var(--rule-2);background:transparent;padding:7px 14px;
+  font-family:var(--sans);font-size:12px;letter-spacing:.04em;cursor:pointer;
+  transition:background .12s,color .12s,border-color .12s;white-space:nowrap}
+.btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.primary:hover{background:var(--navy);border-color:var(--navy)}
+.btn.ghost{color:var(--ink-2)}.btn.ghost:hover{background:var(--ink-2);color:var(--paper)}
+.btn.danger{color:var(--red)}.btn.danger:hover{background:var(--red);color:var(--paper);border-color:var(--red)}
+.btn.tiny{font-size:11px;padding:4px 9px}
+.btn.full{width:100%;padding:11px;font-size:13px;margin-top:6px}
+.btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+
+/* ── FORM FIELDS ── */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:10px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;border:none;border-bottom:1.5px solid var(--rule-2);
+  background:transparent;padding:8px 0;font-family:var(--mono);font-size:13px;color:var(--ink);outline:none}
+.field textarea{border:1.5px solid var(--rule-2);padding:8px;font-size:11px;line-height:1.6;resize:vertical}
+.field input:focus,.field select:focus{border-bottom-color:var(--navy)}
+.field textarea:focus{border-color:var(--navy);outline:none}
+.field small{font-size:11px;color:var(--ink-3);margin-top:4px;display:block;line-height:1.5}
+
+/* ── AUTH CARD ── */
+.card-center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{background:var(--paper);border:1px solid var(--rule);padding:40px;width:100%;max-width:440px}
+.auth-card .brand{font-family:var(--serif);font-style:italic;font-weight:400;font-size:26px;
+  color:var(--navy);letter-spacing:-.01em;margin-bottom:4px}
+.auth-card .sub{font-size:10px;color:var(--ink-3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:32px}
+.auth-card .err{color:var(--red);font-size:12px;margin-top:8px;min-height:18px}
+
+/* ── SITE HEADER ── */
+.site-header{border-bottom:1.5px solid var(--ink);padding:0 24px;
+  display:flex;align-items:center;gap:12px;height:52px;
+  position:sticky;top:0;background:var(--paper);z-index:100}
+.brand-hd{font-family:var(--serif);font-style:italic;font-weight:400;font-size:19px;
+  color:var(--navy);letter-spacing:-.01em;flex:1}
+.brand-hd span{font-family:var(--mono);font-size:9px;font-style:normal;color:var(--ink-3);
+  letter-spacing:.1em;display:block;text-transform:uppercase;margin-top:1px}
+.hd-actions{display:flex;gap:7px;align-items:center}
+.user-badge{font-size:11px;color:var(--ink-3);letter-spacing:.04em}
+
+/* ── AVATAR ── */
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--navy);color:var(--paper);
+  font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-family:var(--mono);letter-spacing:.02em}
+
+/* ── STATS STRIP ── */
+.stats-strip{display:flex;border-bottom:1px solid var(--rule);background:var(--paper-2);overflow-x:auto}
+.stat-cell{padding:7px 18px;font-size:11px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;
+  border-right:1px solid var(--rule);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.stat-cell strong{color:var(--ink);font-family:var(--mono);font-size:13px;font-weight:500}
+
+/* ── REALTIME DOT ── */
+.rt-dot{width:7px;height:7px;border-radius:50%;background:var(--rule-2);
+  display:inline-block;transition:background .3s;flex-shrink:0}
+.rt-dot.live{background:var(--green)}
+@keyframes rtpulse{0%{transform:scale(1)}50%{transform:scale(2.2)}100%{transform:scale(1)}}
+.rt-dot.pulse{animation:rtpulse .35s ease-out}
+
+/* ── MAIN ── */
+.main{padding:24px;max-width:1700px;margin:0 auto}
+
+/* ── BUYER DEAL GRID ── */
+#deals-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(570px,1fr));gap:20px}
+
+/* ── DEAL CARD ── */
+.deal-card{border:1px solid var(--rule);background:var(--paper);transition:border-color .25s}
+.deal-card.has-winner{border-color:var(--gold)}
+.deal-card.is-closed{opacity:.85}
+.dc-head{padding:11px 16px;border-bottom:1px solid var(--rule);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.dc-info{flex:1;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.dc-field{display:flex;flex-direction:column;gap:2px}
+.dc-field .lbl{font-size:9px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+.dc-field .val{font-family:var(--mono);font-size:12px;color:var(--ink)}
+.dc-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
+.badge{font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border:1px solid;flex-shrink:0}
+.badge.open{color:var(--green);border-color:var(--green)}
+.badge.closed{color:var(--ink-3);border-color:var(--rule-2)}
+
+/* ── QUOTE TABLE ── */
+table.qt{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+table.qt th{background:var(--paper-2);padding:6px 10px;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);font-family:var(--sans);font-weight:500;
+  text-align:right;border-bottom:1px solid var(--rule)}
+table.qt th:first-child,table.qt th:nth-child(2){text-align:left}
+table.qt td{padding:7px 10px;border-bottom:1px solid var(--rule);text-align:right;color:var(--ink-2)}
+table.qt td:first-child{text-align:center;width:30px;font-size:11px;color:var(--ink-3)}
+table.qt td:nth-child(2){text-align:left;font-weight:500;color:var(--ink);white-space:nowrap}
+table.qt td.empty{color:var(--ink-3)}
+table.qt td.ttl{font-weight:500}
+table.qt tr.is-best{background:var(--green-soft)}
+table.qt tr.is-winner{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(--gold)}
+.rank1{font-weight:700;color:var(--navy)}
+td.cell-off{background:var(--paper-3) !important;color:var(--ink-3)}
+.star{color:var(--gold);margin-left:5px;font-size:11px}
+
+.dc-foot{padding:9px 16px;display:flex;align-items:center;gap:10px;
+  border-top:1px solid var(--rule);background:var(--paper-2)}
+.dc-foot .fi{flex:1;font-size:11px;color:var(--ink-3)}
+.dc-foot .fi strong{color:var(--green);font-weight:600}
+.dc-foot .winner-tag{font-size:11px;color:var(--gold);letter-spacing:.04em;font-family:var(--mono)}
+
+/* ── TRADER VIEW ── */
+#trader-deals{display:flex;flex-direction:column;gap:16px}
+.td-card{border:1px solid var(--rule);background:var(--paper)}
+.td-card.is-closed .td-body{opacity:.6;pointer-events:none}
+.td-card.is-winner{border-color:var(--gold)}
+.td-head{padding:11px 16px;border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.td-info{flex:1;display:flex;gap:14px;flex-wrap:wrap}
+.td-field .lbl{font-size:9px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:2px}
+.td-field .val{font-family:var(--mono);font-size:12px;color:var(--ink)}
+.td-body{padding:16px}
+.qty-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.qty-pill{background:var(--paper-2);border:1px solid var(--rule);padding:3px 10px;
+  font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+.price-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}
+.pg-group label{font-size:9px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase;
+  display:block;margin-bottom:5px}
+.pg-group input{width:100%;border:none;border-bottom:1.5px solid var(--rule-2);background:transparent;
+  padding:6px 0;font-family:var(--mono);font-size:15px;color:var(--ink);outline:none;text-align:right}
+.pg-group input:focus{border-bottom-color:var(--navy)}
+.pg-group input.off{background:var(--paper-3);color:var(--ink-3);pointer-events:none;border-bottom-color:var(--rule)}
+.pg-total{font-family:var(--mono);font-size:16px;font-weight:500;padding:6px 0;text-align:right;min-width:100px}
+.submit-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:14px}
+.saved-at{font-size:11px;color:var(--ink-3);letter-spacing:.03em}
+.closed-banner{text-align:center;padding:9px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);background:var(--paper-2);border-top:1px solid var(--rule)}
+.won-banner{text-align:center;padding:10px;font-size:12px;letter-spacing:.06em;
+  color:var(--gold);background:var(--gold-soft);border-top:1px solid var(--gold);font-weight:600}
+
+/* ── MODAL ── */
+.modal-bg{position:fixed;inset:0;background:rgba(26,25,22,.55);
+  display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
+.modal{background:var(--paper);border:1px solid var(--ink);max-width:540px;width:100%;
+  padding:28px;max-height:90vh;overflow-y:auto}
+.modal.wide{max-width:760px}
+.modal h3{font-family:var(--serif);font-style:italic;font-weight:400;font-size:22px;margin-bottom:6px}
+.modal p{color:var(--ink-2);margin-bottom:16px;font-size:13px;line-height:1.7}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+
+/* ── SETUP GUIDE ── */
+.setup-steps{list-style:none;counter-reset:step}
+.setup-steps>li{counter-increment:step;padding-left:34px;position:relative;
+  margin-bottom:20px;line-height:1.8;font-size:13px;color:var(--ink-2)}
+.setup-steps>li::before{content:counter(step);position:absolute;left:0;top:1px;
+  width:22px;height:22px;border-radius:50%;background:var(--navy);color:var(--paper);
+  font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center}
+pre.code-block{background:var(--paper-2);border:1px solid var(--rule);padding:12px;
+  font-family:var(--mono);font-size:10.5px;line-height:1.7;overflow:auto;
+  max-height:260px;white-space:pre;margin:8px 0}
+code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);font-size:11px;
+  border:1px solid var(--rule)}
+
+/* ── TOAST ── */
+.toast-el{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--ink);color:var(--paper);padding:10px 20px;
+  font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:999;white-space:nowrap}
+.toast-el.show{opacity:1}
+
+/* ── EMPTY STATE ── */
+.empty-state{text-align:center;padding:60px 20px;color:var(--ink-3)}
+.es-icon{font-size:28px;margin-bottom:10px;opacity:.5}
+.es-title{font-family:var(--serif);font-style:italic;font-size:20px;color:var(--ink-2);margin-bottom:6px}
+.es-sub{font-size:12px;letter-spacing:.04em}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:var(--rule-2)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:640px){
+  #deals-grid{grid-template-columns:1fr}
+  .site-header,.main{padding-left:12px;padding-right:12px}
+  .price-grid{grid-template-columns:1fr 1fr}
+  .pg-total{grid-column:1/-1;text-align:left}
+  .brand-hd span{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ CONFIG SCREEN ═══════════ -->
+<div id="screen-config" class="screen">
+  <div class="card-center">
+    <div class="auth-card">
+      <div class="brand">Spot Bidding</div>
+      <div class="sub">Online · Firebase 연동 설정</div>
+      <div class="field">
+        <label>Firebase 설정 JSON</label>
+        <textarea id="cfg-json" rows="7" placeholder='{"apiKey":"AIza...","authDomain":"your-app.firebaseapp.com","projectId":"your-app","storageBucket":"your-app.appspot.com","messagingSenderId":"123456","appId":"1:123:web:abc..."}'></textarea>
+        <small>Firebase Console → 프로젝트 설정 → 내 앱 → SDK 설정 및 구성 → Config 선택 후 전체 복사</small>
+      </div>
+      <button class="btn primary full" id="cfg-save-btn">저장 및 시작</button>
+      <button class="btn ghost full" id="cfg-guide-btn" style="margin-top:8px">Firebase 설정 가이드</button>
+      <div class="err" id="cfg-err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ LOGIN SCREEN ═══════════ -->
+<div id="screen-login" class="screen">
+  <div class="card-center">
+    <div class="auth-card">
+      <div class="brand">Spot Bidding</div>
+      <div class="sub">Online · Bunker Procurement</div>
+      <div class="field">
+        <label>이메일</label>
+        <input id="login-email" type="email" placeholder="user@company.com">
+      </div>
+      <div class="field">
+        <label>비밀번호</label>
+        <input id="login-pw" type="password" placeholder="••••••••">
+      </div>
+      <button class="btn primary full" id="login-btn">로그인</button>
+      <div class="err" id="login-err"></div>
+      <div style="margin-top:14px;text-align:center">
+        <button class="btn ghost tiny" id="cfg-reset-btn">Firebase 설정 변경</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ BUYER SCREEN ═══════════ -->
+<div id="screen-buyer" class="screen">
+  <header class="site-header">
+    <div class="brand-hd">Spot Bidding · Online<span>Bunker Procurement</span></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="rt-dot" id="rt-dot-buyer"></span>
+      <span class="user-badge" id="buyer-name-lbl"></span>
+    </div>
+    <div class="hd-actions">
+      <div class="avatar" id="buyer-avatar"></div>
+      <button class="btn ghost tiny" id="buyer-guide-btn">설정</button>
+      <button class="btn ghost tiny" id="buyer-logout-btn">로그아웃</button>
+      <button class="btn primary" id="btn-new-deal">+ 새 입찰</button>
+    </div>
+  </header>
+  <div class="stats-strip">
+    <div class="stat-cell">OPEN <strong id="stat-open">—</strong></div>
+    <div class="stat-cell">마감 <strong id="stat-closed">—</strong></div>
+    <div class="stat-cell">낙찰 <strong id="stat-winner">—</strong></div>
+    <div class="stat-cell">트레이더 <strong id="stat-traders">—</strong></div>
+  </div>
+  <div class="main">
+    <div id="deals-grid"></div>
+  </div>
+</div>
+
+<!-- ═══════════ TRADER SCREEN ═══════════ -->
+<div id="screen-trader" class="screen">
+  <header class="site-header">
+    <div class="brand-hd">
+      <span id="trader-company-lbl" style="font-family:var(--mono);font-size:14px;font-style:normal;letter-spacing:.04em"></span>
+      <span>Spot Bidding · Trader</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="rt-dot" id="rt-dot-trader"></span>
+      <span class="user-badge" id="trader-date-lbl"></span>
+    </div>
+    <div class="hd-actions">
+      <div class="avatar" id="trader-avatar"></div>
+      <button class="btn ghost tiny" id="trader-logout-btn">로그아웃</button>
+    </div>
+  </header>
+  <div class="main">
+    <div id="trader-deals"></div>
+  </div>
+</div>
+
+<!-- ═══════════ TOAST ═══════════ -->
+<div class="toast-el" id="toast-el"></div>
+
+<script>
+'use strict';
+// ════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════
+const fmt = n => (n == null || n === '' || isNaN(Number(n)))
+  ? '—' : Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const today = () => new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'});
+const initials = s => (s||'?').split(/[\s_\-]+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,2)||'?';
+
+let _toastT;
+function toast(msg, dur=2500){
+  const el = document.getElementById('toast-el');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_toastT);
+  _toastT = setTimeout(()=>el.classList.remove('show'), dur);
+}
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el = document.getElementById('screen-'+name);
+  if(el) el.classList.add('active');
+}
+function pulseDot(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse');
+}
+
+// ════════════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════════════
+const CFG_KEY = 'fb_cfg_v1';
+function getConfig(){ try{ return JSON.parse(localStorage.getItem(CFG_KEY)||'null'); }catch(e){ return null; } }
+function setConfig(cfg){ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
+function clearConfig(){ localStorage.removeItem(CFG_KEY); location.reload(); }
+
+// ════════════════════════════════════════════════════════
+// APP STATE
+// ════════════════════════════════════════════════════════
+let db = null, auth = null, me = null;
+let traders = [], deals = [], quotesMap = {}, traderDeals = [], myQuotes = {};
+let _unsubDeals = null, _unsubQuotes = null;
+
+// ════════════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════════════
+async function initApp(){
+  const cfg = getConfig();
+  if(!cfg){ showScreen('config'); bindConfig(); return; }
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(cfg);
+    db = firebase.firestore();
+    auth = firebase.auth();
+  } catch(e){
+    clearConfig();
+    return;
+  }
+  auth.onAuthStateChanged(async user=>{
+    if(user) await routeUser(user);
+    else { showScreen('login'); bindLogin(); }
+  });
+}
+
+async function routeUser(user){
+  try{
+    const doc = await db.collection('profiles').doc(user.uid).get();
+    if(!doc.exists){ toast('프로필 없음. 관리자에게 문의하세요.'); await auth.signOut(); return; }
+    me = { id:user.uid, email:user.email, ...doc.data() };
+    if(me.role==='buyer') initBuyer();
+    else initTrader();
+  } catch(e){ toast('프로필 로드 실패: '+e.message); }
+}
+
+// ════════════════════════════════════════════════════════
+// CONFIG SCREEN
+// ════════════════════════════════════════════════════════
+function bindConfig(){
+  document.getElementById('cfg-save-btn').addEventListener('click', ()=>{
+    let raw = document.getElementById('cfg-json').value.trim();
+    const m = raw.match(/\{[\s\S]*\}/);
+    if(m) raw = m[0];
+    let cfg;
+    try{ cfg = JSON.parse(raw); } catch(e){
+      document.getElementById('cfg-err').textContent = 'JSON 오류: '+e.message; return;
+    }
+    if(!cfg.apiKey||!cfg.projectId){
+      document.getElementById('cfg-err').textContent = 'apiKey와 projectId가 필요합니다'; return;
+    }
+    setConfig(cfg); location.reload();
+  });
+  document.getElementById('cfg-guide-btn').addEventListener('click', showSetupGuide);
+}
+
+// ════════════════════════════════════════════════════════
+// LOGIN SCREEN
+// ════════════════════════════════════════════════════════
+function bindLogin(){
+  const loginBtn = document.getElementById('login-btn');
+  const errEl    = document.getElementById('login-err');
+  loginBtn.addEventListener('click', async ()=>{
+    const email = document.getElementById('login-email').value.trim();
+    const pw    = document.getElementById('login-pw').value;
+    if(!email||!pw){ errEl.textContent='이메일과 비밀번호를 입력하세요'; return; }
+    loginBtn.disabled=true; loginBtn.textContent='로그인 중…';
+    try{
+      await auth.signInWithEmailAndPassword(email, pw);
+    } catch(e){
+      errEl.textContent = '로그인 실패: '+e.message;
+      loginBtn.disabled=false; loginBtn.textContent='로그인';
+    }
+  });
+  document.getElementById('cfg-reset-btn').addEventListener('click', clearConfig);
+  ['login-email','login-pw'].forEach(id=>{
+    document.getElementById(id).addEventListener('keydown', e=>{
+      if(e.key==='Enter') loginBtn.click();
+    });
+  });
+}
+
+async function doLogout(){
+  if(_unsubDeals){ _unsubDeals(); _unsubDeals=null; }
+  if(_unsubQuotes){ _unsubQuotes(); _unsubQuotes=null; }
+  deals=[]; traders=[]; quotesMap={}; traderDeals=[]; myQuotes={}; me=null;
+  await auth.signOut();
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — INIT
+// ════════════════════════════════════════════════════════
+async function initBuyer(){
+  showScreen('buyer');
+  const dispName = me.name||me.email;
+  document.getElementById('buyer-name-lbl').textContent = dispName;
+  document.getElementById('buyer-avatar').textContent   = initials(dispName);
+  document.getElementById('buyer-logout-btn').addEventListener('click', doLogout);
+  document.getElementById('buyer-guide-btn').addEventListener('click', showSetupGuide);
+  document.getElementById('btn-new-deal').addEventListener('click', showNewDealModal);
+  await loadTraders();
+  document.getElementById('stat-traders').textContent = traders.length;
+  subscribeBuyer();
+}
+
+async function loadTraders(){
+  const snap = await db.collection('profiles').where('role','==','trader').get();
+  traders = snap.docs.map(d=>({id:d.id,...d.data()}))
+    .sort((a,b)=>(a.company||'').localeCompare(b.company||''));
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — REALTIME
+// ════════════════════════════════════════════════════════
+function subscribeBuyer(){
+  const dot = document.getElementById('rt-dot-buyer');
+
+  _unsubDeals = db.collection('deals').orderBy('created_at','desc')
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(chg=>{
+        const d = {id:chg.doc.id,...chg.doc.data()};
+        if(chg.type==='added') deals.push(d);
+        else if(chg.type==='modified'){ const i=deals.findIndex(x=>x.id===d.id); if(i>=0) deals[i]=d; }
+        else if(chg.type==='removed') deals=deals.filter(x=>x.id!==d.id);
+      });
+      deals.sort((a,b)=>(b.created_at?.seconds??0)-(a.created_at?.seconds??0));
+      dot.classList.add('live');
+      pulseDot('rt-dot-buyer');
+      renderBuyer(); updateStats();
+    }, err=>{ dot.classList.remove('live'); toast('연결 오류: '+err.message); });
+
+  _unsubQuotes = db.collection('quotes').onSnapshot(snap=>{
+    snap.docChanges().forEach(chg=>{
+      const q={id:chg.doc.id,...chg.doc.data()};
+      if(!quotesMap[q.deal_id]) quotesMap[q.deal_id]={};
+      if(chg.type==='removed') delete quotesMap[q.deal_id][q.trader_id];
+      else quotesMap[q.deal_id][q.trader_id]=q;
+    });
+    pulseDot('rt-dot-buyer');
+    renderBuyer();
+  }, ()=>{});
+}
+
+function updateStats(){
+  document.getElementById('stat-open').textContent   = deals.filter(d=>!d.status_closed).length;
+  document.getElementById('stat-closed').textContent = deals.filter(d=>d.status_closed).length;
+  document.getElementById('stat-winner').textContent = deals.filter(d=>d.winner_id).length;
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — RENDER
+// ════════════════════════════════════════════════════════
+function renderBuyer(){
+  const grid = document.getElementById('deals-grid');
+  if(!deals.length){
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="es-icon">📋</div>
+      <div class="es-title">등록된 입찰이 없습니다</div>
+      <div class="es-sub">+ 새 입찰 버튼으로 첫 번째 입찰을 등록하세요</div>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = deals.map(buildDealCard).join('');
+  wireCardEvents(grid);
+}
+
+function rerenderCard(dealId){
+  const old = document.querySelector(`.deal-card[data-id="${dealId}"]`);
+  if(!old) return;
+  const deal = deals.find(d=>d.id===dealId);
+  if(!deal) return;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildDealCard(deal);
+  const nw = tmp.firstElementChild;
+  old.replaceWith(nw);
+  wireCardEvents(nw);
+}
+
+function wireCardEvents(root){
+  if(!root) return;
+  root.querySelectorAll('[data-act]').forEach(el=>el.addEventListener('click', handleCardAction));
+}
+
+function buildDealCard(deal){
+  const dq    = quotesMap[deal.id]||{};
+  const noFo  = !deal.fo_qty  || Number(deal.fo_qty)===0;
+  const noMgo = !deal.mgo_qty || Number(deal.mgo_qty)===0;
+
+  const rows = traders.map(t=>{
+    const q = dq[t.id]||null;
+    let total=null, valid=false;
+    if(q){
+      const fo=parseFloat(q.fo_price), mgo=parseFloat(q.mgo_price), barge=parseFloat(q.barge)||0;
+      const foOk = noFo||!isNaN(fo), mgoOk = noMgo||!isNaN(mgo);
+      valid = foOk && mgoOk && (!isNaN(fo)||!isNaN(mgo)||barge>0);
+      if(valid) total = (!noFo&&!isNaN(fo)?fo*deal.fo_qty:0)
+                      + (!noMgo&&!isNaN(mgo)?mgo*deal.mgo_qty:0) + barge;
+    }
+    return {t,q,total,valid};
+  });
+
+  const vals   = rows.filter(r=>r.valid).map(r=>r.total);
+  const sorted = [...new Set(vals)].sort((a,b)=>a-b);
+  const ranked = rows.map(r=>({...r, rank:r.valid?sorted.indexOf(r.total)+1:null}));
+  const best   = ranked.find(r=>r.rank===1);
+  const winner = deal.winner_id ? traders.find(t=>t.id===deal.winner_id) : null;
+  const closed = deal.status_closed;
+
+  const trows = ranked.map(r=>{
+    const isW = r.t.id===deal.winner_id;
+    const isB = r.rank===1 && !deal.winner_id && !closed;
+    const foTd  = noFo  ? `<td class="cell-off">—</td>` : `<td>${r.q?fmt(r.q.fo_price):'<span class="empty">—</span>'}</td>`;
+    const mgoTd = noMgo ? `<td class="cell-off">—</td>` : `<td>${r.q?fmt(r.q.mgo_price):'<span class="empty">—</span>'}</td>`;
+    const awardBtn = !closed&&r.valid
+      ? `<button class="btn tiny ghost" data-act="${isW?'unset-winner':'set-winner'}" data-deal-id="${deal.id}" data-trader-id="${r.t.id}">${isW?'해제':'선정'}</button>`:'';
+    return `<tr class="${isW?'is-winner':isB?'is-best':''}">
+      <td class="${r.rank===1?'rank1':''}">${r.rank||'·'}</td>
+      <td>${esc(r.t.company||r.t.name)}${isW?`<span class="star">★</span>`:''}</td>
+      ${foTd}${mgoTd}
+      <td>${r.q?fmt(r.q.barge):'<span class="empty">—</span>'}</td>
+      <td class="ttl ${r.valid?'':'empty'}">${r.valid?fmt(r.total):'—'}</td>
+      <td style="text-align:right;padding-right:8px">${awardBtn}</td>
+    </tr>`;
+  }).join('');
+
+  const bestTxt = best&&best.valid
+    ? `최저가 <strong>${esc(best.t.company||best.t.name)}</strong> · ${fmt(best.total)}`
+    : '아직 입찰 없음';
+
+  return `<section class="deal-card ${closed?'is-closed':''} ${winner?'has-winner':''}" data-id="${deal.id}">
+    <div class="dc-head">
+      <div class="dc-info">
+        <div class="dc-field"><span class="lbl">VSL</span><span class="val">${esc(deal.vsl||'—')}</span></div>
+        <div class="dc-field"><span class="lbl">PORT / DATE</span><span class="val">${esc(deal.port||'—')}</span></div>
+        <div class="dc-field"><span class="lbl">FO TYPE</span><span class="val">${esc(deal.fo_type||'—')}</span></div>
+        <div class="dc-field"><span class="lbl">FO QTY</span><span class="val">${fmt(deal.fo_qty)} MT</span></div>
+        <div class="dc-field"><span class="lbl">MGO QTY</span><span class="val">${fmt(deal.mgo_qty)} MT</span></div>
+      </div>
+      <div class="dc-actions">
+        <span class="badge ${closed?'closed':'open'}">${closed?'마감':'OPEN'}</span>
+        <button class="btn tiny ghost" data-act="${closed?'reopen':'close'}" data-deal-id="${deal.id}">${closed?'재오픈':'마감'}</button>
+        <button class="btn tiny danger" data-act="delete" data-deal-id="${deal.id}">삭제</button>
+      </div>
+    </div>
+    <table class="qt">
+      <thead><tr>
+        <th>#</th><th>COMPANY</th>
+        <th style="${noFo?'color:var(--rule-2)':''}">FO</th>
+        <th style="${noMgo?'color:var(--rule-2)':''}">MGO</th>
+        <th>BARGE</th><th>TOTAL</th><th></th>
+      </tr></thead>
+      <tbody>${trows}</tbody>
+    </table>
+    <div class="dc-foot">
+      <span class="fi">${bestTxt}</span>
+      ${winner?`<span class="winner-tag">★ ${esc(winner.company||winner.name)} 낙찰</span>`:''}
+    </div>
+  </section>`;
+}
+
+async function handleCardAction(e){
+  const el = e.currentTarget;
+  const {act, dealId, traderId} = el.dataset;
+  const deal = deals.find(d=>d.id===dealId);
+  if(!deal) return;
+  el.disabled=true;
+  try{
+    if(act==='close')         await db.collection('deals').doc(dealId).update({status_closed:true});
+    else if(act==='reopen')   await db.collection('deals').doc(dealId).update({status_closed:false,winner_id:null});
+    else if(act==='set-winner')   await db.collection('deals').doc(dealId).update({winner_id:traderId});
+    else if(act==='unset-winner') await db.collection('deals').doc(dealId).update({winner_id:null});
+    else if(act==='delete'){
+      if(!confirm(`"${deal.vsl||'이름 없음'}" 입찰을 삭제하시겠습니까?`)){ el.disabled=false; return; }
+      await db.collection('deals').doc(dealId).delete();
+    }
+  } catch(err){ toast('오류: '+err.message); }
+  el.disabled=false;
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — NEW DEAL MODAL
+// ════════════════════════════════════════════════════════
+function showNewDealModal(){
+  const bg = mkModal('새 입찰 등록',
+    `<p>주문 정보를 입력하세요. 등록 즉시 모든 트레이더에게 표시됩니다.</p>
+     <div class="field"><label>VSL / VOY</label><input id="nd-vsl" type="text" placeholder="MELBOURNE BRIDGE 2602E"></div>
+     <div class="field"><label>PORT / DATE</label><input id="nd-port" type="text" placeholder="PORT KLANG / 02~06 Jun 2026"></div>
+     <div class="grid3">
+       <div class="field"><label>FO TYPE</label>
+         <select id="nd-fotype"><option>VLSFO</option><option>HSFO</option><option>ULSFO</option><option>LSFO</option></select>
+       </div>
+       <div class="field"><label>FO QTY (MT)</label><input id="nd-foqty" type="text" inputmode="numeric" placeholder="0"></div>
+       <div class="field"><label>MGO QTY (MT)</label><input id="nd-mgoqty" type="text" inputmode="numeric" placeholder="0"></div>
+     </div>`,
+    `<button class="btn ghost" id="nd-cancel">취소</button><button class="btn primary" id="nd-ok">등록</button>`);
+
+  bg.querySelector('#nd-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#nd-ok').addEventListener('click', async ()=>{
+    const vsl     = bg.querySelector('#nd-vsl').value.trim();
+    const port    = bg.querySelector('#nd-port').value.trim();
+    const fo_type = bg.querySelector('#nd-fotype').value;
+    const fo_qty  = parseFloat(bg.querySelector('#nd-foqty').value)||0;
+    const mgo_qty = parseFloat(bg.querySelector('#nd-mgoqty').value)||0;
+    const btn = bg.querySelector('#nd-ok');
+    btn.disabled=true; btn.textContent='등록 중…';
+    try{
+      await db.collection('deals').add({
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
+        created_by: me.id,
+        vsl, port, fo_type, fo_qty, mgo_qty,
+        status_closed: false, winner_id: null
+      });
+      bg.remove(); toast('새 입찰이 등록되었습니다');
+    } catch(err){
+      toast('등록 실패: '+err.message);
+      btn.disabled=false; btn.textContent='등록';
+    }
+  });
+  bg.querySelectorAll('input').forEach(inp=>{
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter') bg.querySelector('#nd-ok').click(); });
+  });
+  bg.querySelector('#nd-vsl').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// TRADER — INIT
+// ════════════════════════════════════════════════════════
+function initTrader(){
+  showScreen('trader');
+  const dispName = me.company||me.name||me.email;
+  document.getElementById('trader-company-lbl').textContent = dispName;
+  document.getElementById('trader-date-lbl').textContent    = today();
+  document.getElementById('trader-avatar').textContent      = initials(dispName);
+  document.getElementById('trader-logout-btn').addEventListener('click', doLogout);
+  subscribeTrader();
+}
+
+// ════════════════════════════════════════════════════════
+// TRADER — REALTIME
+// ════════════════════════════════════════════════════════
+function subscribeTrader(){
+  const dot = document.getElementById('rt-dot-trader');
+
+  _unsubDeals = db.collection('deals').orderBy('created_at','desc')
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(chg=>{
+        const d={id:chg.doc.id,...chg.doc.data()};
+        if(chg.type==='added') traderDeals.push(d);
+        else if(chg.type==='modified'){ const i=traderDeals.findIndex(x=>x.id===d.id); if(i>=0) traderDeals[i]=d; }
+        else if(chg.type==='removed') traderDeals=traderDeals.filter(x=>x.id!==d.id);
+      });
+      traderDeals.sort((a,b)=>(b.created_at?.seconds??0)-(a.created_at?.seconds??0));
+      dot.classList.add('live');
+      pulseDot('rt-dot-trader');
+      renderTrader();
+    }, err=>{ dot.classList.remove('live'); toast('연결 오류: '+err.message); });
+
+  _unsubQuotes = db.collection('quotes').where('trader_id','==',me.id)
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(chg=>{
+        const q={id:chg.doc.id,...chg.doc.data()};
+        if(chg.type==='removed') delete myQuotes[q.deal_id];
+        else myQuotes[q.deal_id]=q;
+      });
+      renderTrader();
+    }, ()=>{});
+}
+
+// ════════════════════════════════════════════════════════
+// TRADER — RENDER
+// ════════════════════════════════════════════════════════
+function renderTrader(){
+  const wrap = document.getElementById('trader-deals');
+  if(!traderDeals.length){
+    wrap.innerHTML = `<div class="empty-state">
+      <div class="es-icon">📋</div>
+      <div class="es-title">등록된 입찰이 없습니다</div>
+      <div class="es-sub">바이어가 입찰을 등록하면 즉시 여기에 표시됩니다</div>
+    </div>`;
+    return;
+  }
+  const saved = {};
+  wrap.querySelectorAll('.price-inp').forEach(inp=>{
+    saved[inp.dataset.dealId+':'+inp.dataset.field] = inp.value;
+  });
+  wrap.innerHTML = traderDeals.map(d=>buildTraderCard(d, saved)).join('');
+  wireTraderEvents(wrap);
+}
+
+function buildTraderCard(deal, saved={}){
+  const q     = myQuotes[deal.id]||null;
+  const noFo  = !deal.fo_qty  || Number(deal.fo_qty)===0;
+  const noMgo = !deal.mgo_qty || Number(deal.mgo_qty)===0;
+  const closed = deal.status_closed;
+  const iWon   = deal.winner_id === me.id;
+
+  const foVal  = saved[deal.id+':fo_price']  ?? (q?.fo_price  ?? '');
+  const mgoVal = saved[deal.id+':mgo_price'] ?? (q?.mgo_price ?? '');
+  const barVal = saved[deal.id+':barge']     ?? (q?.barge     ?? '');
+
+  const fo=parseFloat(foVal), mgo=parseFloat(mgoVal), bar=parseFloat(barVal)||0;
+  const total = (!noFo&&!isNaN(fo)?fo*deal.fo_qty:0)+(!noMgo&&!isNaN(mgo)?mgo*deal.mgo_qty:0)+bar;
+  const totalStr = (total>0||bar>0) ? fmt(total) : '—';
+
+  let savedAt = '';
+  if(q?.updated_at?.toDate){
+    savedAt = q.updated_at.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  return `<div class="td-card ${closed?'is-closed':''} ${iWon?'is-winner':''}" data-deal-id="${deal.id}">
+    <div class="td-head">
+      <div class="td-info">
+        <div class="td-field"><span class="lbl">VSL</span><span class="val">${esc(deal.vsl||'—')}</span></div>
+        <div class="td-field"><span class="lbl">PORT / DATE</span><span class="val">${esc(deal.port||'—')}</span></div>
+        <div class="td-field"><span class="lbl">FO TYPE</span><span class="val">${esc(deal.fo_type||'—')}</span></div>
+      </div>
+      ${iWon?`<span style="color:var(--gold);font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.04em">★ 낙찰</span>`:''}
+      <span class="badge ${closed?'closed':'open'}">${closed?'마감':'OPEN'}</span>
+    </div>
+    <div class="td-body">
+      <div class="qty-row">
+        <span class="qty-pill">FO ${esc(deal.fo_type)} ${fmt(deal.fo_qty)} MT</span>
+        <span class="qty-pill">MGO ${fmt(deal.mgo_qty)} MT</span>
+      </div>
+      <div class="price-grid">
+        <div class="pg-group">
+          <label>FO PRICE${noFo?' (N/A)':''}</label>
+          <input type="text" inputmode="decimal" class="price-inp ${noFo?'off':''}"
+            data-deal-id="${deal.id}" data-field="fo_price"
+            value="${esc(String(foVal))}" placeholder="—" ${closed||noFo?'disabled':''}>
+        </div>
+        <div class="pg-group">
+          <label>MGO PRICE${noMgo?' (N/A)':''}</label>
+          <input type="text" inputmode="decimal" class="price-inp ${noMgo?'off':''}"
+            data-deal-id="${deal.id}" data-field="mgo_price"
+            value="${esc(String(mgoVal))}" placeholder="—" ${closed||noMgo?'disabled':''}>
+        </div>
+        <div class="pg-group">
+          <label>BARGING</label>
+          <input type="text" inputmode="decimal" class="price-inp"
+            data-deal-id="${deal.id}" data-field="barge"
+            value="${esc(String(barVal))}" placeholder="0" ${closed?'disabled':''}>
+        </div>
+        <div class="pg-group">
+          <label>TOTAL</label>
+          <div class="pg-total" data-total-id="${deal.id}">${totalStr}</div>
+        </div>
+      </div>
+      <div class="submit-row">
+        ${savedAt?`<span class="saved-at">최근 저장 ${savedAt}</span>`:''}
+        ${!closed?`<button class="btn primary submit-btn" data-deal-id="${deal.id}">가격 제출</button>`:''}
+      </div>
+    </div>
+    ${iWon?`<div class="won-banner">★ 낙찰되었습니다 — 바이어가 귀사를 선정하였습니다</div>`
+          :closed?`<div class="closed-banner">입찰이 마감되었습니다</div>`:''}
+  </div>`;
+}
+
+function wireTraderEvents(root){
+  root.querySelectorAll('.price-inp').forEach(inp=>{
+    inp.addEventListener('input', updateLiveTotal);
+    inp.addEventListener('keydown', e=>{
+      if(e.key==='Enter'||e.key==='Tab'){
+        if(e.key==='Enter') e.preventDefault();
+        const all=[...root.querySelectorAll('.price-inp:not([disabled])')];
+        const idx=all.indexOf(e.target);
+        if(idx>=0&&idx+1<all.length){ all[idx+1].focus(); all[idx+1].select(); }
+      }
+    });
+  });
+  root.querySelectorAll('.submit-btn').forEach(btn=>btn.addEventListener('click', submitQuote));
+}
+
+function updateLiveTotal(e){
+  const inp = e.target, dealId = inp.dataset.dealId;
+  const deal = traderDeals.find(d=>d.id===dealId);
+  if(!deal) return;
+  const getV = f => parseFloat(document.querySelector(`.price-inp[data-deal-id="${dealId}"][data-field="${f}"]`)?.value)||0;
+  const noFo=!deal.fo_qty||Number(deal.fo_qty)===0, noMgo=!deal.mgo_qty||Number(deal.mgo_qty)===0;
+  const total=(!noFo?getV('fo_price')*deal.fo_qty:0)+(!noMgo?getV('mgo_price')*deal.mgo_qty:0)+getV('barge');
+  const el=document.querySelector(`.pg-total[data-total-id="${dealId}"]`);
+  if(el) el.textContent = total>0?fmt(total):'—';
+}
+
+async function submitQuote(e){
+  const btn = e.currentTarget, dealId = btn.dataset.dealId;
+  const getV = f => {
+    const el=document.querySelector(`.price-inp[data-deal-id="${dealId}"][data-field="${f}"]`);
+    return el?.value?.trim()||null;
+  };
+  btn.disabled=true; btn.textContent='저장 중…';
+  try{
+    await db.collection('quotes').doc(`${dealId}_${me.id}`).set({
+      deal_id:   dealId, trader_id: me.id,
+      fo_price:  getV('fo_price')  ? parseFloat(getV('fo_price'))  : null,
+      mgo_price: getV('mgo_price') ? parseFloat(getV('mgo_price')) : null,
+      barge:     getV('barge')     ? parseFloat(getV('barge'))     : 0,
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true});
+    toast('가격이 제출되었습니다');
+  } catch(err){ toast('저장 실패: '+err.message); }
+  btn.disabled=false; btn.textContent='가격 제출';
+}
+
+// ════════════════════════════════════════════════════════
+// SETUP GUIDE
+// ════════════════════════════════════════════════════════
+const FIRESTORE_RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuth() { return request.auth != null; }
+    function isBuyer() {
+      return isAuth() &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'buyer';
+    }
+    match /profiles/{uid} {
+      allow read: if isAuth();
+      allow write: if request.auth.uid == uid;
+    }
+    match /deals/{dealId} {
+      allow read: if isAuth();
+      allow write: if isBuyer();
+    }
+    match /quotes/{quoteId} {
+      allow read: if isAuth() &&
+        (resource.data.trader_id == request.auth.uid || isBuyer());
+      allow write: if isAuth() &&
+        request.resource.data.trader_id == request.auth.uid;
+    }
+  }
+}`;
+
+function showSetupGuide(){
+  const bg = mkModal('Firebase 설정 가이드',
+    `<p>처음 한 번만 설정하면 됩니다. 약 15분 소요.</p>
+     <ol class="setup-steps">
+       <li><strong>Firebase 프로젝트 생성</strong><br>
+         <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> →
+         프로젝트 추가 → 이름 입력 → 생성</li>
+       <li><strong>웹 앱 등록 및 설정 JSON 복사</strong><br>
+         프로젝트 홈 → 웹 아이콘 <code class="inline">&lt;/&gt;</code> → 앱 이름 입력 → 등록<br>
+         <em>SDK 설정 및 구성</em>에서 <strong>구성(Config)</strong> 선택 →
+         <code class="inline">firebaseConfig = { … }</code> 전체 복사 → 이 앱 설정 화면에 붙여넣기</li>
+       <li><strong>Firestore 데이터베이스 생성</strong><br>
+         좌측 메뉴 → Firestore Database → 데이터베이스 만들기 →
+         <strong>프로덕션 모드</strong> → 리전: <code class="inline">asia-northeast3</code> (서울)</li>
+       <li><strong>Firestore 보안 규칙 설정</strong><br>
+         Firestore → 규칙 탭 → 아래 규칙 전체 교체 → 게시
+         <pre class="code-block" id="guide-rules"></pre>
+         <button class="btn ghost tiny" onclick="navigator.clipboard.writeText(document.getElementById('guide-rules').textContent);toast('규칙 복사됨')">복사</button>
+       </li>
+       <li><strong>이메일/비밀번호 인증 활성화</strong><br>
+         Authentication → Sign-in method → 이메일/비밀번호 → 사용 설정</li>
+       <li><strong>계정 생성</strong><br>
+         Authentication → Users → 사용자 추가 → 이메일·비밀번호 입력 → 추가<br>
+         추가된 사용자의 <strong>UID</strong>를 복사해두세요 (바이어 1개 + 트레이더 N개)</li>
+       <li><strong>Firestore에 프로필 문서 생성</strong><br>
+         Firestore → 데이터 → <code class="inline">profiles</code> 컬렉션 시작<br>
+         문서 ID = 복사한 UID, 필드:<br><br>
+         <strong>바이어:</strong> <code class="inline">role: "buyer"</code>
+           <code class="inline">name: "홍길동"</code><br>
+         <strong>트레이더:</strong> <code class="inline">role: "trader"</code>
+           <code class="inline">company: "ASIA OIL"</code>
+           <code class="inline">name: "ASIA OIL"</code>
+       </li>
+     </ol>`,
+    `<button class="btn primary" id="guide-close">확인</button>`,
+    true);
+  document.getElementById('guide-rules').textContent = FIRESTORE_RULES;
+  document.getElementById('guide-close').addEventListener('click',()=>bg.remove());
+}
+
+// ════════════════════════════════════════════════════════
+// MODAL HELPER
+// ════════════════════════════════════════════════════════
+function mkModal(title, body, footer, wide=false){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal${wide?' wide':''}">
+    <h3>${title}</h3>${body}
+    <div class="modal-foot">${footer}</div>
+  </div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+  return bg;
+}
+
+initApp();
+</script>
+</body>
+</html>
