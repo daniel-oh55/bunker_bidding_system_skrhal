@@ -180,6 +180,13 @@ pre.code-block{background:var(--paper-2);border:1px solid var(--rule);padding:12
 code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);font-size:11px;
   border:1px solid var(--rule)}
 
+/* ── EMAIL DROPZONE ── */
+.nd-dz{border:1.5px dashed var(--rule-2);padding:18px 12px;text-align:center;cursor:pointer;
+  margin-bottom:16px;transition:border-color .15s,background .15s;color:var(--ink-3);font-size:12px;letter-spacing:.03em}
+.nd-dz:hover,.nd-dz.drag{border-color:var(--navy);background:var(--green-soft);color:var(--ink)}
+.nd-dz .dz-ok{color:var(--green);font-weight:500;font-size:13px}
+.nd-dz .dz-fail{color:var(--red);font-size:12px}
+
 /* ── TOAST ── */
 .toast-el{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
   background:var(--ink);color:var(--paper);padding:10px 20px;
@@ -619,11 +626,106 @@ async function handleCardAction(e){
 }
 
 // ════════════════════════════════════════════════════════
-// BUYER — NEW DEAL MODAL
+// MSG PARSER (Outlook .msg CFB format)
+// ════════════════════════════════════════════════════════
+function parseMsgBuffer(arrayBuffer){
+  const u8=new Uint8Array(arrayBuffer);
+  const view=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  const sig=[0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1];
+  for(let i=0;i<8;i++) if(u8[i]!==sig[i]) throw new Error('Outlook .msg 파일이 아닙니다');
+  const sectorSize=1<<view.getUint16(0x1E,true);
+  const miniSectorSize=1<<view.getUint16(0x20,true);
+  const firstDirSector=view.getUint32(0x30,true);
+  const miniCutoff=view.getUint32(0x38,true);
+  const firstMiniFatSector=view.getUint32(0x3C,true);
+  const difat=[];
+  for(let i=0;i<109;i++){const s=view.getUint32(0x4C+i*4,true);if(s>=0xFFFFFFFC)break;difat.push(s);}
+  let cur=view.getUint32(0x44,true),safety=0;
+  while(cur<0xFFFFFFFC&&safety<10000){
+    safety++;const off=(cur+1)*sectorSize,perSec=(sectorSize/4)-1;
+    for(let i=0;i<perSec;i++){const s=view.getUint32(off+i*4,true);if(s<0xFFFFFFFC)difat.push(s);}
+    cur=view.getUint32(off+sectorSize-4,true);
+  }
+  const fat=[];
+  for(const sec of difat){const off=(sec+1)*sectorSize;for(let i=0;i<sectorSize/4;i++)fat.push(view.getUint32(off+i*4,true));}
+  const miniFat=[];
+  cur=firstMiniFatSector;safety=0;
+  while(cur<0xFFFFFFFC&&safety<10000){
+    safety++;const off=(cur+1)*sectorSize;
+    for(let i=0;i<sectorSize/4;i++)miniFat.push(view.getUint32(off+i*4,true));
+    cur=fat[cur];
+  }
+  function readChain(s){
+    const parts=[];let c=0;
+    while(s<0xFFFFFFFC&&c<200000){const st=(s+1)*sectorSize;parts.push(u8.subarray(st,st+sectorSize));s=fat[s];c++;}
+    const tot=parts.reduce((a,p)=>a+p.length,0),out=new Uint8Array(tot);let o=0;
+    for(const p of parts){out.set(p,o);o+=p.length;}return out;
+  }
+  function readMini(s,ms){
+    const parts=[];let c=0;
+    while(s<0xFFFFFFFC&&c<2000000){const st=s*miniSectorSize;parts.push(ms.subarray(st,st+miniSectorSize));s=miniFat[s];c++;}
+    const tot=parts.reduce((a,p)=>a+p.length,0),out=new Uint8Array(tot);let o=0;
+    for(const p of parts){out.set(p,o);o+=p.length;}return out;
+  }
+  const dirBuf=readChain(firstDirSector);
+  const dv2=new DataView(dirBuf.buffer,dirBuf.byteOffset,dirBuf.byteLength);
+  const entries=[];
+  for(let i=0;i<Math.floor(dirBuf.length/128);i++){
+    const b=i*128;const nl=dv2.getUint16(b+64,true);let name='';
+    for(let j=0;j<Math.max(0,nl-2);j+=2){const c=dv2.getUint16(b+j,true);if(c===0)break;name+=String.fromCharCode(c);}
+    entries.push({name,type:dirBuf[b+66],startSector:dv2.getUint32(b+116,true),size:dv2.getUint32(b+120,true)});
+  }
+  const miniStream=readChain(entries[0].startSector);
+  function read(name){
+    const e=entries.find(en=>en.name===name);if(!e)return null;
+    const data=e.size<miniCutoff?readMini(e.startSector,miniStream):readChain(e.startSector);
+    return data.subarray(0,e.size);
+  }
+  let body='';
+  const bU=read('__substg1.0_1000001F');
+  if(bU) body=new TextDecoder('utf-16le').decode(bU);
+  else{const bA=read('__substg1.0_1000001E');if(bA) body=new TextDecoder('utf-8').decode(bA);}
+  return {body};
+}
+
+// ════════════════════════════════════════════════════════
+// EMAIL BODY PARSER — extracts VSL / PORT / ETA / fuel qtys
+// ════════════════════════════════════════════════════════
+const FUEL_FO_OPTIONS = ['VLSFO','HSFO','ULSFO','LSFO'];
+function extractBidInfo(body){
+  const out={vsl:'',port:'',eta:'',fuels:[]};
+  const vsl=body.match(/-?\s*VSL\s*[:/：]\s*([^\r\n]+)/i);
+  if(vsl) out.vsl=vsl[1].trim();
+  const portLine=body.match(/-?\s*PORT(?:\s*\/\s*TERMINAL)?\s*[:/：]\s*([^\r\n]+)/i);
+  if(portLine){let p=portLine[1].trim();const sl=p.indexOf(' / ');if(sl>0)p=p.slice(0,sl).trim();out.port=p;}
+  const eta=body.match(/-?\s*ETA\s*[:/：]\s*([^\r\n]+)/i);
+  if(eta) out.eta=eta[1].trim();
+  for(const line of body.split(/[\r\n]+/)){
+    if(!/\d+\s*MT/i.test(line)) continue;
+    let fuel=null;
+    if(/\bVLSFO\b/i.test(line)) fuel='VLSFO';
+    else if(/\bULSFO\b/i.test(line)) fuel='ULSFO';
+    else if(/\bHSHFO\b|\bHSFO\b|\bHFO\b/i.test(line)) fuel='HSFO';
+    else if(/\bLSFO\b/i.test(line)) fuel='LSFO';
+    else if(/\bLSMGO\b|\bMGO\b|\bMDO\b/i.test(line)) fuel='MGO';
+    if(!fuel) continue;
+    const num=line.match(/(\d+(?:[.,]\d+)?)\s*MT/i);
+    if(!num) continue;
+    const qty=parseFloat(num[1].replace(/,/g,''));
+    if(!isNaN(qty)&&qty>0) out.fuels.push({fuel,qty});
+  }
+  return out;
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — NEW DEAL MODAL (with email import)
 // ════════════════════════════════════════════════════════
 function showNewDealModal(){
   const bg = mkModal('새 입찰 등록',
-    `<p>주문 정보를 입력하세요. 등록 즉시 모든 트레이더에게 표시됩니다.</p>
+    `<div class="nd-dz" id="nd-dz">
+       <div id="nd-dz-label">📧 발주 메일(.msg / .eml) 드래그 또는 클릭하여 자동 입력</div>
+       <input type="file" id="nd-dz-input" accept=".msg,.eml" style="display:none">
+     </div>
      <div class="field"><label>VSL / VOY</label><input id="nd-vsl" type="text" placeholder="MELBOURNE BRIDGE 2602E"></div>
      <div class="field"><label>PORT / DATE</label><input id="nd-port" type="text" placeholder="PORT KLANG / 02~06 Jun 2026"></div>
      <div class="grid3">
@@ -634,6 +736,49 @@ function showNewDealModal(){
        <div class="field"><label>MGO QTY (MT)</label><input id="nd-mgoqty" type="text" inputmode="numeric" placeholder="0"></div>
      </div>`,
     `<button class="btn ghost" id="nd-cancel">취소</button><button class="btn primary" id="nd-ok">등록</button>`);
+
+  // ── 드롭존 ──
+  const dz = bg.querySelector('#nd-dz');
+  const dzInput = bg.querySelector('#nd-dz-input');
+  const lblEl = bg.querySelector('#nd-dz-label');
+
+  dz.addEventListener('click', ()=>dzInput.click());
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
+  dz.addEventListener('drop', async e=>{ const f=e.dataTransfer?.files?.[0]; if(f) await parseAndFill(f); });
+  dzInput.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(f) await parseAndFill(f); dzInput.value=''; });
+
+  async function parseAndFill(file){
+    lblEl.textContent = '분석 중…';
+    try{
+      let body='';
+      if(file.name.toLowerCase().endsWith('.eml')){
+        const raw=await file.text();
+        const blank=raw.search(/\r?\n\r?\n/);
+        body=blank>=0?raw.slice(blank).trim():raw;
+      } else {
+        const buf=await file.arrayBuffer();
+        body=parseMsgBuffer(buf).body;
+      }
+      if(!body) throw new Error('본문을 읽을 수 없습니다');
+      const info=extractBidInfo(body);
+      if(info.vsl) bg.querySelector('#nd-vsl').value=info.vsl;
+      const portDate=[info.port,info.eta].filter(Boolean).join(' / ');
+      if(portDate) bg.querySelector('#nd-port').value=portDate;
+      for(const f of info.fuels){
+        if(f.fuel==='MGO'){
+          bg.querySelector('#nd-mgoqty').value=f.qty;
+        } else {
+          if(FUEL_FO_OPTIONS.includes(f.fuel)) bg.querySelector('#nd-fotype').value=f.fuel;
+          bg.querySelector('#nd-foqty').value=f.qty;
+        }
+      }
+      lblEl.innerHTML=`<span class="dz-ok">✓ ${esc(file.name)} 파싱 완료 — 아래 내용을 확인 후 등록하세요</span>`;
+      toast('이메일 정보를 불러왔습니다');
+    } catch(err){
+      lblEl.innerHTML=`<span class="dz-fail">⚠ ${esc(err.message)}</span>`;
+    }
+  }
 
   bg.querySelector('#nd-cancel').addEventListener('click',()=>bg.remove());
   bg.querySelector('#nd-ok').addEventListener('click', async ()=>{
@@ -657,7 +802,7 @@ function showNewDealModal(){
       btn.disabled=false; btn.textContent='등록';
     }
   });
-  bg.querySelectorAll('input').forEach(inp=>{
+  bg.querySelectorAll('input[type=text]').forEach(inp=>{
     inp.addEventListener('keydown',e=>{ if(e.key==='Enter') bg.querySelector('#nd-ok').click(); });
   });
   bg.querySelector('#nd-vsl').focus();
