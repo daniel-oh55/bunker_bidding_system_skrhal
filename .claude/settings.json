@@ -6,7 +6,8 @@
       "Bash(git commit -m ' *)",
       "Bash(git commit -m 'Fix: parse Firebase JS object literal config format *)",
       "Bash(git push *)",
-      "Bash(git commit -m 'feat: email import \\(.msg/.eml\\) in new deal modal *)"
+      "Bash(git commit -m 'feat: email import \\(.msg/.eml\\) in new deal modal *)",
+      "Bash(git commit -m 'feat: signup/approval, forgot/change password, trader edit *)"
     ]
   }
 }
