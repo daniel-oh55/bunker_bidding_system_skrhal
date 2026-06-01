@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m 'feat: highlight own deals with navy border for multi-buyer *)"
+    ]
+  }
+}
