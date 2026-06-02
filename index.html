@@ -264,6 +264,7 @@ code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);fo
       <button class="btn ghost tiny" id="user-mgmt-btn">사용자 관리</button>
       <button class="btn ghost tiny" id="buyer-chpw-btn">비밀번호 변경</button>
       <button class="btn ghost tiny" id="buyer-logout-btn">로그아웃</button>
+      <button class="btn ghost tiny" id="btn-refresh">↺</button>
       <button class="btn primary" id="btn-new-deal">+ 새 입찰</button>
     </div>
   </header>
@@ -471,6 +472,7 @@ async function initBuyer(){
   document.getElementById('buyer-logout-btn').addEventListener('click', doLogout);
   document.getElementById('user-mgmt-btn').addEventListener('click', showUserManagementModal);
   document.getElementById('buyer-chpw-btn').addEventListener('click', showChangePasswordModal);
+  document.getElementById('btn-refresh').addEventListener('click', ()=>{ subscribeBuyer(); toast('새로고침 완료'); });
   document.getElementById('btn-new-deal').addEventListener('click', showNewDealModal);
 
   _selectedDate = new Date(); _selectedDate.setHours(0,0,0,0);
