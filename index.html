@@ -169,19 +169,6 @@ td.cell-off{background:var(--paper-3) !important;color:var(--ink-3)}
 .modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 
-/* ── SETUP GUIDE ── */
-.setup-steps{list-style:none;counter-reset:step}
-.setup-steps>li{counter-increment:step;padding-left:34px;position:relative;
-  margin-bottom:20px;line-height:1.8;font-size:13px;color:var(--ink-2)}
-.setup-steps>li::before{content:counter(step);position:absolute;left:0;top:1px;
-  width:22px;height:22px;border-radius:50%;background:var(--navy);color:var(--paper);
-  font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center}
-pre.code-block{background:var(--paper-2);border:1px solid var(--rule);padding:12px;
-  font-family:var(--mono);font-size:10.5px;line-height:1.7;overflow:auto;
-  max-height:260px;white-space:pre;margin:8px 0}
-code.inline{background:var(--paper-2);padding:1px 6px;font-family:var(--mono);font-size:11px;
-  border:1px solid var(--rule)}
-
 /* ── DATE NAV ── */
 .date-nav{display:flex;align-items:center;gap:8px;padding:7px 20px;
   border-bottom:1px solid var(--rule);background:var(--paper)}
@@ -555,14 +542,20 @@ function subscribeBuyerQuotes(dealIds){
   const ids = dealIds.slice(0, 30);
   _unsubQuotes = db.collection('quotes').where('deal_id','in', ids)
     .onSnapshot(snap=>{
+      const affected = new Set();
       snap.docChanges().forEach(chg=>{
         const q={id:chg.doc.id,...chg.doc.data()};
         if(!quotesMap[q.deal_id]) quotesMap[q.deal_id]={};
         if(chg.type==='removed') delete quotesMap[q.deal_id][q.trader_id];
         else quotesMap[q.deal_id][q.trader_id]=q;
+        affected.add(q.deal_id);
       });
       pulseDot('rt-dot-buyer');
-      renderBuyer();
+      // 변경된 딜의 카드가 하나라도 아직 없으면 전체 렌더로 폴백, 아니면 카드 단위 갱신
+      let needFull = false;
+      affected.forEach(id=>{ if(!document.querySelector(`.deal-card[data-id="${id}"]`)) needFull = true; });
+      if(needFull) renderBuyer();
+      else affected.forEach(id=>rerenderCard(id));
     }, ()=>{});
 }
 
@@ -579,27 +572,28 @@ function stopBuyerTimers(){
   Object.values(_buyerTimerMap).forEach(id=>clearInterval(id));
   Object.keys(_buyerTimerMap).forEach(k=>delete _buyerTimerMap[k]);
 }
-function startBuyerTimers(){
-  deals.forEach(deal=>{
-    const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
-      || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
-    if(!deadlineMs||deal.status_closed) return;
-    const el = document.querySelector(`.buyer-countdown[data-deal-id="${deal.id}"]`);
-    if(!el) return;
-    function tick(){
-      const rem = deadlineMs-Date.now();
-      if(rem<=0){
-        el.textContent='시간초과'; el.style.color='var(--red)';
-        clearInterval(_buyerTimerMap[deal.id]); delete _buyerTimerMap[deal.id];
-        return;
-      }
-      const m=Math.floor(rem/60000), s=Math.floor((rem%60000)/1000);
-      el.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-      el.style.color=rem<300000?'var(--red)':'var(--gold)';
+function startBuyerTimerFor(deal){
+  const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  if(!deadlineMs||deal.status_closed) return;
+  const el = document.querySelector(`.buyer-countdown[data-deal-id="${deal.id}"]`);
+  if(!el) return;
+  function tick(){
+    const rem = deadlineMs-Date.now();
+    if(rem<=0){
+      el.textContent='시간초과'; el.style.color='var(--red)';
+      clearInterval(_buyerTimerMap[deal.id]); delete _buyerTimerMap[deal.id];
+      return;
     }
-    tick();
-    _buyerTimerMap[deal.id]=setInterval(tick,1000);
-  });
+    const m=Math.floor(rem/60000), s=Math.floor((rem%60000)/1000);
+    el.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    el.style.color=rem<300000?'var(--red)':'var(--gold)';
+  }
+  tick();
+  _buyerTimerMap[deal.id]=setInterval(tick,1000);
+}
+function startBuyerTimers(){
+  deals.forEach(startBuyerTimerFor);
 }
 
 // ════════════════════════════════════════════════════════
@@ -626,11 +620,15 @@ function rerenderCard(dealId){
   if(!old) return;
   const deal = deals.find(d=>d.id===dealId);
   if(!deal) return;
+  // 카드 DOM 교체 전에 이 딜의 기존 타이머 정지 (옛 요소 붙잡는 것 방지)
+  if(_buyerTimerMap[dealId]){ clearInterval(_buyerTimerMap[dealId]); delete _buyerTimerMap[dealId]; }
   const tmp = document.createElement('div');
   tmp.innerHTML = buildDealCard(deal);
   const nw = tmp.firstElementChild;
   old.replaceWith(nw);
   wireCardEvents(nw);
+  // 새 카드의 카운트다운 요소에 타이머 재부착
+  startBuyerTimerFor(deal);
 }
 
 function wireCardEvents(root){
