@@ -41,6 +41,8 @@ a{color:var(--navy)}
 .btn.primary{background:var(--navy);color:#fff;border-color:var(--navy)}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn.ghost{color:var(--ink-2)}.btn.ghost:hover{background:var(--ink-2);color:var(--paper)}
+.btn.ghost.submit-btn{color:var(--navy);border-color:var(--navy)}
+.btn.ghost.submit-btn:hover{background:var(--navy);color:#fff}
 .btn.danger{color:var(--red)}.btn.danger:hover{background:var(--red);color:var(--paper);border-color:var(--red)}
 .btn.tiny{font-size:11px;padding:4px 9px}
 .btn.full{width:100%;padding:11px;font-size:13px;margin-top:6px}
@@ -176,7 +178,8 @@ td.cell-off{background:var(--paper-3) !important;color:var(--ink-3)}
   padding:9px 11px;font-family:var(--mono);font-size:15px;color:var(--ink);outline:none;text-align:right;transition:border-color .12s}
 .pg-group input:focus{border-color:var(--navy)}
 .pg-group input.off{background:var(--paper-3);color:var(--ink-3);pointer-events:none;border-color:var(--rule)}
-.pg-total{font-family:var(--mono);font-size:16px;font-weight:500;padding:6px 0;text-align:right;min-width:100px}
+.pg-total{font-family:var(--mono);font-size:16px;font-weight:600;padding:6px 0;text-align:right;min-width:100px;color:var(--navy)}
+.pg-total-group{background:var(--selected);border-radius:10px;padding:4px 10px}
 .submit-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:14px}
 .saved-at{font-size:11px;color:var(--ink-3);letter-spacing:.03em}
 .closed-banner{text-align:center;padding:9px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
@@ -1205,7 +1208,7 @@ function buildTraderCard(deal, saved={}){
             data-deal-id="${deal.id}" data-field="barge"
             value="${esc(String(barVal))}" placeholder="0" ${closed?'disabled':''}>
         </div>
-        <div class="pg-group">
+        <div class="pg-group pg-total-group">
           <label>TOTAL</label>
           <div class="pg-total" data-total-id="${deal.id}">${totalStr}</div>
         </div>
