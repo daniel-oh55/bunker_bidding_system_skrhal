@@ -11,17 +11,26 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
 <style>
 :root{
-  --paper:#F4F1EA;--paper-2:#EDE9DF;--paper-3:#E5E1D6;
-  --ink:#1A1916;--ink-2:#4A4840;--ink-3:#8A8678;
-  --navy:#1C2B4A;--gold:#B8860B;--green:#2E7D4F;--red:#C0392B;
-  --rule:#D8D4C8;--rule-2:#C8C4B8;
-  --green-soft:#E8F2EC;--selected:#FFF8E7;--gold-soft:#FEF9EC;
-  --sans:"IBM Plex Sans KR",sans-serif;
-  --mono:"IBM Plex Mono",monospace;
+  --bg:#F2F2F7;
+  --paper:#FFFFFF;--paper-2:#EFEFF4;--paper-3:#E3E3E8;
+  --ink:#1C1C1E;--ink-2:#48484A;--ink-3:#8E8E93;
+  --navy:#1F5FAE;--gold:#9A6B00;--green:#248A3D;--red:#D70015;
+  --rule:#E5E5EA;--rule-2:#D1D1D6;
+  --green-soft:#E3F7E8;--selected:#EAF1FB;--gold-soft:#FFF3DE;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --serif:"IBM Plex Serif",serif;
 }
+:root[data-theme="dark"]{
+  --bg:#000000;
+  --paper:#1C1C1E;--paper-2:#2C2C2E;--paper-3:#3A3A3C;
+  --ink:#FFFFFF;--ink-2:#D1D1D6;--ink-3:#8E8E93;
+  --navy:#4C9AF0;--gold:#FFB340;--green:#30D158;--red:#FF453A;
+  --rule:#38383A;--rule-2:#48484A;
+  --green-soft:#0F3A1E;--selected:#10233B;--gold-soft:#3A2A08;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;min-height:100vh}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;min-height:100vh}
 a{color:var(--navy)}
 .screen{display:none}.screen.active{display:block}
 
@@ -251,6 +260,7 @@ td.cell-off{background:var(--paper-3) !important;color:var(--ink-3)}
       <button class="btn ghost tiny" id="user-mgmt-btn">사용자 관리</button>
       <button class="btn ghost tiny" id="buyer-chpw-btn">비밀번호 변경</button>
       <button class="btn ghost tiny" id="buyer-logout-btn">로그아웃</button>
+      <button class="btn ghost tiny theme-btn" id="buyer-theme-btn" aria-label="다크 모드 전환">☾</button>
       <button class="btn ghost tiny" id="btn-refresh">↺</button>
       <button class="btn primary" id="btn-new-deal">+ 새 입찰</button>
     </div>
@@ -287,6 +297,7 @@ td.cell-off{background:var(--paper-3) !important;color:var(--ink-3)}
       <div class="avatar" id="trader-avatar"></div>
       <button class="btn ghost tiny" id="trader-chpw-btn">비밀번호 변경</button>
       <button class="btn ghost tiny" id="trader-logout-btn">로그아웃</button>
+      <button class="btn ghost tiny theme-btn" id="trader-theme-btn" aria-label="다크 모드 전환">☾</button>
     </div>
   </header>
   <div class="main">
@@ -319,6 +330,23 @@ function showScreen(name){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   const el = document.getElementById('screen-'+name);
   if(el) el.classList.add('active');
+}
+function setupTheme(){
+  const KEY='skrhal_theme';
+  function apply(t){
+    document.documentElement.setAttribute('data-theme', t);
+    try{ localStorage.setItem(KEY, t); }catch(e){}
+    document.querySelectorAll('.theme-btn').forEach(b=>{ b.textContent = t==='dark' ? '☀' : '☾'; });
+  }
+  let saved='light';
+  try{ saved = localStorage.getItem(KEY) || 'light'; }catch(e){}
+  apply(saved);
+  document.querySelectorAll('.theme-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const cur = document.documentElement.getAttribute('data-theme')==='dark' ? 'dark' : 'light';
+      apply(cur==='dark' ? 'light' : 'dark');
+    });
+  });
 }
 function pulseDot(id){
   const el = document.getElementById(id);
@@ -363,6 +391,7 @@ async function initApp(){
   }
   showScreen('login');
   bindLogin();
+  setupTheme();
   auth.onAuthStateChanged(async user=>{
     if(_signingUp) return;
     if(user) await routeUser(user);
