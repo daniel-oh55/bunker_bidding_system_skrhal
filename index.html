@@ -68,7 +68,9 @@ a{color:var(--navy)}
 /* ── SITE HEADER ── */
 .site-header{border-bottom:.5px solid var(--rule);padding:0 24px;
   display:flex;align-items:center;gap:12px;height:52px;
-  position:sticky;top:0;background:var(--paper);z-index:100}
+  position:sticky;top:0;background:rgba(255,255,255,.72);
+  backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);z-index:100}
+:root[data-theme="dark"] .site-header{background:rgba(28,28,30,.72)}
 .brand-hd{font-family:var(--sans);font-style:normal;font-weight:600;font-size:17px;
   color:var(--navy);letter-spacing:-.02em;flex:1}
 .brand-hd span{font-family:var(--sans);font-size:10px;font-style:normal;color:var(--ink-3);
