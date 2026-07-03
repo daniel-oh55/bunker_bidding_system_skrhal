@@ -771,8 +771,13 @@ function showDeadlineModal(dealId){
   });
   bg.querySelector('#dl-ok').addEventListener('click', async ()=>{
     const val = bg.querySelector('#dl-time').value;
-    const ts = timeToTimestamp(val);
+    const ts = timeToTimestamp(val, true);
     if(!ts){ bg.querySelector('#dl-time').style.borderBottomColor='var(--red)'; return; }
+    if(ts === 'PAST'){
+      bg.querySelector('#dl-time').style.borderBottomColor='var(--red)';
+      toast('마감 시각이 이미 지났습니다. 현재 이후 시각으로 입력하세요.');
+      return;
+    }
     const btn=bg.querySelector('#dl-ok');
     btn.disabled=true; btn.textContent='설정 중…';
     try{
@@ -851,12 +856,13 @@ function parseMsgBuffer(arrayBuffer){
 // ════════════════════════════════════════════════════════
 const FUEL_FO_OPTIONS = ['VLSFO','HSFO','ULSFO','LSFO'];
 
-function timeToTimestamp(val){
+function timeToTimestamp(val, rejectPast=false){
   if(!val) return null;
   const [h,m] = val.split(':').map(Number);
   if(isNaN(h)||isNaN(m)) return null;
   const d = new Date();
   d.setHours(h, m, 0, 0);
+  if(rejectPast && d.getTime() <= Date.now()) return 'PAST';
   return firebase.firestore.Timestamp.fromDate(d);
 }
 function extractBidInfo(body){
@@ -956,7 +962,12 @@ function showNewDealModal(){
     const fo_qty     = parseFloat(bg.querySelector('#nd-foqty').value)||0;
     const mgo_qty    = parseFloat(bg.querySelector('#nd-mgoqty').value)||0;
     const deadlineVal = bg.querySelector('#nd-deadline').value;
-    const deadline_at = timeToTimestamp(deadlineVal);
+    const deadline_at = timeToTimestamp(deadlineVal, true);
+    if(deadline_at === 'PAST'){
+      toast('마감 시각이 이미 지났습니다. 현재 이후 시각으로 입력하세요.');
+      bg.querySelector('#nd-deadline').style.borderBottomColor = 'var(--red)';
+      return;
+    }
     const btn = bg.querySelector('#nd-ok');
     btn.disabled=true; btn.textContent='등록 중…';
     try{
