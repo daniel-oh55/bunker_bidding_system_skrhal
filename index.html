@@ -132,6 +132,24 @@ table.qt tr.is-winner{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(-
 td.cell-off{background:var(--paper-3) !important;color:var(--ink-3)}
 .star{color:var(--gold);margin-left:5px;font-size:11px}
 
+/* ── QUOTE LIST (iOS) ── */
+.q-list{padding:2px 0}
+.q-row{display:flex;align-items:center;gap:11px;padding:10px 16px;border-bottom:.5px solid var(--rule)}
+.q-row:last-child{border-bottom:none}
+.q-row.best{background:var(--green-soft)}
+.q-row.win{background:var(--gold-soft)}
+.q-rank{width:24px;height:24px;border-radius:50%;background:var(--paper-2);color:var(--ink-3);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--mono)}
+.q-rank.top{background:var(--navy);color:#fff}
+.q-row.win .q-rank{background:var(--gold);color:#fff}
+.q-main{flex:1;min-width:0}
+.q-co{font-size:14px;font-weight:500;color:var(--ink)}
+.q-co .star{color:var(--gold);margin-left:5px;font-size:11px}
+.q-sub{font-size:11px;color:var(--ink-3);margin-top:1px;font-family:var(--mono)}
+.q-total{font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap;font-family:var(--mono)}
+.q-total.empty{color:var(--ink-3);font-weight:400}
+.q-row.best .q-total{color:var(--green)}
+.q-award{flex-shrink:0}
+
 .dc-foot{padding:9px 16px;display:flex;align-items:center;gap:10px;
   border-top:1px solid var(--rule);background:var(--paper-2)}
 .dc-foot .fi{flex:1;font-size:11px;color:var(--ink-3)}
@@ -699,18 +717,22 @@ function buildDealCard(deal){
   const trows = ranked.map(r=>{
     const isW = r.t.id===deal.winner_id;
     const isB = r.rank===1 && !deal.winner_id && !closed;
-    const foTd  = noFo  ? `<td class="cell-off">—</td>` : `<td>${r.q?fmt(r.q.fo_price):'<span class="empty">—</span>'}</td>`;
-    const mgoTd = noMgo ? `<td class="cell-off">—</td>` : `<td>${r.q?fmt(r.q.mgo_price):'<span class="empty">—</span>'}</td>`;
+    const parts=[];
+    if(!noFo)  parts.push(`FO ${r.q?fmt(r.q.fo_price):'—'}`);
+    if(!noMgo) parts.push(`MGO ${r.q?fmt(r.q.mgo_price):'—'}`);
+    parts.push(`바지 ${r.q?fmt(r.q.barge):'—'}`);
+    const sub = r.q ? parts.join(' · ') : '미응찰';
     const awardBtn = !closed&&r.valid
-      ? `<button class="btn tiny ghost" data-act="${isW?'unset-winner':'set-winner'}" data-deal-id="${deal.id}" data-trader-id="${r.t.id}">${isW?'해제':'선정'}</button>`:'';
-    return `<tr class="${isW?'is-winner':isB?'is-best':''}">
-      <td class="${r.rank===1?'rank1':''}">${r.rank||'·'}</td>
-      <td>${esc(r.t.company||r.t.name)}${isW?`<span class="star">★</span>`:''}</td>
-      ${foTd}${mgoTd}
-      <td>${r.q?fmt(r.q.barge):'<span class="empty">—</span>'}</td>
-      <td class="ttl ${r.valid?'':'empty'}">${r.valid?fmt(r.total):'—'}</td>
-      <td style="text-align:right;padding-right:8px">${awardBtn}</td>
-    </tr>`;
+      ? `<button class="btn tiny ghost q-award" data-act="${isW?'unset-winner':'set-winner'}" data-deal-id="${deal.id}" data-trader-id="${r.t.id}">${isW?'해제':'선정'}</button>`:'';
+    return `<div class="q-row ${isW?'win':isB?'best':''}">
+      <div class="q-rank ${r.rank===1?'top':''}">${r.rank||'·'}</div>
+      <div class="q-main">
+        <div class="q-co">${esc(r.t.company||r.t.name)}${isW?`<span class="star">★</span>`:''}</div>
+        <div class="q-sub">${sub}</div>
+      </div>
+      <div class="q-total ${r.valid?'':'empty'}">${r.valid?fmt(r.total):'—'}</div>
+      ${awardBtn}
+    </div>`;
   }).join('');
 
   const bestTxt = best&&best.valid
@@ -744,15 +766,7 @@ function buildDealCard(deal){
         <button class="btn tiny danger" data-act="delete" data-deal-id="${deal.id}">삭제</button>
       </div>
     </div>
-    <table class="qt">
-      <thead><tr>
-        <th>#</th><th>COMPANY</th>
-        <th style="${noFo?'color:var(--rule-2)':''}">FO</th>
-        <th style="${noMgo?'color:var(--rule-2)':''}">MGO</th>
-        <th>BARGE</th><th>TOTAL</th><th></th>
-      </tr></thead>
-      <tbody>${trows}</tbody>
-    </table>
+    <div class="q-list">${trows}</div>
     <div class="dc-foot">
       <span class="fi">${bestTxt}</span>
       ${winner?`<span class="winner-tag">★ ${esc(winner.company||winner.name)} 낙찰</span>`:''}
