@@ -7,8 +7,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#F2F2F7;
@@ -19,7 +17,6 @@
   --green-soft:#E3F7E8;--selected:#EAF1FB;--gold-soft:#FFF3DE;
   --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
-  --serif:"IBM Plex Serif",serif;
 }
 :root[data-theme="dark"]{
   --bg:#000000;
@@ -118,23 +115,6 @@ a{color:var(--navy)}
 .badge{font-size:10px;letter-spacing:.02em;text-transform:uppercase;padding:3px 10px;border:.5px solid;border-radius:20px;flex-shrink:0}
 .badge.open{color:var(--green);border-color:var(--green);background:var(--green-soft)}
 .badge.closed{color:var(--ink-3);border-color:var(--rule-2);background:var(--paper-2)}
-
-/* ── QUOTE TABLE ── */
-table.qt{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
-table.qt th{background:var(--paper-2);padding:6px 10px;font-size:9px;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--ink-3);font-family:var(--sans);font-weight:500;
-  text-align:right;border-bottom:1px solid var(--rule)}
-table.qt th:first-child,table.qt th:nth-child(2){text-align:left}
-table.qt td{padding:7px 10px;border-bottom:1px solid var(--rule);text-align:right;color:var(--ink-2)}
-table.qt td:first-child{text-align:center;width:30px;font-size:11px;color:var(--ink-3)}
-table.qt td:nth-child(2){text-align:left;font-weight:500;color:var(--ink);white-space:nowrap}
-table.qt td.empty{color:var(--ink-3)}
-table.qt td.ttl{font-weight:500}
-table.qt tr.is-best{background:var(--green-soft)}
-table.qt tr.is-winner{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(--gold)}
-.rank1{font-weight:700;color:var(--navy)}
-td.cell-off{background:var(--paper-3) !important;color:var(--ink-3)}
-.star{color:var(--gold);margin-left:5px;font-size:11px}
 
 /* ── QUOTE LIST (iOS) ── */
 .q-list{padding:2px 0}
