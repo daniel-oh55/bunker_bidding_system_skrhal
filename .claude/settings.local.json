@@ -5,7 +5,8 @@
       "Bash(git commit -m 'feat: deadline input as HH:MM \\(24h time picker\\) *)",
       "Bash(git commit -m 'fix: tab/enter move 1 cell, add up/down arrow navigation *)",
       "Bash(git commit -m 'feat: refresh button in buyer header *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(node -e ' *)"
     ]
   }
 }
