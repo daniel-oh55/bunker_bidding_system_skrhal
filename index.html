@@ -357,6 +357,7 @@ const FIREBASE_CONFIG = {
 let db = null, auth = null, me = null;
 let traders = [], deals = [], quotesMap = {}, traderDeals = [], myQuotes = {};
 let _unsubDeals = null, _unsubQuotes = null;
+let _quoteSubIds = '';   // 현재 quotes 구독이 걸린 deal_id 시그니처
 let _signingUp = false;
 let _selectedDate = null;
 let _buyerTimerMap = {};
@@ -519,7 +520,7 @@ async function loadTraders(){
 function subscribeBuyer(){
   if(_unsubDeals){ _unsubDeals(); _unsubDeals=null; }
   if(_unsubQuotes){ _unsubQuotes(); _unsubQuotes=null; }
-  deals=[]; quotesMap={}; stopBuyerTimers();
+  deals=[]; quotesMap={}; _quoteSubIds=''; stopBuyerTimers();
   renderBuyer(); updateStats();
 
   const dot = document.getElementById('rt-dot-buyer');
@@ -537,21 +538,32 @@ function subscribeBuyer(){
         else if(chg.type==='removed') deals=deals.filter(x=>x.id!==d.id);
       });
       deals.sort((a,b)=>(b.created_at?.seconds??0)-(a.created_at?.seconds??0));
+      const _ids = deals.map(d=>d.id).sort();
+      const _sig = _ids.join(',');
+      if(_sig !== _quoteSubIds){ _quoteSubIds = _sig; subscribeBuyerQuotes(_ids); }
       dot.classList.add('live');
       pulseDot('rt-dot-buyer');
       renderBuyer(); updateStats();
     }, err=>{ dot.classList.remove('live'); toast('연결 오류: '+err.message); });
+}
 
-  _unsubQuotes = db.collection('quotes').onSnapshot(snap=>{
-    snap.docChanges().forEach(chg=>{
-      const q={id:chg.doc.id,...chg.doc.data()};
-      if(!quotesMap[q.deal_id]) quotesMap[q.deal_id]={};
-      if(chg.type==='removed') delete quotesMap[q.deal_id][q.trader_id];
-      else quotesMap[q.deal_id][q.trader_id]=q;
-    });
-    pulseDot('rt-dot-buyer');
-    renderBuyer();
-  }, ()=>{});
+function subscribeBuyerQuotes(dealIds){
+  if(_unsubQuotes){ _unsubQuotes(); _unsubQuotes=null; }
+  quotesMap = {};
+  if(!dealIds.length){ renderBuyer(); return; }
+  // Firestore 'in'은 최대 30개. 하루 딜 15건 미만이라 여유 있음.
+  const ids = dealIds.slice(0, 30);
+  _unsubQuotes = db.collection('quotes').where('deal_id','in', ids)
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(chg=>{
+        const q={id:chg.doc.id,...chg.doc.data()};
+        if(!quotesMap[q.deal_id]) quotesMap[q.deal_id]={};
+        if(chg.type==='removed') delete quotesMap[q.deal_id][q.trader_id];
+        else quotesMap[q.deal_id][q.trader_id]=q;
+      });
+      pulseDot('rt-dot-buyer');
+      renderBuyer();
+    }, ()=>{});
 }
 
 function updateStats(){
@@ -1010,7 +1022,12 @@ function initTrader(){
 function subscribeTrader(){
   const dot = document.getElementById('rt-dot-trader');
 
-  _unsubDeals = db.collection('deals').orderBy('created_at','desc')
+  const _tStart = new Date(); _tStart.setHours(0,0,0,0);
+  const _tEnd   = new Date(_tStart.getTime()+86400000);
+  _unsubDeals = db.collection('deals')
+    .where('created_at','>=',firebase.firestore.Timestamp.fromDate(_tStart))
+    .where('created_at','<', firebase.firestore.Timestamp.fromDate(_tEnd))
+    .orderBy('created_at','desc')
     .onSnapshot(snap=>{
       snap.docChanges().forEach(chg=>{
         const d={id:chg.doc.id,...chg.doc.data()};
