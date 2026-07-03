@@ -1391,24 +1391,52 @@ async function showUserManagementModal(){
 const FIRESTORE_RULES = `rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function isAuth() { return request.auth != null; }
-    function isBuyer() {
-      return isAuth() &&
-        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'buyer';
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
     }
+    // status 필드가 없으면 approved로 간주 (콘솔 수동 생성 계정 호환)
+    function isBuyer() {
+      return isAuth()
+        && exists(/databases/$(database)/documents/profiles/$(request.auth.uid))
+        && myProfile().role == 'buyer'
+        && myProfile().get('status', 'approved') == 'approved';
+    }
+
     match /profiles/{uid} {
       allow read: if isAuth();
-      allow write: if request.auth.uid == uid;
+
+      // 최초 가입: 본인 문서만, role은 trader·status는 pending로 강제
+      allow create: if isAuth()
+        && request.auth.uid == uid
+        && request.resource.data.role == 'trader'
+        && request.resource.data.status == 'pending';
+
+      // 본인 수정: role·status는 변경 불가 (자가 승격 차단)
+      allow update: if isAuth()
+        && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']);
+
+      // 관리자(승인된 바이어): 타 사용자의 status만 변경 가능 (승인/거절/정지/복구)
+      allow update: if isBuyer()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+
+      // 클라이언트에서 프로필 삭제 금지
+      allow delete: if false;
     }
+
     match /deals/{dealId} {
       allow read: if isAuth();
       allow write: if isBuyer();
     }
+
     match /quotes/{quoteId} {
-      allow read: if isAuth() &&
-        (resource.data.trader_id == request.auth.uid || isBuyer());
-      allow write: if isAuth() &&
-        request.resource.data.trader_id == request.auth.uid;
+      allow read: if isAuth()
+        && (resource.data.trader_id == request.auth.uid || isBuyer());
+      allow write: if isAuth()
+        && request.resource.data.trader_id == request.auth.uid;
     }
   }
 }`;
