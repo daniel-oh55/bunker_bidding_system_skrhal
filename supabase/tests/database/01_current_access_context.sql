@@ -1,5 +1,5 @@
 begin;
-select plan(22);
+select plan(30);
 
 insert into auth.users (id, email)
 values
@@ -32,7 +32,8 @@ insert into app_private.organizations (id, kind, name, status)
 values
   ('00000000-0000-0000-0000-000000000101', 'buyer', 'Buyer One', 'active'),
   ('00000000-0000-0000-0000-000000000102', 'trader', 'Trader One', 'active'),
-  ('00000000-0000-0000-0000-000000000103', 'buyer', 'Buyer Two', 'active');
+  ('00000000-0000-0000-0000-000000000103', 'buyer', 'Buyer Two', 'active'),
+  ('00000000-0000-0000-0000-000000000104', 'buyer', 'Empty Organization', 'inactive');
 
 update app_private.user_accounts set status = 'active';
 
@@ -118,6 +119,51 @@ select throws_like(
   '%Membership role % incompatible%',
   'incompatible role changes are rejected'
 );
+
+select throws_like(
+  $$update app_private.organizations set kind = 'trader' where id = '00000000-0000-0000-0000-000000000101'$$,
+  '%Organization kind change is incompatible with existing membership roles%',
+  'a buyer organization with a buyer admin cannot change to trader'
+);
+select throws_like(
+  $$update app_private.organizations set kind = 'trader' where id = '00000000-0000-0000-0000-000000000103'$$,
+  '%Organization kind change is incompatible with existing membership roles%',
+  'a buyer organization with a buyer operator cannot change to trader'
+);
+select throws_like(
+  $$update app_private.organizations set kind = 'buyer' where id = '00000000-0000-0000-0000-000000000102'$$,
+  '%Organization kind change is incompatible with existing membership roles%',
+  'a trader organization with a trader cannot change to buyer'
+);
+select lives_ok(
+  $$update app_private.organizations set kind = 'trader' where id = '00000000-0000-0000-0000-000000000104'$$,
+  'an organization with no memberships can change kind'
+);
+select is(
+  (select kind::text from app_private.organizations where id = '00000000-0000-0000-0000-000000000104'),
+  'trader',
+  'the membership-free organization has its new kind'
+);
+select lives_ok(
+  $$update app_private.organizations set name = 'Buyer One Updated', status = 'suspended' where id = '00000000-0000-0000-0000-000000000101'$$,
+  'organization name and status updates remain allowed'
+);
+update app_private.organizations
+set status = 'active'
+where id = '00000000-0000-0000-0000-000000000101';
+select is(
+  (select count(*) from app_private.organizations where (id in ('00000000-0000-0000-0000-000000000101'::uuid, '00000000-0000-0000-0000-000000000103'::uuid) and kind = 'buyer'::app_private.organization_kind) or (id = '00000000-0000-0000-0000-000000000102'::uuid and kind = 'trader'::app_private.organization_kind)),
+  3::bigint,
+  'failed kind changes leave the original kinds unchanged'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001', true);
+select is(
+  (select count(*) from public.current_access_context() where (organization_kind = 'buyer' and membership_role = 'trader') or (organization_kind = 'trader' and membership_role in ('buyer_admin', 'buyer_operator'))),
+  0::bigint,
+  'current access context never returns a mismatched kind and role after rejected kind changes'
+);
+reset role;
 
 select * from finish();
 rollback;

@@ -1,5 +1,5 @@
 begin;
-select plan(48);
+select plan(53);
 
 select has_schema('app_private', 'app_private schema exists');
 
@@ -74,6 +74,18 @@ select ok(not has_table_privilege('authenticated', 'app_private.organization_mem
 
 select ok(has_function_privilege('authenticated', 'public.current_access_context()', 'execute'), 'authenticated can execute the public access-context RPC');
 select ok(not has_function_privilege('anon', 'public.current_access_context()', 'execute'), 'anon cannot execute the public access-context RPC');
+
+select ok(to_regprocedure('app_private.enforce_organization_kind_membership_compatibility()') is not null, 'organization kind compatibility function exists');
+select ok(exists (
+  select 1
+  from pg_trigger
+  where tgrelid = 'app_private.organizations'::regclass
+    and tgname = 'enforce_organization_kind_membership_compatibility'
+    and not tgisinternal
+), 'organization kind compatibility trigger exists');
+select ok(not has_function_privilege('public', 'app_private.enforce_organization_kind_membership_compatibility()', 'execute'), 'PUBLIC cannot execute the organization kind compatibility function');
+select ok(not has_function_privilege('anon', 'app_private.enforce_organization_kind_membership_compatibility()', 'execute'), 'anon cannot execute the organization kind compatibility function');
+select ok(not has_function_privilege('authenticated', 'app_private.enforce_organization_kind_membership_compatibility()', 'execute'), 'authenticated cannot execute the organization kind compatibility function');
 
 select * from finish();
 rollback;

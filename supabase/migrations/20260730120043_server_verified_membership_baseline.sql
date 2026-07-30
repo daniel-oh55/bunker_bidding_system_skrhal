@@ -86,17 +86,22 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  organization_kind app_private.organization_kind;
 begin
-  if not exists (
-    select 1
-    from app_private.organizations as organization
-    where organization.id = new.organization_id
-      and (
-        (organization.kind = 'buyer'::app_private.organization_kind
-          and new.role in ('buyer_admin'::app_private.membership_role, 'buyer_operator'::app_private.membership_role))
-        or (organization.kind = 'trader'::app_private.organization_kind
-          and new.role = 'trader'::app_private.membership_role)
-      )
+  -- FOR SHARE conflicts with the NO KEY UPDATE lock taken by a kind update,
+  -- serializing membership validation with organization kind changes.
+  select organization.kind
+  into organization_kind
+  from app_private.organizations as organization
+  where organization.id = new.organization_id
+  for share;
+
+  if not found or not (
+    (organization_kind = 'buyer'::app_private.organization_kind
+      and new.role in ('buyer_admin'::app_private.membership_role, 'buyer_operator'::app_private.membership_role))
+    or (organization_kind = 'trader'::app_private.organization_kind
+      and new.role = 'trader'::app_private.membership_role)
   ) then
     raise exception 'Membership role % is incompatible with organization %', new.role, new.organization_id
       using errcode = '23514';
@@ -109,6 +114,40 @@ $$;
 create trigger enforce_membership_role_organization_kind
 before insert or update of organization_id, role on app_private.organization_memberships
 for each row execute function app_private.enforce_membership_role_organization_kind();
+
+create function app_private.enforce_organization_kind_membership_compatibility()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.kind is not distinct from old.kind then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+    from app_private.organization_memberships as membership
+    where membership.organization_id = new.id
+      and (
+        (new.kind = 'trader'::app_private.organization_kind
+          and membership.role in ('buyer_admin'::app_private.membership_role, 'buyer_operator'::app_private.membership_role))
+        or (new.kind = 'buyer'::app_private.organization_kind
+          and membership.role = 'trader'::app_private.membership_role)
+      )
+  ) then
+    raise exception 'Organization kind change is incompatible with existing membership roles'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger enforce_organization_kind_membership_compatibility
+before update of kind on app_private.organizations
+for each row execute function app_private.enforce_organization_kind_membership_compatibility();
 
 alter table app_private.user_accounts enable row level security;
 alter table app_private.organizations enable row level security;
@@ -165,6 +204,7 @@ $$;
 revoke all on function app_private.set_updated_at() from public, anon, authenticated;
 revoke all on function app_private.create_inactive_user_account() from public, anon, authenticated;
 revoke all on function app_private.enforce_membership_role_organization_kind() from public, anon, authenticated;
+revoke all on function app_private.enforce_organization_kind_membership_compatibility() from public, anon, authenticated;
 revoke all on function app_private.current_access_context_impl() from public, anon, authenticated;
 revoke all on function public.current_access_context() from public, anon;
 grant usage on schema public to authenticated;
