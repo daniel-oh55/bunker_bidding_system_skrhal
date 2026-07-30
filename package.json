@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint src vite.config.ts",
     "test": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "check:foundation": "node scripts/check-foundation-boundaries.mjs",
     "preview": "vite preview"
   },

@@ -20,6 +20,9 @@ Out of scope in this foundation PR:
 
 ```bash
 npm ci
+npm audit --json
+npm audit --audit-level=critical
+npm audit --omit=dev --audit-level=high
 npm run lint
 npm run typecheck
 npm run test -- --run
@@ -38,5 +41,15 @@ npm run check:foundation
 ## Security notes
 
 - No real Supabase credentials belong in this repository.
-- `service_role` keys must never appear in browser code.
+- Browser code uses only an empty publishable-key placeholder in this phase.
+- Secret and service-role credentials must never enter browser code, Vite variables, or the repository.
 - Authorization is planned around organization membership and server-enforced policies in PostgreSQL/RLS, not `user_metadata`.
+
+## Dependency audit policy
+
+- The full audit is used for classification and reporting.
+- Any critical vulnerability in the full dependency tree is a hard gate.
+- High or critical production dependency findings are a hard gate.
+- The known `GHSA-mh99-v99m-4gvg` high findings remain confined to ESLint development-only transitive dependencies, so they are reported and allowed to continue in this PR.
+- Do not run `npm audit fix --force`.
+- Do not upgrade ESLint to a new major version in this PR.

@@ -22,6 +22,10 @@ This repository is set up so AI coding agents can work on narrowly scoped PRs wi
 Before handoff, run:
 
 ```bash
+npm ci
+npm audit --json
+npm audit --audit-level=critical
+npm audit --omit=dev --audit-level=high
 npm run lint
 npm run typecheck
 npm run test -- --run
@@ -29,3 +33,5 @@ npm run build
 npm run check:foundation
 git diff --check
 ```
+
+The full audit is classification and reporting. Production high-or-critical findings and any full-tree critical finding are hard gates. The known ESLint development-only high findings may be reported without failing this PR while they remain confined to that path and have no concrete impact on secrets, CI execution, or production build output. Do not run `npm audit fix --force` or perform an ESLint major upgrade in this PR.

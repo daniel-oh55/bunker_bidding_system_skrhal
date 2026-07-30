@@ -1,14 +1,14 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 function createPlaceholderClient(): SupabaseClient | null {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabasePublishableKey) {
     return null;
   }
 
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  return createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -47,7 +47,7 @@ export default function App() {
       <section className="panel" aria-labelledby="supabase-status">
         <h2 id="supabase-status">Supabase status</h2>
         <p>{readinessLabel}</p>
-        <code>VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY</code>
+        <code>VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY</code>
       </section>
     </main>
   );
