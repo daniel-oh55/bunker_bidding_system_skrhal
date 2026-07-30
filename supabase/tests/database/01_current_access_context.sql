@@ -104,35 +104,41 @@ set local role anon;
 select throws_like($$select * from public.current_access_context()$$, '%permission denied%', 'anonymous execution is denied');
 reset role;
 
-select throws_like(
+select throws_ok(
   $$insert into app_private.organization_memberships (user_id, organization_id, role) values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000102', 'buyer_admin')$$,
-  '%Membership role % incompatible%',
+  '23514',
+  'Membership role buyer_admin is incompatible with organization 00000000-0000-0000-0000-000000000102',
   'buyer roles in a trader organization are rejected'
 );
-select throws_like(
+select throws_ok(
   $$insert into app_private.organization_memberships (user_id, organization_id, role) values ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000101', 'trader')$$,
-  '%Membership role % incompatible%',
+  '23514',
+  'Membership role trader is incompatible with organization 00000000-0000-0000-0000-000000000101',
   'trader role in a buyer organization is rejected'
 );
-select throws_like(
+select throws_ok(
   $$update app_private.organization_memberships set role = 'trader' where id = '00000000-0000-0000-0000-000000000201'$$,
-  '%Membership role % incompatible%',
+  '23514',
+  'Membership role trader is incompatible with organization 00000000-0000-0000-0000-000000000101',
   'incompatible role changes are rejected'
 );
 
-select throws_like(
+select throws_ok(
   $$update app_private.organizations set kind = 'trader' where id = '00000000-0000-0000-0000-000000000101'$$,
-  '%Organization kind change is incompatible with existing membership roles%',
+  '23514',
+  'Organization kind change is incompatible with existing membership roles',
   'a buyer organization with a buyer admin cannot change to trader'
 );
-select throws_like(
+select throws_ok(
   $$update app_private.organizations set kind = 'trader' where id = '00000000-0000-0000-0000-000000000103'$$,
-  '%Organization kind change is incompatible with existing membership roles%',
+  '23514',
+  'Organization kind change is incompatible with existing membership roles',
   'a buyer organization with a buyer operator cannot change to trader'
 );
-select throws_like(
+select throws_ok(
   $$update app_private.organizations set kind = 'buyer' where id = '00000000-0000-0000-0000-000000000102'$$,
-  '%Organization kind change is incompatible with existing membership roles%',
+  '23514',
+  'Organization kind change is incompatible with existing membership roles',
   'a trader organization with a trader cannot change to buyer'
 );
 select lives_ok(

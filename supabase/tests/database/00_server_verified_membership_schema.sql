@@ -1,5 +1,5 @@
 begin;
-select plan(53);
+select plan(55);
 
 select has_schema('app_private', 'app_private schema exists');
 
@@ -76,6 +76,16 @@ select ok(has_function_privilege('authenticated', 'public.current_access_context
 select ok(not has_function_privilege('anon', 'public.current_access_context()', 'execute'), 'anon cannot execute the public access-context RPC');
 
 select ok(to_regprocedure('app_private.enforce_organization_kind_membership_compatibility()') is not null, 'organization kind compatibility function exists');
+select is(
+  (select provolatile::text from pg_proc where oid = 'app_private.enforce_membership_role_organization_kind()'::regprocedure),
+  'v',
+  'membership role compatibility function is VOLATILE'
+);
+select is(
+  (select provolatile::text from pg_proc where oid = 'app_private.enforce_organization_kind_membership_compatibility()'::regprocedure),
+  'v',
+  'organization kind compatibility function is VOLATILE'
+);
 select ok(exists (
   select 1
   from pg_trigger

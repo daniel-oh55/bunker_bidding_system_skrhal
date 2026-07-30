@@ -83,14 +83,17 @@ on conflict (user_id) do nothing;
 create function app_private.enforce_membership_role_organization_kind()
 returns trigger
 language plpgsql
+volatile
 security definer
 set search_path = ''
 as $$
 declare
   organization_kind app_private.organization_kind;
 begin
-  -- FOR SHARE conflicts with the NO KEY UPDATE lock taken by a kind update,
-  -- serializing membership validation with organization kind changes.
+  -- Membership validation uses FOR SHARE and organization kind updates acquire
+  -- a conflicting NO KEY UPDATE row lock. Both trigger functions must remain VOLATILE:
+  -- under READ COMMITTED a post-wait validation must observe committed current state;
+  -- stronger isolation may fail closed with a serialization error.
   select organization.kind
   into organization_kind
   from app_private.organizations as organization
@@ -118,6 +121,7 @@ for each row execute function app_private.enforce_membership_role_organization_k
 create function app_private.enforce_organization_kind_membership_compatibility()
 returns trigger
 language plpgsql
+volatile
 security definer
 set search_path = ''
 as $$

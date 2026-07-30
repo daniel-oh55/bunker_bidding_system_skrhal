@@ -126,6 +126,16 @@ jobs:
       - name: Run pgTAP database tests
         run: npm run db:test
 
+      - name: Resolve local database URL
+        shell: bash
+        run: |
+          db_url="$(npx supabase status -o json | jq -r '.DB_URL')"
+          [[ "$db_url" == postgresql://* ]] || { echo 'Supabase did not return a PostgreSQL database URL.'; exit 1; }
+          echo "LOCAL_DB_URL=$db_url" >> "$GITHUB_ENV"
+
+      - name: Run membership concurrency regression tests
+        run: npm run db:test:concurrency -- "$LOCAL_DB_URL"
+
       - name: Stop and clean local Supabase stack
         if: always()
         run: npm run db:stop
