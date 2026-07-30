@@ -4,7 +4,6 @@ import process from 'node:process';
 
 const rootDir = path.resolve(process.cwd());
 const legacyDir = path.join(rootDir, 'legacy', 'firebase-prototype');
-const supabaseMigrationsDir = path.join(rootDir, 'supabase', 'migrations');
 const supabaseConfigPath = path.join(rootDir, 'supabase', 'config.toml');
 const envExamplePath = path.join(rootDir, '.env.example');
 
@@ -49,39 +48,63 @@ const ignoredDirs = new Set([
   'coverage',
 ]);
 
-const scannerImplementationFiles = new Set([
-  'scripts/check-foundation-boundaries.mjs',
-  'scripts/check-foundation-boundaries.test.mjs',
-]);
+const markdownExtensions = new Set(['.md', '.markdown', '.mdx']);
+const firebaseNamespace = ['fire', 'base'].join('');
+const initializeAppName = ['initialize', 'App'].join('');
+const getAuthName = ['get', 'Auth'].join('');
+const getFirestoreName = ['get', 'Firestore'].join('');
+const serviceRoleUpper = ['SERVICE', 'ROLE'].join('_');
+const serviceRoleLower = ['service', 'role'].join('_');
+const legacyPrototypeReference = ['legacy', `${firebaseNamespace}-prototype`].join('/');
+const legacyReferencePattern = `[^'"]*${escapeRegExp(legacyPrototypeReference)}`;
 
 const firebasePatterns = [
-  /from\s+['"]firebase(?:\/|['"])/i,
-  /require\(['"]firebase(?:\/|['"])/i,
-  /firebase-(?:app|auth|firestore|storage|functions)/i,
-  /firebaseConfig/i,
-  /\bfirebase\.initializeApp\b/i,
-  /\binitializeApp\s*\(/i,
-  /\bgetAuth\s*\(/i,
-  /\bgetFirestore\s*\(/i,
-  /www\.gstatic\.com\/firebasejs/i,
+  new RegExp(`from\\s+['"]${firebaseNamespace}(?:\\/|['"])`, 'i'),
+  new RegExp(`require\\s*\\(\\s*['"]${firebaseNamespace}(?:\\/|['"])`, 'i'),
+  new RegExp(`${firebaseNamespace}-(?:app|auth|firestore|storage|functions)`, 'i'),
+  new RegExp(`${firebaseNamespace}${'Config'}`, 'i'),
+  new RegExp(`\\b${firebaseNamespace}\\.${initializeAppName}\\b`, 'i'),
+  new RegExp(`\\b${initializeAppName}\\s*\\(`, 'i'),
+  new RegExp(`\\b${getAuthName}\\s*\\(`, 'i'),
+  new RegExp(`\\b${getFirestoreName}\\s*\\(`, 'i'),
+  new RegExp(`www\\.gstatic\\.com\\/${firebaseNamespace}js`, 'i'),
 ];
 
 const firebaseIdentifiers = [
-  'spot-bidding-skrhal',
+  ['spot', 'bidding', 'skrhal'].join('-'),
 ];
 
 const forbiddenElevatedCredentialPatterns = [
-  /\bSUPABASE_(?:SECRET|SERVICE_ROLE)_KEYS?\b/i,
-  /\b[A-Z0-9_]*SERVICE_ROLE_KEY\b/,
-  /\bsb_(?:secret|service_role)_[A-Za-z0-9_-]*/i,
-  /\bservice_role\b/i,
+  new RegExp(`\\bSUPABASE_(?:SECRET|${serviceRoleUpper})_KEYS?\\b`, 'i'),
+  new RegExp(`\\b[A-Z0-9_]*${serviceRoleUpper}_KEY\\b`),
+  new RegExp(`\\bsb_(?:secret|${serviceRoleLower})_[A-Za-z0-9_-]*`, 'i'),
+  new RegExp(`\\b${serviceRoleLower}\\b`, 'i'),
 ];
 
-const forbiddenAnonKeyPattern = /\bVITE_SUPABASE_ANON_KEY\b/;
+const forbiddenAnonKeyPattern = new RegExp(
+  `\\b${['VITE', 'SUPABASE', 'ANON', 'KEY'].join('_')}\\b`,
+);
 const forbiddenBrowserCredentialEnvPattern =
   /\bVITE_[A-Z0-9_]*(?:SECRET|SERVICE[_-]?ROLE)[A-Z0-9_]*\b/i;
-const legacyImportPattern =
-  /from\s+['"][^'"]*legacy\/firebase-prototype|import\(['"][^'"]*legacy\/firebase-prototype|src\s*=\s*['"][^'"]*legacy\/firebase-prototype/i;
+const legacyBuildInputPatterns = [
+  new RegExp(`\\bfrom\\s+['"]${legacyReferencePattern}`, 'i'),
+  new RegExp(`\\bimport\\s*\\(\\s*['"]${legacyReferencePattern}`, 'i'),
+  new RegExp(`\\brequire\\s*\\(\\s*['"]${legacyReferencePattern}`, 'i'),
+  new RegExp(`\\b(?:src|href)\\s*=\\s*['"]${legacyReferencePattern}`, 'i'),
+  new RegExp(`@import\\s+(?:url\\(\\s*)?['"]?${legacyReferencePattern}`, 'i'),
+  new RegExp(
+    `\\bnew\\s+URL\\s*\\(\\s*['"]${legacyReferencePattern}[^'"]*['"]\\s*,\\s*import\\.meta\\.url\\s*\\)`,
+    'i',
+  ),
+];
+const schemaImplementationPatterns = [
+  ['CREATE', 'TABLE'],
+  ['CREATE', 'POLICY'],
+  ['ENABLE', 'ROW', 'LEVEL', 'SECURITY'],
+].map((parts) => ({
+  label: parts.join(' '),
+  pattern: new RegExp(`\\b${parts.join('\\s+')}\\b`, 'i'),
+}));
 
 const failures = [];
 
@@ -89,8 +112,16 @@ function normalizeRelativePath(relativePath) {
   return relativePath.split(path.sep).join('/');
 }
 
-function isFile(filePath) {
-  return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+function isRegularFile(filePath) {
+  try {
+    return fs.lstatSync(filePath).isFile();
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+      return false;
+    }
+
+    throw error;
+  }
 }
 
 function walk(dir) {
@@ -99,20 +130,32 @@ function walk(dir) {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
+    const relPath = path.relative(rootDir, fullPath);
 
-    if (entry.isDirectory()) {
-      if (ignoredDirs.has(entry.name) || fullPath === legacyDir) {
+    if (ignoredDirs.has(entry.name)) {
+      continue;
+    }
+
+    const stats = fs.lstatSync(fullPath);
+    if (stats.isSymbolicLink()) {
+      recordFailure(
+        `Symbolic link is not allowed in the active repository tree: ${normalizeRelativePath(relPath)}`,
+      );
+      continue;
+    }
+
+    if (stats.isDirectory()) {
+      if (fullPath === legacyDir) {
         continue;
       }
-
       files.push(...walk(fullPath));
       continue;
     }
 
-    if (entry.isFile()) {
+    if (stats.isFile()) {
       files.push({
         fullPath,
-        relPath: path.relative(rootDir, fullPath),
+        relPath,
       });
     }
   }
@@ -126,7 +169,7 @@ function recordFailure(message) {
 
 function checkRequiredDocs() {
   for (const relativePath of requiredDocs) {
-    if (!isFile(path.join(rootDir, relativePath))) {
+    if (!isRegularFile(path.join(rootDir, relativePath))) {
       recordFailure(`Missing required documentation file: ${normalizeRelativePath(relativePath)}`);
     }
   }
@@ -135,39 +178,14 @@ function checkRequiredDocs() {
 function checkRequiredLegacyFiles() {
   for (const relativePath of requiredLegacyFiles) {
     const filePath = path.join(legacyDir, relativePath);
-    if (!isFile(filePath)) {
+    if (!isRegularFile(filePath)) {
       recordFailure(`Missing required legacy file: legacy/firebase-prototype/${relativePath}`);
     }
   }
 }
 
-function findSqlMigrations(dir) {
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-
-  const migrations = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      migrations.push(...findSqlMigrations(fullPath));
-    } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.sql') {
-      migrations.push(fullPath);
-    }
-  }
-
-  return migrations;
-}
-
-function checkNoMigrations() {
-  for (const migrationPath of findSqlMigrations(supabaseMigrationsDir)) {
-    const relativePath = normalizeRelativePath(path.relative(rootDir, migrationPath));
-    recordFailure(`SQL migrations are not allowed in this foundation PR: ${relativePath}`);
-  }
-}
-
 function checkSignupSettings() {
-  if (!isFile(supabaseConfigPath)) {
+  if (!isRegularFile(supabaseConfigPath)) {
     recordFailure('Missing required Supabase config: supabase/config.toml');
     return;
   }
@@ -243,7 +261,7 @@ function escapeRegExp(value) {
 }
 
 function checkEnvPlaceholders() {
-  if (!isFile(envExamplePath)) {
+  if (!isRegularFile(envExamplePath)) {
     recordFailure('Missing required environment template: .env.example');
     return;
   }
@@ -275,11 +293,25 @@ function checkEnvPlaceholders() {
 function checkFiles() {
   for (const { fullPath, relPath } of walk(rootDir)) {
     const normalizedRelPath = normalizeRelativePath(relPath);
-    if (scannerImplementationFiles.has(normalizedRelPath)) {
+    const extension = path.extname(fullPath).toLowerCase();
+
+    if (extension === '.sql') {
+      recordFailure(`SQL files are not allowed in this foundation PR: ${normalizedRelPath}`);
       continue;
     }
 
     const content = fs.readFileSync(fullPath, 'utf8');
+
+    if (!markdownExtensions.has(extension)) {
+      for (const { label, pattern } of schemaImplementationPatterns) {
+        if (pattern.test(content)) {
+          recordFailure(
+            `Schema/RLS SQL implementation found in active source (${label}): ${normalizedRelPath}`,
+          );
+          break;
+        }
+      }
+    }
 
     if (forbiddenAnonKeyPattern.test(content)) {
       recordFailure(`Legacy Supabase anon Vite variable found outside legacy/: ${normalizedRelPath}`);
@@ -309,15 +341,19 @@ function checkFiles() {
       }
     }
 
-    if (legacyImportPattern.test(content)) {
-      recordFailure(`Legacy prototype referenced as an active import or build input: ${normalizedRelPath}`);
+    for (const pattern of legacyBuildInputPatterns) {
+      if (pattern.test(content)) {
+        recordFailure(
+          `Legacy prototype referenced as an active import or build input: ${normalizedRelPath}`,
+        );
+        break;
+      }
     }
   }
 }
 
 checkRequiredDocs();
 checkRequiredLegacyFiles();
-checkNoMigrations();
 checkSignupSettings();
 checkEnvPlaceholders();
 checkFiles();

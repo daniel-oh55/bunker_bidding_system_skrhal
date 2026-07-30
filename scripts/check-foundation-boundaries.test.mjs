@@ -42,11 +42,32 @@ const requiredEnvPlaceholders = [
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_PUBLISHABLE_KEY',
 ];
+const signupFailureCategories = {
+  missing: 'Missing required signup setting',
+  duplicated: 'Duplicated signup setting',
+  malformed: 'Malformed signup setting',
+  'non-false': 'Signup setting must be false',
+};
+const legacyProjectIdentifier = ['spot', 'bidding', 'skrhal'].join('-');
+const firebaseNamespace = ['fire', 'base'].join('');
+const legacyPrototypePath = ['..', 'legacy', `${firebaseNamespace}-prototype`, 'index.html'].join(
+  '/',
+);
 
 function writeFixtureFile(root, relativePath, content = '') {
   const filePath = path.join(root, relativePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
+}
+
+function replaceFixtureFileWithDirectoryLink(root, relativePath) {
+  const linkPath = path.join(root, relativePath);
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'foundation-link-target-'));
+  fixtureRoots.push(target);
+
+  fs.rmSync(linkPath, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+  fs.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
 }
 
 function renderConfig(mutation = {}) {
@@ -87,6 +108,12 @@ function createPassingFixture() {
   for (const relativePath of requiredLegacyFiles) {
     writeFixtureFile(root, path.join('legacy', 'firebase-prototype', relativePath), 'legacy fixture\n');
   }
+  const ignoredLegacyStatement = ['CREATE', 'TABLE'].join(' ');
+  writeFixtureFile(
+    root,
+    path.join('legacy', 'firebase-prototype', 'nested', 'ignored-schema.sql'),
+    `${ignoredLegacyStatement} ignored_fixture (id bigint);\n`,
+  );
 
   writeFixtureFile(root, 'supabase/config.toml', renderConfig());
   writeFixtureFile(
@@ -118,7 +145,7 @@ function expectFailure(root, expectedMessage) {
 }
 
 afterEach(() => {
-  for (const root of fixtureRoots.splice(0)) {
+  for (const root of fixtureRoots.splice(0).reverse()) {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
@@ -132,12 +159,91 @@ describe('foundation boundary checker', () => {
     expect(result.output).toContain('Foundation boundary check passed.');
   });
 
-  it('rejects SQL migrations at any depth', () => {
+  it('rejects a root Supabase schema SQL file', () => {
     const root = createPassingFixture();
-    writeFixtureFile(root, 'supabase/migrations/nested/deeper/001_fixture.SQL', 'select 1;\n');
+    writeFixtureFile(root, 'supabase/schema.sql', 'select 1;\n');
 
-    expectFailure(root, 'SQL migrations are not allowed');
+    expectFailure(root, 'SQL files are not allowed');
   });
+
+  it('rejects a nested SQL file outside the migrations directory', () => {
+    const root = createPassingFixture();
+    writeFixtureFile(root, 'src/database/nested/deeper/fixture.SQL', 'select 1;\n');
+
+    expectFailure(root, 'SQL files are not allowed');
+  });
+
+  for (const implementationCase of [
+    {
+      name: 'table-definition statement',
+      parts: ['CREATE', 'TABLE'],
+      render: (statement) => `${statement} fixture_table (id bigint);\n`,
+    },
+    {
+      name: 'policy-definition statement',
+      parts: ['CREATE', 'POLICY'],
+      render: (statement) => `${statement} fixture_policy ON fixture_table USING (true);\n`,
+    },
+    {
+      name: 'row-security enablement statement',
+      parts: ['ENABLE', 'ROW', 'LEVEL', 'SECURITY'],
+      render: (statement) => `ALTER TABLE fixture_table ${statement};\n`,
+    },
+  ]) {
+    it(`rejects an embedded ${implementationCase.name}`, () => {
+      const root = createPassingFixture();
+      const statement = implementationCase.parts.join(' ');
+      writeFixtureFile(root, 'src/schema-implementation.ts', implementationCase.render(statement));
+
+      expectFailure(root, 'Schema/RLS SQL implementation found in active source');
+    });
+  }
+
+  it('allows schema terminology in Markdown prose', () => {
+    const root = createPassingFixture();
+    const proseStatement = ['CREATE', 'TABLE'].join(' ');
+    writeFixtureFile(root, 'docs/SCHEMA_NOTES.md', `Discuss ${proseStatement} without implementing it.\n`);
+    const result = runChecker(root);
+
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
+  it('rejects a directory link in the active repository tree', () => {
+    const root = createPassingFixture();
+    replaceFixtureFileWithDirectoryLink(root, 'src/linked-fixture');
+
+    expectFailure(
+      root,
+      'Symbolic link is not allowed in the active repository tree: src/linked-fixture',
+    );
+  });
+
+  for (const requiredLinkCase of [
+    {
+      path: 'README.md',
+      message: 'Missing required documentation file: README.md',
+    },
+    {
+      path: 'supabase/config.toml',
+      message: 'Missing required Supabase config: supabase/config.toml',
+    },
+    {
+      path: '.env.example',
+      message: 'Missing required environment template: .env.example',
+    },
+    {
+      path: 'legacy/firebase-prototype/README.md',
+      message: 'Missing required legacy file: legacy/firebase-prototype/README.md',
+    },
+  ]) {
+    it(`rejects a linked required file: ${requiredLinkCase.path}`, () => {
+      const root = createPassingFixture();
+      replaceFixtureFileWithDirectoryLink(root, requiredLinkCase.path);
+
+      expectFailure(root, requiredLinkCase.message);
+    });
+  }
 
   for (const legacyFile of requiredLegacyFiles) {
     it(`rejects a missing required legacy file: ${legacyFile}`, () => {
@@ -155,10 +261,43 @@ describe('foundation boundary checker', () => {
         const root = createPassingFixture();
         writeFixtureFile(root, 'supabase/config.toml', renderConfig({ index, mode }));
 
-        expectFailure(root, settingPath);
+        expectFailure(root, signupFailureCategories[mode]);
       });
     }
   }
+
+  it('rejects a missing required documentation file', () => {
+    const root = createPassingFixture();
+    fs.rmSync(path.join(root, 'docs', 'ARCHITECTURE.md'));
+
+    expectFailure(root, 'Missing required documentation file: docs/ARCHITECTURE.md');
+  });
+
+  it('rejects a missing Supabase config', () => {
+    const root = createPassingFixture();
+    fs.rmSync(path.join(root, 'supabase', 'config.toml'));
+
+    expectFailure(root, 'Missing required Supabase config: supabase/config.toml');
+  });
+
+  it('rejects a missing environment template', () => {
+    const root = createPassingFixture();
+    fs.rmSync(path.join(root, '.env.example'));
+
+    expectFailure(root, 'Missing required environment template: .env.example');
+  });
+
+  it('rejects a duplicated required environment placeholder', () => {
+    const root = createPassingFixture();
+    const duplicatedPlaceholder = requiredEnvPlaceholders[0];
+    const content = [
+      ...requiredEnvPlaceholders.map((name) => `${name}=`),
+      `${duplicatedPlaceholder}=`,
+    ].join('\n');
+    writeFixtureFile(root, '.env.example', `${content}\n`);
+
+    expectFailure(root, `Duplicated environment placeholder: ${duplicatedPlaceholder}`);
+  });
 
   for (const placeholder of requiredEnvPlaceholders) {
     it(`rejects a missing required environment placeholder: ${placeholder}`, () => {
@@ -191,7 +330,10 @@ describe('foundation boundary checker', () => {
     expectFailure(root, 'Legacy Supabase anon Vite variable');
   });
 
-  for (const suffix of ['SECRET_KEY', 'SERVICE_ROLE_KEY']) {
+  for (const suffix of [
+    ['SECRET', 'KEY'].join('_'),
+    ['SERVICE', 'ROLE', 'KEY'].join('_'),
+  ]) {
     it(`rejects a browser/Vite ${suffix.toLowerCase()} variable`, () => {
       const root = createPassingFixture();
       const variableName = ['VITE', 'SUPABASE', suffix].join('_');
@@ -215,25 +357,97 @@ describe('foundation boundary checker', () => {
     });
   }
 
-  it('rejects Firebase runtime code outside the legacy directory', () => {
+  it('rejects the legacy Firebase project identifier', () => {
     const root = createPassingFixture();
     writeFixtureFile(
       root,
-      'src/firebase.ts',
-      "import { initializeApp } from 'firebase/app';\ninitializeApp({});\n",
+      'src/project-identifier.ts',
+      `export const projectIdentifier = '${legacyProjectIdentifier}';\n`,
+    );
+
+    expectFailure(root, 'Legacy Firebase project identifier leaked outside legacy/');
+  });
+
+  it('rejects Firebase runtime code outside the legacy directory', () => {
+    const root = createPassingFixture();
+    const initializeAppName = ['initialize', 'App'].join('');
+    const packageName = [firebaseNamespace, 'app'].join('/');
+    writeFixtureFile(
+      root,
+      'src/runtime-client.ts',
+      `import { ${initializeAppName} } from '${packageName}';\n${initializeAppName}({});\n`,
     );
 
     expectFailure(root, 'Firebase runtime pattern found outside legacy/');
   });
 
-  it('rejects active imports from the legacy prototype', () => {
-    const root = createPassingFixture();
-    writeFixtureFile(
-      root,
-      'src/legacy.ts',
-      "import fixture from '../legacy/firebase-prototype/index.html';\nexport default fixture;\n",
-    );
+  for (const scannerPath of [
+    'scripts/check-foundation-boundaries.mjs',
+    'scripts/check-foundation-boundaries.test.mjs',
+  ]) {
+    it(`scans forbidden content at the checker path: ${scannerPath}`, () => {
+      const root = createPassingFixture();
+      writeFixtureFile(
+        root,
+        scannerPath,
+        `export const projectIdentifier = '${legacyProjectIdentifier}';\n`,
+      );
 
-    expectFailure(root, 'Legacy prototype referenced as an active import or build input');
-  });
+      expectFailure(root, 'Legacy Firebase project identifier leaked outside legacy/');
+    });
+  }
+
+  for (const buildInputCase of [
+    {
+      name: 'static module import',
+      extension: 'ts',
+      render: (legacyPath) => `import fixture from '${legacyPath}';\nexport default fixture;\n`,
+    },
+    {
+      name: 'dynamic module import',
+      extension: 'ts',
+      render: (legacyPath) => `export const fixture = import('${legacyPath}');\n`,
+    },
+    {
+      name: 'CommonJS loader',
+      extension: 'cjs',
+      render: (legacyPath) => `module.exports = require('${legacyPath}');\n`,
+    },
+    {
+      name: 'HTML source attribute',
+      extension: 'html',
+      render: (legacyPath) => `<script src="${legacyPath}"></script>\n`,
+    },
+    {
+      name: 'HTML link attribute',
+      extension: 'html',
+      render: (legacyPath) => `<link href="${legacyPath}" rel="stylesheet">\n`,
+    },
+    {
+      name: 'CSS direct import',
+      extension: 'css',
+      render: (legacyPath) => `@import '${legacyPath}';\n`,
+    },
+    {
+      name: 'CSS URL import',
+      extension: 'css',
+      render: (legacyPath) => `@import url('${legacyPath}');\n`,
+    },
+    {
+      name: 'module-relative URL constructor',
+      extension: 'ts',
+      render: (legacyPath) => `export const fixture = new URL('${legacyPath}', import.meta.url);\n`,
+    },
+  ]) {
+    it(`rejects a legacy build input through ${buildInputCase.name}`, () => {
+      const root = createPassingFixture();
+      writeFixtureFile(
+        root,
+        `src/legacy-build-input.${buildInputCase.extension}`,
+        buildInputCase.render(legacyPrototypePath),
+      );
+
+      expectFailure(root, 'Legacy prototype referenced as an active import or build input');
+    });
+  }
 });
