@@ -100,22 +100,22 @@ reset role;
 update app_private.organization_memberships set status = 'active' where id = '00000000-0000-0000-0000-000000000201';
 
 set local role anon;
-select throws_like($$select * from public.current_access_context()$$, 'permission denied.*', 'anonymous execution is denied');
+select throws_like($$select * from public.current_access_context()$$, '%permission denied%', 'anonymous execution is denied');
 reset role;
 
 select throws_like(
   $$insert into app_private.organization_memberships (user_id, organization_id, role) values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000102', 'buyer_admin')$$,
-  'Membership role .* incompatible.*',
+  '%Membership role % incompatible%',
   'buyer roles in a trader organization are rejected'
 );
 select throws_like(
   $$insert into app_private.organization_memberships (user_id, organization_id, role) values ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000101', 'trader')$$,
-  'Membership role .* incompatible.*',
+  '%Membership role % incompatible%',
   'trader role in a buyer organization is rejected'
 );
 select throws_like(
   $$update app_private.organization_memberships set role = 'trader' where id = '00000000-0000-0000-0000-000000000201'$$,
-  'Membership role .* incompatible.*',
+  '%Membership role % incompatible%',
   'incompatible role changes are rejected'
 );
 
