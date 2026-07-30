@@ -2,9 +2,9 @@
 
 ## Rolling state
 
-- Active branch purpose: establish the Supabase V2 foundation
+- Active branch purpose: maintain the local Supabase V2 authorization baseline
 - Active frontend baseline: React + Vite + TypeScript shell
-- Active backend baseline: local Supabase config placeholder only
+- Active backend baseline: local migrations and pgTAP database tests
 - Legacy reference location: `legacy/firebase-prototype/`
 
 ## Fixed contracts
@@ -16,6 +16,7 @@
 - Every approved BUYER will be able to see all bids and all quotes, with views for all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access will require verified membership in an approved organization and will be limited to explicitly allowed bid and quote scope.
 - Authorization will never trust `user_metadata` or other unverified client claims.
+- Accounts, organizations, memberships, and the fail-closed current-access-context RPC are implemented in PostgreSQL.
 - Suspended or inactive users will immediately lose access.
 - `created_by` will be immutable and kept separate from the actor performing update, close, reopen, award, or cancel operations.
 - Deadlines will use server time, and quote creation or modification after close will be rejected server-side.
@@ -24,6 +25,18 @@
 - Secret and service-role credentials will never enter browser code, Vite variables, or the repository.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
+
+## Implemented baseline
+
+- The PR #1 application foundation is complete.
+- Local Supabase migration replay and pgTAP database tests run locally when Docker is available and in GitHub CI.
+- `app_private` contains private account, organization, and membership authorization data. The authenticated public RPC returns only active, server-verified membership context.
+- No remote Supabase project is linked, and no actual user, organization, or bidding data is committed.
+
+## Not yet implemented
+
+- Frontend Auth UI, invitations, and administration/provisioning flows.
+- Bids, quotes, audits, deadline controls, and bid lifecycle transition policies.
 
 ## Notes
 

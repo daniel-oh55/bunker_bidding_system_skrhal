@@ -3,8 +3,15 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: client library dependency and environment placeholders only
+- Supabase access: local CLI migrations, pgTAP tests, and an unlinked local configuration
+- Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Legacy reference: static Firebase prototype under `legacy/firebase-prototype/`
+
+## Implemented authorization baseline
+
+- Auth user creation provisions an inactive private account only; it never grants membership or active access.
+- `public.current_access_context()` derives all context from current database rows and fails closed unless account, organization, and membership are active.
+- The browser has no Auth UI and does not receive direct access to private authorization tables.
 
 ## Planned direction
 
@@ -23,11 +30,11 @@
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope.
 
-These are future implementation contracts only; no schema, RLS, Auth UI, or transactional server operations are implemented in this foundation PR.
+Bid, quote, audit, deadline, and transactional lifecycle operations remain future work. Frontend Auth UI, invitation, and admin workflows are also not implemented.
 
 ## Foundation boundaries
 
 - no active Firebase runtime usage
-- no SQL migrations yet
+- local SQL migrations and database tests are permitted only in their dedicated Supabase directories
 - no linked Supabase project yet
-- no production deployment changes in this PR
+- no production deployment or committed operational data
