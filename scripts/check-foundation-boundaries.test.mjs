@@ -53,6 +53,29 @@ const firebaseNamespace = ['fire', 'base'].join('');
 const legacyPrototypePath = ['..', 'legacy', `${firebaseNamespace}-prototype`, 'index.html'].join(
   '/',
 );
+const templateDelimiter = String.fromCharCode(96);
+
+function canCreateFileSymlinks() {
+  if (process.platform !== 'win32') {
+    return true;
+  }
+
+  const probeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'foundation-file-link-probe-'));
+  const targetPath = path.join(probeRoot, 'target.txt');
+  const linkPath = path.join(probeRoot, 'link.txt');
+
+  try {
+    fs.writeFileSync(targetPath, 'probe\n', 'utf8');
+    fs.symlinkSync(targetPath, linkPath, 'file');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(probeRoot, { recursive: true, force: true });
+  }
+}
+
+const fileSymlinksAvailable = canCreateFileSymlinks();
 
 function writeFixtureFile(root, relativePath, content = '') {
   const filePath = path.join(root, relativePath);
@@ -60,14 +83,28 @@ function writeFixtureFile(root, relativePath, content = '') {
   fs.writeFileSync(filePath, content, 'utf8');
 }
 
-function replaceFixtureFileWithDirectoryLink(root, relativePath) {
+function replaceFixturePathWithDirectoryLink(root, relativePath, targetPath) {
   const linkPath = path.join(root, relativePath);
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'foundation-link-target-'));
-  fixtureRoots.push(target);
+  let target = targetPath;
+  if (!target) {
+    target = fs.mkdtempSync(path.join(os.tmpdir(), 'foundation-link-target-'));
+    fixtureRoots.push(target);
+  }
 
   fs.rmSync(linkPath, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(linkPath), { recursive: true });
   fs.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
+function replaceFixtureFileWithFileSymlink(root, relativePath) {
+  const linkPath = path.join(root, relativePath);
+  const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'foundation-file-link-target-'));
+  const targetPath = path.join(targetRoot, path.basename(relativePath));
+  fixtureRoots.push(targetRoot);
+
+  fs.copyFileSync(linkPath, targetPath);
+  fs.rmSync(linkPath);
+  fs.symlinkSync(targetPath, linkPath, 'file');
 }
 
 function renderConfig(mutation = {}) {
@@ -209,9 +246,27 @@ describe('foundation boundary checker', () => {
     expect(result.output).toContain('Foundation boundary check passed.');
   });
 
+  for (const implementationCase of [
+    ['CREATE', 'TABLE'],
+    ['CREATE', 'POLICY'],
+    ['ENABLE', 'ROW', 'LEVEL', 'SECURITY'],
+  ]) {
+    it(`rejects embedded schema/RLS implementation in MDX: ${implementationCase.join(' ')}`, () => {
+      const root = createPassingFixture();
+      const statement = implementationCase.join(' ');
+      writeFixtureFile(
+        root,
+        'docs/EXECUTABLE_SCHEMA.mdx',
+        `export const implementation = ${JSON.stringify(statement)};\n`,
+      );
+
+      expectFailure(root, 'Schema/RLS SQL implementation found in active source');
+    });
+  }
+
   it('rejects a directory link in the active repository tree', () => {
     const root = createPassingFixture();
-    replaceFixtureFileWithDirectoryLink(root, 'src/linked-fixture');
+    replaceFixturePathWithDirectoryLink(root, 'src/linked-fixture');
 
     expectFailure(
       root,
@@ -239,9 +294,96 @@ describe('foundation boundary checker', () => {
   ]) {
     it(`rejects a linked required file: ${requiredLinkCase.path}`, () => {
       const root = createPassingFixture();
-      replaceFixtureFileWithDirectoryLink(root, requiredLinkCase.path);
+      replaceFixturePathWithDirectoryLink(root, requiredLinkCase.path);
 
       expectFailure(root, requiredLinkCase.message);
+    });
+  }
+
+  describe.skipIf(process.platform === 'win32' && !fileSymlinksAvailable)(
+    'required file symlinks',
+    () => {
+      for (const requiredLinkCase of [
+        {
+          path: 'README.md',
+          message: 'Missing required documentation file: README.md',
+        },
+        {
+          path: 'supabase/config.toml',
+          message: 'Missing required Supabase config: supabase/config.toml',
+        },
+        {
+          path: '.env.example',
+          message: 'Missing required environment template: .env.example',
+        },
+        {
+          path: 'legacy/firebase-prototype/README.md',
+          message: 'Missing required legacy file: legacy/firebase-prototype/README.md',
+        },
+      ]) {
+        it(`rejects an actual file symlink at a required path: ${requiredLinkCase.path}`, () => {
+          const root = createPassingFixture();
+          replaceFixtureFileWithFileSymlink(root, requiredLinkCase.path);
+
+          expectFailure(root, requiredLinkCase.message);
+        });
+      }
+    },
+  );
+
+  for (const ignoredName of ['dist', 'coverage', 'node_modules']) {
+    it(`rejects an ignored-name directory link: src/${ignoredName}`, () => {
+      const root = createPassingFixture();
+      const linkPath = `src/${ignoredName}`;
+
+      if (ignoredName === 'dist') {
+        writeFixtureFile(
+          root,
+          path.join('legacy', 'firebase-prototype', 'app.js'),
+          'export default {};\n',
+        );
+        replaceFixturePathWithDirectoryLink(
+          root,
+          linkPath,
+          path.join(root, 'legacy', 'firebase-prototype'),
+        );
+        writeFixtureFile(
+          root,
+          'src/active-import.ts',
+          `import fixture from './${ignoredName}/app.js';\nexport default fixture;\n`,
+        );
+      } else {
+        replaceFixturePathWithDirectoryLink(root, linkPath);
+      }
+
+      const result = runChecker(root);
+      expect(result.status).toBe(1);
+      expect(result.output).toContain('Foundation boundary check failed.');
+      expect(result.output).toContain(
+        `Symbolic link is not allowed in the active repository tree: ${linkPath}`,
+      );
+      if (ignoredName === 'dist') {
+        expect(result.output).not.toContain(
+          'Legacy prototype referenced as an active import or build input',
+        );
+      }
+    });
+
+    it(`continues to ignore a real directory named src/${ignoredName}`, () => {
+      const root = createPassingFixture();
+      writeFixtureFile(root, `src/${ignoredName}/ignored.sql`, 'select 1;\n');
+      const result = runChecker(root);
+
+      expect(result.status).toBe(0);
+      expect(result.output).toContain('Foundation boundary check passed.');
+    });
+
+    it(`scans a regular file named src/${ignoredName}`, () => {
+      const root = createPassingFixture();
+      const statement = ['CREATE', 'TABLE'].join(' ');
+      writeFixtureFile(root, `src/${ignoredName}`, `${statement} fixture_table (id bigint);\n`);
+
+      expectFailure(root, 'Schema/RLS SQL implementation found in active source');
     });
   }
 
@@ -438,6 +580,49 @@ describe('foundation boundary checker', () => {
       extension: 'ts',
       render: (legacyPath) => `export const fixture = new URL('${legacyPath}', import.meta.url);\n`,
     },
+    {
+      name: 'template-literal dynamic module import',
+      extension: 'ts',
+      render: (legacyPath) =>
+        `export const fixture = import(${templateDelimiter}${legacyPath}${templateDelimiter});\n`,
+    },
+    {
+      name: 'template-literal CommonJS loader',
+      extension: 'cjs',
+      render: (legacyPath) =>
+        `module.exports = require(${templateDelimiter}${legacyPath}${templateDelimiter});\n`,
+    },
+    {
+      name: 'template-literal module-relative URL constructor',
+      extension: 'ts',
+      render: (legacyPath) =>
+        `export const fixture = new URL(${templateDelimiter}${legacyPath}${templateDelimiter}, import.meta.url);\n`,
+    },
+    {
+      name: 'import.meta.glob call',
+      extension: 'ts',
+      render: (legacyPath) => `export const fixture = import.meta.glob('${legacyPath}');\n`,
+    },
+    {
+      name: 'CSS URL build input without import',
+      extension: 'css',
+      render: (legacyPath) => `.fixture { background-image: url('${legacyPath}'); }\n`,
+    },
+    {
+      name: 'CSS direct import without whitespace',
+      extension: 'css',
+      render: (legacyPath) => `@import"${legacyPath}";\n`,
+    },
+    {
+      name: 'unquoted HTML source attribute',
+      extension: 'html',
+      render: (legacyPath) => `<script src=${legacyPath}></script>\n`,
+    },
+    {
+      name: 'unquoted HTML link attribute',
+      extension: 'html',
+      render: (legacyPath) => `<link href=${legacyPath} rel="stylesheet">\n`,
+    },
   ]) {
     it(`rejects a legacy build input through ${buildInputCase.name}`, () => {
       const root = createPassingFixture();
@@ -450,4 +635,11 @@ describe('foundation boundary checker', () => {
       expectFailure(root, 'Legacy prototype referenced as an active import or build input');
     });
   }
+
+  it('rejects a bare side-effect static import of the legacy prototype', () => {
+    const root = createPassingFixture();
+    writeFixtureFile(root, 'src/legacy-side-effect.ts', `import '${legacyPrototypePath}';\n`);
+
+    expectFailure(root, 'Legacy prototype referenced as an active import or build input');
+  });
 });

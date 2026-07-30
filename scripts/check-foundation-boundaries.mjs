@@ -48,7 +48,7 @@ const ignoredDirs = new Set([
   'coverage',
 ]);
 
-const markdownExtensions = new Set(['.md', '.markdown', '.mdx']);
+const markdownProseExtensions = new Set(['.md', '.markdown']);
 const firebaseNamespace = ['fire', 'base'].join('');
 const initializeAppName = ['initialize', 'App'].join('');
 const getAuthName = ['get', 'Auth'].join('');
@@ -56,7 +56,12 @@ const getFirestoreName = ['get', 'Firestore'].join('');
 const serviceRoleUpper = ['SERVICE', 'ROLE'].join('_');
 const serviceRoleLower = ['service', 'role'].join('_');
 const legacyPrototypeReference = ['legacy', `${firebaseNamespace}-prototype`].join('/');
-const legacyReferencePattern = `[^'"]*${escapeRegExp(legacyPrototypeReference)}`;
+const stringDelimiterPattern = "['\"`]";
+const nonStringDelimiterPattern = "[^'\"`]*";
+const unquotedAttributePrefixPattern = "[^\\s'\"`=<>]*";
+const escapedLegacyPrototypeReference = escapeRegExp(legacyPrototypeReference);
+const legacyReferencePattern =
+  `${nonStringDelimiterPattern}${escapedLegacyPrototypeReference}`;
 
 const firebasePatterns = [
   new RegExp(`from\\s+['"]${firebaseNamespace}(?:\\/|['"])`, 'i'),
@@ -87,13 +92,34 @@ const forbiddenAnonKeyPattern = new RegExp(
 const forbiddenBrowserCredentialEnvPattern =
   /\bVITE_[A-Z0-9_]*(?:SECRET|SERVICE[_-]?ROLE)[A-Z0-9_]*\b/i;
 const legacyBuildInputPatterns = [
-  new RegExp(`\\bfrom\\s+['"]${legacyReferencePattern}`, 'i'),
-  new RegExp(`\\bimport\\s*\\(\\s*['"]${legacyReferencePattern}`, 'i'),
-  new RegExp(`\\brequire\\s*\\(\\s*['"]${legacyReferencePattern}`, 'i'),
-  new RegExp(`\\b(?:src|href)\\s*=\\s*['"]${legacyReferencePattern}`, 'i'),
-  new RegExp(`@import\\s+(?:url\\(\\s*)?['"]?${legacyReferencePattern}`, 'i'),
+  new RegExp(`\\bfrom\\s+${stringDelimiterPattern}${legacyReferencePattern}`, 'i'),
+  new RegExp(`\\bimport\\s*${stringDelimiterPattern}${legacyReferencePattern}`, 'i'),
   new RegExp(
-    `\\bnew\\s+URL\\s*\\(\\s*['"]${legacyReferencePattern}[^'"]*['"]\\s*,\\s*import\\.meta\\.url\\s*\\)`,
+    `\\bimport\\s*\\(\\s*${stringDelimiterPattern}${legacyReferencePattern}`,
+    'i',
+  ),
+  new RegExp(
+    `\\brequire\\s*\\(\\s*${stringDelimiterPattern}${legacyReferencePattern}`,
+    'i',
+  ),
+  new RegExp(
+    `\\bimport\\.meta\\.glob\\s*\\(\\s*${stringDelimiterPattern}${legacyReferencePattern}`,
+    'i',
+  ),
+  new RegExp(
+    `\\b(?:src|href)\\s*=\\s*(?:${stringDelimiterPattern}${legacyReferencePattern}|${unquotedAttributePrefixPattern}${escapedLegacyPrototypeReference})`,
+    'i',
+  ),
+  new RegExp(
+    `@import\\s*(?:url\\(\\s*)?${stringDelimiterPattern}?${legacyReferencePattern}`,
+    'i',
+  ),
+  new RegExp(
+    `\\burl\\s*\\(\\s*${stringDelimiterPattern}?${legacyReferencePattern}`,
+    'i',
+  ),
+  new RegExp(
+    `\\bnew\\s+URL\\s*\\(\\s*${stringDelimiterPattern}${legacyReferencePattern}${nonStringDelimiterPattern}${stringDelimiterPattern}\\s*,\\s*import\\.meta\\.url\\s*\\)`,
     'i',
   ),
 ];
@@ -131,11 +157,6 @@ function walk(dir) {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     const relPath = path.relative(rootDir, fullPath);
-
-    if (ignoredDirs.has(entry.name)) {
-      continue;
-    }
-
     const stats = fs.lstatSync(fullPath);
     if (stats.isSymbolicLink()) {
       recordFailure(
@@ -145,6 +166,10 @@ function walk(dir) {
     }
 
     if (stats.isDirectory()) {
+      if (ignoredDirs.has(entry.name)) {
+        continue;
+      }
+
       if (fullPath === legacyDir) {
         continue;
       }
@@ -302,7 +327,7 @@ function checkFiles() {
 
     const content = fs.readFileSync(fullPath, 'utf8');
 
-    if (!markdownExtensions.has(extension)) {
+    if (!markdownProseExtensions.has(extension)) {
       for (const { label, pattern } of schemaImplementationPatterns) {
         if (pattern.test(content)) {
           recordFailure(
