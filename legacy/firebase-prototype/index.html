@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKRHAL Bunker · Spot Bidding</title>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --bg:#F2F2F7;
+  --paper:#FFFFFF;--paper-2:#EFEFF4;--paper-3:#E3E3E8;
+  --ink:#1C1C1E;--ink-2:#48484A;--ink-3:#8E8E93;
+  --navy:#1F5FAE;--gold:#9A6B00;--green:#248A3D;--red:#D70015;
+  --rule:#E5E5EA;--rule-2:#D1D1D6;
+  --green-soft:#E3F7E8;--selected:#EAF1FB;--gold-soft:#FFF3DE;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+:root[data-theme="dark"]{
+  --bg:#000000;
+  --paper:#1C1C1E;--paper-2:#2C2C2E;--paper-3:#3A3A3C;
+  --ink:#FFFFFF;--ink-2:#D1D1D6;--ink-3:#8E8E93;
+  --navy:#4C9AF0;--gold:#FFB340;--green:#30D158;--red:#FF453A;
+  --rule:#38383A;--rule-2:#48484A;
+  --green-soft:#0F3A1E;--selected:#10233B;--gold-soft:#3A2A08;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;min-height:100vh}
+a{color:var(--navy)}
+.screen{display:none}.screen.active{display:block}
+
+/* ── BUTTONS ── */
+.btn{border:.5px solid var(--rule-2);background:transparent;padding:7px 14px;border-radius:10px;
+  font-family:var(--sans);font-size:12px;letter-spacing:.02em;cursor:pointer;
+  transition:background .12s,color .12s,border-color .12s,filter .12s;white-space:nowrap}
+.btn.primary{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{color:var(--ink-2)}.btn.ghost:hover{background:var(--ink-2);color:var(--paper)}
+.btn.ghost.submit-btn{color:var(--navy);border-color:var(--navy)}
+.btn.ghost.submit-btn:hover{background:var(--navy);color:#fff}
+.btn.danger{color:var(--red)}.btn.danger:hover{background:var(--red);color:var(--paper);border-color:var(--red)}
+.btn.tiny{font-size:11px;padding:4px 9px}
+.btn.full{width:100%;padding:11px;font-size:13px;margin-top:6px}
+.btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+
+/* ── FORM FIELDS ── */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;color:var(--ink-3);letter-spacing:0;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;border:.5px solid var(--rule-2);border-radius:10px;
+  background:var(--paper-2);padding:10px 12px;font-family:var(--mono);font-size:14px;color:var(--ink);outline:none;transition:border-color .12s}
+.field textarea{padding:10px 12px;font-size:12px;line-height:1.6;resize:vertical}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--navy);outline:none}
+.field small{font-size:11px;color:var(--ink-3);margin-top:4px;display:block;line-height:1.5}
+
+/* ── AUTH CARD ── */
+.card-center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{background:var(--paper);border:.5px solid var(--rule);border-radius:16px;padding:36px;width:100%;max-width:440px;box-shadow:0 4px 24px rgba(0,0,0,.06)}
+.auth-card .brand{font-family:var(--sans);font-style:normal;font-weight:600;font-size:26px;
+  color:var(--navy);letter-spacing:-.02em;margin-bottom:4px}
+.auth-card .sub{font-size:12px;color:var(--ink-3);letter-spacing:0;margin-bottom:28px}
+.auth-card .err{color:var(--red);font-size:12px;margin-top:8px;min-height:18px}
+
+/* ── SITE HEADER ── */
+.site-header{border-bottom:.5px solid var(--rule);padding:0 24px;
+  display:flex;align-items:center;gap:12px;height:52px;
+  position:sticky;top:0;background:rgba(255,255,255,.72);
+  backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);z-index:100}
+:root[data-theme="dark"] .site-header{background:rgba(28,28,30,.72)}
+.brand-hd{font-family:var(--sans);font-style:normal;font-weight:600;font-size:17px;
+  color:var(--navy);letter-spacing:-.02em;flex:1}
+.brand-hd span{font-family:var(--sans);font-size:10px;font-style:normal;color:var(--ink-3);
+  letter-spacing:0;display:block;margin-top:1px}
+#trader-company-lbl{color:var(--navy);font-weight:600}
+.hd-actions{display:flex;gap:7px;align-items:center}
+.user-badge{font-size:11px;color:var(--ink-3);letter-spacing:.04em}
+
+/* ── AVATAR ── */
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--navy);color:var(--paper);
+  font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-family:var(--mono);letter-spacing:.02em}
+
+/* ── STATS STRIP ── */
+.stats-strip{display:flex;border-bottom:.5px solid var(--rule);background:var(--paper-2);overflow-x:auto}
+.stat-cell{padding:7px 18px;font-size:11px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;
+  border-right:1px solid var(--rule);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.stat-cell strong{color:var(--ink);font-family:var(--mono);font-size:13px;font-weight:500}
+
+/* ── REALTIME DOT ── */
+.rt-dot{width:7px;height:7px;border-radius:50%;background:var(--rule-2);
+  display:inline-block;transition:background .3s;flex-shrink:0}
+.rt-dot.live{background:var(--green)}
+@keyframes rtpulse{0%{transform:scale(1)}50%{transform:scale(2.2)}100%{transform:scale(1)}}
+.rt-dot.pulse{animation:rtpulse .35s ease-out}
+
+/* ── MAIN ── */
+.main{padding:24px;max-width:1700px;margin:0 auto}
+
+/* ── BUYER DEAL GRID ── */
+#deals-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(570px,1fr));gap:20px}
+
+/* ── DEAL CARD ── */
+.deal-card{border:.5px solid var(--rule);background:var(--paper);border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05),0 1px 1px rgba(0,0,0,.03);transition:border-color .25s}
+.deal-card.has-winner{border-color:var(--gold)}
+.deal-card.is-mine{border-color:var(--navy)}
+.deal-card.is-mine .dc-head{background:var(--selected)}
+.deal-card.is-closed{opacity:.85}
+.dc-head{padding:12px 16px;border-bottom:.5px solid var(--rule);display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.dc-info{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
+.dc-row{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.dc-field{display:flex;flex-direction:column;gap:2px}
+.dc-field .lbl{font-size:9px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+.dc-field .val{font-family:var(--mono);font-size:12px;color:var(--ink)}
+.dc-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0}
+.dc-actions{display:flex;gap:6px;align-items:center}
+.dc-deadline{display:flex;align-items:center;gap:6px}
+.dc-deadline .lbl{font-size:9px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+.badge{font-size:10px;letter-spacing:.02em;text-transform:uppercase;padding:3px 10px;border:.5px solid;border-radius:20px;flex-shrink:0}
+.badge.open{color:var(--green);border-color:var(--green);background:var(--green-soft)}
+.badge.closed{color:var(--ink-3);border-color:var(--rule-2);background:var(--paper-2)}
+
+/* ── QUOTE LIST (iOS) ── */
+.q-list{padding:2px 0}
+.q-row{display:flex;align-items:center;gap:11px;padding:10px 16px;border-bottom:.5px solid var(--rule)}
+.q-row:last-child{border-bottom:none}
+.q-row.best{background:var(--green-soft)}
+.q-row.win{background:var(--gold-soft)}
+.q-rank{width:24px;height:24px;border-radius:50%;background:var(--paper-2);color:var(--ink-3);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--mono)}
+.q-rank.top{background:var(--navy);color:#fff}
+.q-row.win .q-rank{background:var(--gold);color:#fff}
+.q-main{flex:1;min-width:0}
+.q-co{font-size:14px;font-weight:500;color:var(--ink)}
+.q-co .star{color:var(--gold);margin-left:5px;font-size:11px}
+.q-sub{font-size:11px;color:var(--ink-3);margin-top:1px;font-family:var(--mono)}
+.q-total{font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap;font-family:var(--mono)}
+.q-total.empty{color:var(--ink-3);font-weight:400}
+.q-row.best .q-total{color:var(--green)}
+.q-award{flex-shrink:0}
+
+.dc-foot{padding:9px 16px;display:flex;align-items:center;gap:10px;
+  border-top:1px solid var(--rule);background:var(--paper-2)}
+.dc-foot .fi{flex:1;font-size:11px;color:var(--ink-3)}
+.dc-foot .fi strong{color:var(--green);font-weight:600}
+.dc-foot .winner-tag{font-size:11px;color:var(--gold);letter-spacing:.04em;font-family:var(--mono)}
+
+/* ── TRADER VIEW ── */
+#trader-deals{display:flex;flex-direction:column;gap:16px;max-width:900px;margin:0 auto}
+.td-card{border:.5px solid var(--rule);background:var(--paper);border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05),0 1px 1px rgba(0,0,0,.03)}
+.td-card.is-closed .td-body{opacity:.6;pointer-events:none}
+.td-card.is-winner{border-color:var(--gold)}
+.td-head{padding:12px 16px;border-bottom:.5px solid var(--rule);
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:rgba(31,95,174,.09);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+:root[data-theme="dark"] .td-head{background:rgba(76,154,240,.18)}
+.td-info{flex:1;display:flex;gap:14px;flex-wrap:wrap}
+.td-field .lbl{font-size:9px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:2px}
+.td-field .val{font-family:var(--mono);font-size:12px;color:var(--ink)}
+.td-body{padding:16px}
+.qty-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.qty-pill{background:var(--paper-2);border:.5px solid var(--rule);border-radius:20px;padding:4px 12px;
+  font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+.price-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}
+.pg-group label{font-size:11px;color:var(--ink-3);letter-spacing:0;
+  display:block;margin-bottom:6px}
+.pg-group input{width:100%;border:.5px solid var(--rule-2);border-radius:10px;background:var(--paper-2);
+  padding:9px 11px;font-family:var(--mono);font-size:15px;color:var(--ink);outline:none;text-align:right;transition:border-color .12s}
+.pg-group input:focus{border-color:var(--navy)}
+.pg-group input.off{background:var(--paper-3);color:var(--ink-3);pointer-events:none;border-color:var(--rule)}
+.pg-total{font-family:var(--mono);font-size:16px;font-weight:600;padding:6px 0;text-align:right;min-width:100px;color:var(--navy)}
+.pg-total-group{background:var(--selected);border-radius:10px;padding:4px 10px}
+.submit-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:14px}
+.saved-at{font-size:11px;color:var(--ink-3);letter-spacing:.03em}
+.closed-banner{text-align:center;padding:9px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);background:var(--paper-2);border-top:1px solid var(--rule)}
+.won-banner{text-align:center;padding:10px;font-size:12px;letter-spacing:.06em;
+  color:var(--gold);background:var(--gold-soft);border-top:1px solid var(--gold);font-weight:600}
+
+/* ── MODAL ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
+.modal{background:var(--paper);border:.5px solid var(--rule);border-radius:16px;max-width:540px;width:100%;
+  padding:26px;max-height:90vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.18)}
+.modal.wide{max-width:760px}
+.modal h3{font-family:var(--sans);font-style:normal;font-weight:600;font-size:20px;margin-bottom:6px}
+.modal p{color:var(--ink-2);margin-bottom:16px;font-size:13px;line-height:1.7}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+
+/* ── DATE NAV ── */
+.date-nav{display:flex;align-items:center;gap:8px;padding:7px 20px;
+  border-bottom:.5px solid var(--rule);background:var(--paper)}
+.date-nav .date-lbl{font-family:var(--mono);font-size:12px;letter-spacing:.06em;
+  color:var(--ink-2);flex:1;text-align:center}
+
+/* ── EMAIL DROPZONE ── */
+.nd-dz{border:1.5px dashed var(--rule-2);border-radius:12px;padding:18px 12px;text-align:center;cursor:pointer;
+  margin-bottom:16px;transition:border-color .15s,background .15s;color:var(--ink-3);font-size:12px;letter-spacing:.03em}
+.nd-dz:hover,.nd-dz.drag{border-color:var(--navy);background:var(--green-soft);color:var(--ink)}
+.nd-dz .dz-ok{color:var(--green);font-weight:500;font-size:13px}
+.nd-dz .dz-fail{color:var(--red);font-size:12px}
+
+/* ── TOAST ── */
+.toast-el{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--ink);color:var(--paper);padding:11px 20px;border-radius:12px;
+  font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:999;white-space:nowrap}
+.toast-el.show{opacity:1}
+
+/* ── EMPTY STATE ── */
+.empty-state{text-align:center;padding:60px 20px;color:var(--ink-3)}
+.es-icon{font-size:28px;margin-bottom:10px;opacity:.5}
+.es-title{font-family:var(--sans);font-style:normal;font-weight:600;font-size:20px;color:var(--ink-2);margin-bottom:6px}
+.es-sub{font-size:12px;letter-spacing:.04em}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:var(--rule-2)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:640px){
+  #deals-grid{grid-template-columns:1fr}
+  .site-header,.main{padding-left:12px;padding-right:12px}
+  .price-grid{grid-template-columns:1fr 1fr}
+  .pg-total{grid-column:1/-1;text-align:left}
+  .brand-hd span{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ LOGIN SCREEN ═══════════ -->
+<div id="screen-login" class="screen">
+  <div class="card-center">
+    <div class="auth-card">
+      <div class="brand">SKRHAL Bunker</div>
+      <div class="sub">Spot Bidding · SINOKOR / HEUNG-A LINE</div>
+      <div class="field">
+        <label>이메일</label>
+        <input id="login-email" type="email" placeholder="user@company.com">
+      </div>
+      <div class="field">
+        <label>비밀번호</label>
+        <input id="login-pw" type="password" placeholder="••••••••">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
+        <input type="checkbox" id="remember-me" style="width:13px;height:13px;accent-color:var(--navy);cursor:pointer">
+        <label for="remember-me" style="font-size:12px;color:var(--ink-3);cursor:pointer;user-select:none;letter-spacing:.04em">아이디 저장</label>
+      </div>
+      <button class="btn primary full" id="login-btn">로그인</button>
+      <div class="err" id="login-err"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:14px">
+        <button class="btn ghost tiny" id="signup-btn">회원가입</button>
+        <button class="btn ghost tiny" id="forgot-btn">비밀번호 찾기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ BUYER SCREEN ═══════════ -->
+<div id="screen-buyer" class="screen">
+  <header class="site-header">
+    <div class="brand-hd">SKRHAL Bunker<span>Spot Bidding</span></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="rt-dot" id="rt-dot-buyer"></span>
+      <span class="user-badge" id="buyer-name-lbl"></span>
+    </div>
+    <div class="hd-actions">
+      <div class="avatar" id="buyer-avatar"></div>
+      <button class="btn ghost tiny" id="user-mgmt-btn">사용자 관리</button>
+      <button class="btn ghost tiny" id="buyer-chpw-btn">비밀번호 변경</button>
+      <button class="btn ghost tiny" id="buyer-logout-btn">로그아웃</button>
+      <button class="btn ghost tiny theme-btn" id="buyer-theme-btn" aria-label="다크 모드 전환">☾</button>
+      <button class="btn ghost tiny" id="btn-refresh">↺</button>
+      <button class="btn primary" id="btn-new-deal">+ 새 입찰</button>
+    </div>
+  </header>
+  <div class="stats-strip">
+    <div class="stat-cell">OPEN <strong id="stat-open">—</strong></div>
+    <div class="stat-cell">마감 <strong id="stat-closed">—</strong></div>
+    <div class="stat-cell">낙찰 <strong id="stat-winner">—</strong></div>
+    <div class="stat-cell">트레이더 <strong id="stat-traders">—</strong></div>
+  </div>
+  <div class="date-nav">
+    <button class="btn ghost tiny" id="date-prev">‹ 이전</button>
+    <span class="date-lbl" id="date-display"></span>
+    <button class="btn ghost tiny" id="date-next">다음 ›</button>
+    <button class="btn ghost tiny" id="date-today">오늘</button>
+  </div>
+  <div class="main">
+    <div id="deals-grid"></div>
+  </div>
+</div>
+
+<!-- ═══════════ TRADER SCREEN ═══════════ -->
+<div id="screen-trader" class="screen">
+  <header class="site-header">
+    <div class="brand-hd">
+      <span id="trader-company-lbl" style="font-family:var(--mono);font-size:14px;font-style:normal;letter-spacing:.04em"></span>
+      <span>SKRHAL Bunker · Trader</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="rt-dot" id="rt-dot-trader"></span>
+      <span class="user-badge" id="trader-date-lbl"></span>
+    </div>
+    <div class="hd-actions">
+      <div class="avatar" id="trader-avatar"></div>
+      <button class="btn ghost tiny" id="trader-chpw-btn">비밀번호 변경</button>
+      <button class="btn ghost tiny" id="trader-logout-btn">로그아웃</button>
+      <button class="btn ghost tiny theme-btn" id="trader-theme-btn" aria-label="다크 모드 전환">☾</button>
+    </div>
+  </header>
+  <div class="main">
+    <div id="trader-deals"></div>
+  </div>
+</div>
+
+<!-- ═══════════ TOAST ═══════════ -->
+<div class="toast-el" id="toast-el"></div>
+
+<script>
+'use strict';
+// ════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════
+const fmt = n => (n == null || n === '' || isNaN(Number(n)))
+  ? '—' : Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const today = () => new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'});
+const initials = s => (s||'?').split(/[\s_\-]+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,2)||'?';
+
+let _toastT;
+function toast(msg, dur=2500){
+  const el = document.getElementById('toast-el');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_toastT);
+  _toastT = setTimeout(()=>el.classList.remove('show'), dur);
+}
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el = document.getElementById('screen-'+name);
+  if(el) el.classList.add('active');
+}
+function setupTheme(){
+  const KEY='skrhal_theme';
+  function apply(t){
+    document.documentElement.setAttribute('data-theme', t);
+    try{ localStorage.setItem(KEY, t); }catch(e){}
+    document.querySelectorAll('.theme-btn').forEach(b=>{ b.textContent = t==='dark' ? '☀' : '☾'; });
+  }
+  let saved='light';
+  try{ saved = localStorage.getItem(KEY) || 'light'; }catch(e){}
+  apply(saved);
+  document.querySelectorAll('.theme-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const cur = document.documentElement.getAttribute('data-theme')==='dark' ? 'dark' : 'light';
+      apply(cur==='dark' ? 'light' : 'dark');
+    });
+  });
+}
+function pulseDot(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse');
+}
+
+// ════════════════════════════════════════════════════════
+// FIREBASE CONFIG
+// ════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBIg6bx4T8If-B_vAdG0KDiKi6v6FBgf9g",
+  authDomain: "spot-bidding-skrhal.firebaseapp.com",
+  projectId: "spot-bidding-skrhal",
+  storageBucket: "spot-bidding-skrhal.firebasestorage.app",
+  messagingSenderId: "15661804253",
+  appId: "1:15661804253:web:b25db5c4bf8681a2760934"
+};
+
+// ════════════════════════════════════════════════════════
+// APP STATE
+// ════════════════════════════════════════════════════════
+let db = null, auth = null, me = null;
+let traders = [], deals = [], quotesMap = {}, traderDeals = [], myQuotes = {};
+let _unsubDeals = null, _unsubQuotes = null;
+let _quoteSubIds = '';   // 현재 quotes 구독이 걸린 deal_id 시그니처
+let _signingUp = false;
+let _selectedDate = null;
+let _buyerTimerMap = {};
+
+// ════════════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════════════
+async function initApp(){
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    auth = firebase.auth();
+  } catch(e){
+    alert('Firebase 초기화 실패: '+e.message);
+    return;
+  }
+  showScreen('login');
+  bindLogin();
+  setupTheme();
+  auth.onAuthStateChanged(async user=>{
+    if(_signingUp) return;
+    if(user) await routeUser(user);
+    else {
+      showScreen('login');
+      const btn = document.getElementById('login-btn');
+      if(btn){ btn.disabled=false; btn.textContent='로그인'; }
+    }
+  });
+}
+
+async function routeUser(user){
+  try{
+    const doc = await db.collection('profiles').doc(user.uid).get();
+    if(!doc.exists){ toast('프로필 없음. 관리자에게 문의하세요.'); await auth.signOut(); return; }
+    const profile = doc.data();
+    if(profile.status==='pending'){
+      await auth.signOut();
+      showScreen('login'); bindLogin();
+      document.getElementById('login-err').textContent='승인 대기 중입니다. 관리자의 승인을 기다려주세요.';
+      return;
+    }
+    if(profile.status==='rejected'){
+      await auth.signOut();
+      showScreen('login'); bindLogin();
+      document.getElementById('login-err').textContent='가입이 거절되었습니다. 관리자에게 문의하세요.';
+      return;
+    }
+    me = { id:user.uid, email:user.email, ...profile };
+    if(me.role==='buyer') initBuyer();
+    else initTrader();
+  } catch(e){ toast('프로필 로드 실패: '+e.message); }
+}
+
+// ════════════════════════════════════════════════════════
+// LOGIN SCREEN
+// ════════════════════════════════════════════════════════
+const LOGIN_ERR = {
+  'auth/invalid-credential':  '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.',
+  'auth/user-not-found':      '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.',
+  'auth/wrong-password':      '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.',
+  'auth/too-many-requests':   '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.',
+  'auth/user-disabled':       '비활성화된 계정입니다. 관리자에게 문의하세요.',
+  'auth/invalid-email':       '올바르지 않은 이메일 형식입니다.',
+};
+
+function bindLogin(){
+  const loginBtn  = document.getElementById('login-btn');
+  const emailEl   = document.getElementById('login-email');
+  const errEl     = document.getElementById('login-err');
+  const rememberEl = document.getElementById('remember-me');
+
+  // 저장된 아이디 복원
+  const savedEmail = localStorage.getItem('saved_login_email');
+  if(savedEmail){ emailEl.value = savedEmail; rememberEl.checked = true; }
+
+  loginBtn.addEventListener('click', async ()=>{
+    const email = emailEl.value.trim();
+    const pw    = document.getElementById('login-pw').value;
+    if(!email||!pw){ errEl.textContent='이메일과 비밀번호를 입력하세요'; return; }
+    if(rememberEl.checked) localStorage.setItem('saved_login_email', email);
+    else localStorage.removeItem('saved_login_email');
+    loginBtn.disabled=true; loginBtn.textContent='로그인 중…';
+    try{
+      await auth.signInWithEmailAndPassword(email, pw);
+    } catch(e){
+      errEl.textContent = LOGIN_ERR[e.code] || '가입되어있지 않은 이메일이거나 비밀번호가 틀렸습니다.';
+      loginBtn.disabled=false; loginBtn.textContent='로그인';
+    }
+  });
+  ['login-email','login-pw'].forEach(id=>{
+    document.getElementById(id).addEventListener('keydown', e=>{
+      if(e.key==='Enter') loginBtn.click();
+    });
+  });
+  document.getElementById('signup-btn').addEventListener('click', showSignUpModal);
+  document.getElementById('forgot-btn').addEventListener('click', showForgotPasswordModal);
+}
+
+async function doLogout(){
+  if(_unsubDeals){ _unsubDeals(); _unsubDeals=null; }
+  if(_unsubQuotes){ _unsubQuotes(); _unsubQuotes=null; }
+  deals=[]; traders=[]; quotesMap={}; traderDeals=[]; myQuotes={}; me=null;
+  await auth.signOut();
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — INIT
+// ════════════════════════════════════════════════════════
+async function initBuyer(){
+  showScreen('buyer');
+  const dispName = me.name||me.email;
+  document.getElementById('buyer-name-lbl').textContent = dispName;
+  document.getElementById('buyer-avatar').textContent   = initials(dispName);
+  document.getElementById('buyer-logout-btn').addEventListener('click', doLogout);
+  document.getElementById('user-mgmt-btn').addEventListener('click', showUserManagementModal);
+  document.getElementById('buyer-chpw-btn').addEventListener('click', showChangePasswordModal);
+  document.getElementById('btn-refresh').addEventListener('click', ()=>{ subscribeBuyer(); toast('새로고침 완료'); });
+  document.getElementById('btn-new-deal').addEventListener('click', showNewDealModal);
+
+  _selectedDate = new Date(); _selectedDate.setHours(0,0,0,0);
+  updateDateDisplay();
+  document.getElementById('date-prev').addEventListener('click',()=>{
+    _selectedDate = new Date(_selectedDate.getTime()-86400000);
+    updateDateDisplay(); subscribeBuyer();
+  });
+  document.getElementById('date-next').addEventListener('click',()=>{
+    const tomorrow = new Date(); tomorrow.setHours(0,0,0,0); tomorrow.setDate(tomorrow.getDate()+1);
+    if(_selectedDate >= tomorrow) return;
+    _selectedDate = new Date(_selectedDate.getTime()+86400000);
+    updateDateDisplay(); subscribeBuyer();
+  });
+  document.getElementById('date-today').addEventListener('click',()=>{
+    _selectedDate = new Date(); _selectedDate.setHours(0,0,0,0);
+    updateDateDisplay(); subscribeBuyer();
+  });
+
+  await loadTraders();
+  document.getElementById('stat-traders').textContent = traders.length;
+  subscribeBuyer();
+}
+
+function updateDateDisplay(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isToday = _selectedDate.getTime() === today.getTime();
+  const d = _selectedDate;
+  const str = `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('date-display').textContent = str + (isToday?' (오늘)':'');
+  document.getElementById('date-next').disabled = isToday;
+}
+
+async function loadTraders(){
+  const snap = await db.collection('profiles').where('role','==','trader').get();
+  traders = snap.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(t=>!t.status||t.status==='approved')
+    .sort((a,b)=>(a.company||'').localeCompare(b.company||''));
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — REALTIME
+// ════════════════════════════════════════════════════════
+function subscribeBuyer(){
+  if(_unsubDeals){ _unsubDeals(); _unsubDeals=null; }
+  if(_unsubQuotes){ _unsubQuotes(); _unsubQuotes=null; }
+  deals=[]; quotesMap={}; _quoteSubIds=''; stopBuyerTimers();
+  renderBuyer(); updateStats();
+
+  const dot = document.getElementById('rt-dot-buyer');
+  const start = firebase.firestore.Timestamp.fromDate(_selectedDate);
+  const end   = firebase.firestore.Timestamp.fromDate(new Date(_selectedDate.getTime()+86400000));
+
+  _unsubDeals = db.collection('deals')
+    .where('created_at','>=',start).where('created_at','<',end)
+    .orderBy('created_at','desc')
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(chg=>{
+        const d = {id:chg.doc.id,...chg.doc.data()};
+        if(chg.type==='added') deals.push(d);
+        else if(chg.type==='modified'){ const i=deals.findIndex(x=>x.id===d.id); if(i>=0) deals[i]=d; }
+        else if(chg.type==='removed') deals=deals.filter(x=>x.id!==d.id);
+      });
+      deals.sort((a,b)=>(b.created_at?.seconds??0)-(a.created_at?.seconds??0));
+      const _ids = deals.map(d=>d.id).sort();
+      const _sig = _ids.join(',');
+      if(_sig !== _quoteSubIds){ _quoteSubIds = _sig; subscribeBuyerQuotes(_ids); }
+      dot.classList.add('live');
+      pulseDot('rt-dot-buyer');
+      renderBuyer(); updateStats();
+    }, err=>{ dot.classList.remove('live'); toast('연결 오류: '+err.message); });
+}
+
+function subscribeBuyerQuotes(dealIds){
+  if(_unsubQuotes){ _unsubQuotes(); _unsubQuotes=null; }
+  quotesMap = {};
+  if(!dealIds.length){ renderBuyer(); return; }
+  // Firestore 'in'은 최대 30개. 하루 딜 15건 미만이라 여유 있음.
+  const ids = dealIds.slice(0, 30);
+  _unsubQuotes = db.collection('quotes').where('deal_id','in', ids)
+    .onSnapshot(snap=>{
+      const affected = new Set();
+      snap.docChanges().forEach(chg=>{
+        const q={id:chg.doc.id,...chg.doc.data()};
+        if(!quotesMap[q.deal_id]) quotesMap[q.deal_id]={};
+        if(chg.type==='removed') delete quotesMap[q.deal_id][q.trader_id];
+        else quotesMap[q.deal_id][q.trader_id]=q;
+        affected.add(q.deal_id);
+      });
+      pulseDot('rt-dot-buyer');
+      // 변경된 딜의 카드가 하나라도 아직 없으면 전체 렌더로 폴백, 아니면 카드 단위 갱신
+      let needFull = false;
+      affected.forEach(id=>{ if(!document.querySelector(`.deal-card[data-id="${id}"]`)) needFull = true; });
+      if(needFull) renderBuyer();
+      else affected.forEach(id=>rerenderCard(id));
+    }, ()=>{});
+}
+
+function updateStats(){
+  document.getElementById('stat-open').textContent   = deals.filter(d=>!d.status_closed).length;
+  document.getElementById('stat-closed').textContent = deals.filter(d=>d.status_closed).length;
+  document.getElementById('stat-winner').textContent = deals.filter(d=>d.winner_id).length;
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER TIMER
+// ════════════════════════════════════════════════════════
+function stopBuyerTimers(){
+  Object.values(_buyerTimerMap).forEach(id=>clearInterval(id));
+  Object.keys(_buyerTimerMap).forEach(k=>delete _buyerTimerMap[k]);
+}
+function startBuyerTimerFor(deal){
+  const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  if(!deadlineMs||deal.status_closed) return;
+  const el = document.querySelector(`.buyer-countdown[data-deal-id="${deal.id}"]`);
+  if(!el) return;
+  function tick(){
+    const rem = deadlineMs-Date.now();
+    if(rem<=0){
+      el.textContent='시간초과'; el.style.color='var(--red)';
+      clearInterval(_buyerTimerMap[deal.id]); delete _buyerTimerMap[deal.id];
+      return;
+    }
+    const m=Math.floor(rem/60000), s=Math.floor((rem%60000)/1000);
+    el.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    el.style.color=rem<300000?'var(--red)':'var(--gold)';
+  }
+  tick();
+  _buyerTimerMap[deal.id]=setInterval(tick,1000);
+}
+function startBuyerTimers(){
+  deals.forEach(startBuyerTimerFor);
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — RENDER
+// ════════════════════════════════════════════════════════
+function renderBuyer(){
+  stopBuyerTimers();
+  const grid = document.getElementById('deals-grid');
+  if(!deals.length){
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="es-icon">📋</div>
+      <div class="es-title">등록된 입찰이 없습니다</div>
+      <div class="es-sub">+ 새 입찰 버튼으로 첫 번째 입찰을 등록하세요</div>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = deals.map(buildDealCard).join('');
+  wireCardEvents(grid);
+  startBuyerTimers();
+}
+
+function rerenderCard(dealId){
+  const old = document.querySelector(`.deal-card[data-id="${dealId}"]`);
+  if(!old) return;
+  const deal = deals.find(d=>d.id===dealId);
+  if(!deal) return;
+  // 카드 DOM 교체 전에 이 딜의 기존 타이머 정지 (옛 요소 붙잡는 것 방지)
+  if(_buyerTimerMap[dealId]){ clearInterval(_buyerTimerMap[dealId]); delete _buyerTimerMap[dealId]; }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildDealCard(deal);
+  const nw = tmp.firstElementChild;
+  old.replaceWith(nw);
+  wireCardEvents(nw);
+  // 새 카드의 카운트다운 요소에 타이머 재부착
+  startBuyerTimerFor(deal);
+}
+
+function wireCardEvents(root){
+  if(!root) return;
+  root.querySelectorAll('[data-act]').forEach(el=>el.addEventListener('click', handleCardAction));
+}
+
+function buildDealCard(deal){
+  const dq    = quotesMap[deal.id]||{};
+  const noFo  = !deal.fo_qty  || Number(deal.fo_qty)===0;
+  const noMgo = !deal.mgo_qty || Number(deal.mgo_qty)===0;
+  const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  const deadlineExpired = deadlineMs && Date.now()>deadlineMs;
+  const deadlineStr = deadlineMs
+    ? new Date(deadlineMs).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})
+    : null;
+
+  const rows = traders.map(t=>{
+    const q = dq[t.id]||null;
+    let total=null, valid=false;
+    if(q){
+      const fo=parseFloat(q.fo_price), mgo=parseFloat(q.mgo_price), barge=parseFloat(q.barge)||0;
+      const foOk = noFo||!isNaN(fo), mgoOk = noMgo||!isNaN(mgo);
+      valid = foOk && mgoOk && (!isNaN(fo)||!isNaN(mgo)||barge>0);
+      if(valid) total = (!noFo&&!isNaN(fo)?fo*deal.fo_qty:0)
+                      + (!noMgo&&!isNaN(mgo)?mgo*deal.mgo_qty:0) + barge;
+    }
+    return {t,q,total,valid};
+  });
+
+  const vals   = rows.filter(r=>r.valid).map(r=>r.total);
+  const sorted = [...new Set(vals)].sort((a,b)=>a-b);
+  const ranked = rows.map(r=>({...r, rank:r.valid?sorted.indexOf(r.total)+1:null}));
+  const best   = ranked.find(r=>r.rank===1);
+  const winner = deal.winner_id ? traders.find(t=>t.id===deal.winner_id) : null;
+  const closed = deal.status_closed;
+
+  const trows = ranked.map(r=>{
+    const isW = r.t.id===deal.winner_id;
+    const isB = r.rank===1 && !deal.winner_id && !closed;
+    const parts=[];
+    if(!noFo)  parts.push(`FO ${r.q?fmt(r.q.fo_price):'—'}`);
+    if(!noMgo) parts.push(`MGO ${r.q?fmt(r.q.mgo_price):'—'}`);
+    parts.push(`바지 ${r.q?fmt(r.q.barge):'—'}`);
+    const sub = r.q ? parts.join(' · ') : '미응찰';
+    const awardBtn = !closed&&r.valid
+      ? `<button class="btn tiny ghost q-award" data-act="${isW?'unset-winner':'set-winner'}" data-deal-id="${deal.id}" data-trader-id="${r.t.id}">${isW?'해제':'선정'}</button>`:'';
+    return `<div class="q-row ${isW?'win':isB?'best':''}">
+      <div class="q-rank ${r.rank===1?'top':''}">${r.rank||'·'}</div>
+      <div class="q-main">
+        <div class="q-co">${esc(r.t.company||r.t.name)}${isW?`<span class="star">★</span>`:''}</div>
+        <div class="q-sub">${sub}</div>
+      </div>
+      <div class="q-total ${r.valid?'':'empty'}">${r.valid?fmt(r.total):'—'}</div>
+      ${awardBtn}
+    </div>`;
+  }).join('');
+
+  const bestTxt = best&&best.valid
+    ? `최저가 <strong>${esc(best.t.company||best.t.name)}</strong> · ${fmt(best.total)}`
+    : '아직 입찰 없음';
+
+  const isMine = deal.created_by === me.id;
+  return `<section class="deal-card ${closed?'is-closed':''} ${winner?'has-winner':''} ${isMine?'is-mine':''}" data-id="${deal.id}">
+    <div class="dc-head">
+      <div class="dc-info">
+        <div class="dc-row">
+          <div class="dc-field"><span class="lbl">VSL</span><span class="val">${esc(deal.vsl||'—')}</span></div>
+          <div class="dc-field"><span class="lbl">PORT / DATE</span><span class="val">${esc(deal.port||'—')}</span></div>
+        </div>
+        <div class="dc-row">
+          <div class="dc-field"><span class="lbl">FO TYPE</span><span class="val">${esc(deal.fo_type||'—')}</span></div>
+          <div class="dc-field"><span class="lbl">FO QTY</span><span class="val">${fmt(deal.fo_qty)} MT</span></div>
+          <div class="dc-field"><span class="lbl">MGO QTY</span><span class="val">${fmt(deal.mgo_qty)} MT</span></div>
+        </div>
+      </div>
+      <div class="dc-right">
+        <div class="dc-actions">
+          <span class="badge ${closed?'closed':'open'}">${closed?'마감':'OPEN'}</span>
+          <button class="btn tiny ghost" data-act="${closed?'reopen':'close'}" data-deal-id="${deal.id}">${closed?'재오픈':'마감'}</button>
+          <button class="btn tiny danger" data-act="delete" data-deal-id="${deal.id}">삭제</button>
+        </div>
+        <div class="dc-deadline">
+          <span class="lbl">마감</span>
+          ${deadlineMs&&!closed
+            ? `<span class="buyer-countdown" data-deal-id="${deal.id}" style="font-family:var(--mono);font-size:12px;color:var(--gold);font-weight:500">--:--</span>`
+            : deadlineStr
+              ? `<span style="font-family:var(--mono);font-size:12px;color:var(--red)">${deadlineStr} 종료</span>`
+              : `<span style="font-size:11px;color:var(--ink-3)">미설정</span>`}
+          <button class="btn tiny ghost" data-act="edit-deadline" data-deal-id="${deal.id}" style="font-size:9px;padding:2px 6px">⏱</button>
+        </div>
+      </div>
+    </div>
+    <div class="q-list">${trows}</div>
+    <div class="dc-foot">
+      <span class="fi">${bestTxt}</span>
+      ${winner?`<span class="winner-tag">★ ${esc(winner.company||winner.name)} 낙찰</span>`:''}
+    </div>
+  </section>`;
+}
+
+async function handleCardAction(e){
+  const el = e.currentTarget;
+  const {act, dealId, traderId} = el.dataset;
+  const deal = deals.find(d=>d.id===dealId);
+  if(!deal) return;
+  if(act==='edit-deadline'){ showDeadlineModal(dealId); return; }
+  el.disabled=true;
+  try{
+    if(act==='close')         await db.collection('deals').doc(dealId).update({status_closed:true});
+    else if(act==='reopen')   await db.collection('deals').doc(dealId).update({status_closed:false,winner_id:null});
+    else if(act==='set-winner')   await db.collection('deals').doc(dealId).update({winner_id:traderId});
+    else if(act==='unset-winner') await db.collection('deals').doc(dealId).update({winner_id:null});
+    else if(act==='delete'){
+      if(!confirm(`"${deal.vsl||'이름 없음'}" 입찰을 삭제하시겠습니까?`)){ el.disabled=false; return; }
+      await db.collection('deals').doc(dealId).delete();
+    }
+  } catch(err){ toast('오류: '+err.message); }
+  el.disabled=false;
+}
+
+// ════════════════════════════════════════════════════════
+// DEADLINE MODAL
+// ════════════════════════════════════════════════════════
+function showDeadlineModal(dealId){
+  const deal = deals.find(d=>d.id===dealId);
+  if(!deal) return;
+  const curMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  const curStr = curMs
+    ? new Date(curMs).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})
+    : '미설정';
+  const curTimeStr = curMs
+    ? `${String(new Date(curMs).getHours()).padStart(2,'0')}:${String(new Date(curMs).getMinutes()).padStart(2,'0')}`
+    : '';
+  const bg = mkModal('마감 시각 수정',
+    `<p>현재: <strong>${curStr}</strong></p>
+     <div class="field"><label>마감 시각 (24시간)</label>
+       <input id="dl-time" type="time" value="${curTimeStr}" style="font-family:var(--mono);font-size:14px;letter-spacing:.06em">
+     </div>`,
+    `<button class="btn ghost" id="dl-cancel">취소</button>
+     ${curMs?`<button class="btn danger tiny" id="dl-clear">마감 제거</button>`:''}
+     <button class="btn primary" id="dl-ok">설정</button>`);
+
+  bg.querySelector('#dl-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#dl-clear')?.addEventListener('click', async ()=>{
+    await db.collection('deals').doc(dealId).update({deadline_at:null});
+    bg.remove(); toast('마감 시간이 제거되었습니다');
+  });
+  bg.querySelector('#dl-ok').addEventListener('click', async ()=>{
+    const val = bg.querySelector('#dl-time').value;
+    const ts = timeToTimestamp(val, true);
+    if(!ts){ bg.querySelector('#dl-time').style.borderBottomColor='var(--red)'; return; }
+    if(ts === 'PAST'){
+      bg.querySelector('#dl-time').style.borderBottomColor='var(--red)';
+      toast('마감 시각이 이미 지났습니다. 현재 이후 시각으로 입력하세요.');
+      return;
+    }
+    const btn=bg.querySelector('#dl-ok');
+    btn.disabled=true; btn.textContent='설정 중…';
+    try{
+      await db.collection('deals').doc(dealId).update({deadline_at:ts});
+      bg.remove(); toast('마감 시각이 설정되었습니다');
+    } catch(err){ toast('오류: '+err.message); btn.disabled=false; btn.textContent='설정'; }
+  });
+  bg.querySelector('#dl-time').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// MSG PARSER (Outlook .msg CFB format)
+// ════════════════════════════════════════════════════════
+function parseMsgBuffer(arrayBuffer){
+  const u8=new Uint8Array(arrayBuffer);
+  const view=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  const sig=[0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1];
+  for(let i=0;i<8;i++) if(u8[i]!==sig[i]) throw new Error('Outlook .msg 파일이 아닙니다');
+  const sectorSize=1<<view.getUint16(0x1E,true);
+  const miniSectorSize=1<<view.getUint16(0x20,true);
+  const firstDirSector=view.getUint32(0x30,true);
+  const miniCutoff=view.getUint32(0x38,true);
+  const firstMiniFatSector=view.getUint32(0x3C,true);
+  const difat=[];
+  for(let i=0;i<109;i++){const s=view.getUint32(0x4C+i*4,true);if(s>=0xFFFFFFFC)break;difat.push(s);}
+  let cur=view.getUint32(0x44,true),safety=0;
+  while(cur<0xFFFFFFFC&&safety<10000){
+    safety++;const off=(cur+1)*sectorSize,perSec=(sectorSize/4)-1;
+    for(let i=0;i<perSec;i++){const s=view.getUint32(off+i*4,true);if(s<0xFFFFFFFC)difat.push(s);}
+    cur=view.getUint32(off+sectorSize-4,true);
+  }
+  const fat=[];
+  for(const sec of difat){const off=(sec+1)*sectorSize;for(let i=0;i<sectorSize/4;i++)fat.push(view.getUint32(off+i*4,true));}
+  const miniFat=[];
+  cur=firstMiniFatSector;safety=0;
+  while(cur<0xFFFFFFFC&&safety<10000){
+    safety++;const off=(cur+1)*sectorSize;
+    for(let i=0;i<sectorSize/4;i++)miniFat.push(view.getUint32(off+i*4,true));
+    cur=fat[cur];
+  }
+  function readChain(s){
+    const parts=[];let c=0;
+    while(s<0xFFFFFFFC&&c<200000){const st=(s+1)*sectorSize;parts.push(u8.subarray(st,st+sectorSize));s=fat[s];c++;}
+    const tot=parts.reduce((a,p)=>a+p.length,0),out=new Uint8Array(tot);let o=0;
+    for(const p of parts){out.set(p,o);o+=p.length;}return out;
+  }
+  function readMini(s,ms){
+    const parts=[];let c=0;
+    while(s<0xFFFFFFFC&&c<2000000){const st=s*miniSectorSize;parts.push(ms.subarray(st,st+miniSectorSize));s=miniFat[s];c++;}
+    const tot=parts.reduce((a,p)=>a+p.length,0),out=new Uint8Array(tot);let o=0;
+    for(const p of parts){out.set(p,o);o+=p.length;}return out;
+  }
+  const dirBuf=readChain(firstDirSector);
+  const dv2=new DataView(dirBuf.buffer,dirBuf.byteOffset,dirBuf.byteLength);
+  const entries=[];
+  for(let i=0;i<Math.floor(dirBuf.length/128);i++){
+    const b=i*128;const nl=dv2.getUint16(b+64,true);let name='';
+    for(let j=0;j<Math.max(0,nl-2);j+=2){const c=dv2.getUint16(b+j,true);if(c===0)break;name+=String.fromCharCode(c);}
+    entries.push({name,type:dirBuf[b+66],startSector:dv2.getUint32(b+116,true),size:dv2.getUint32(b+120,true)});
+  }
+  const miniStream=readChain(entries[0].startSector);
+  function read(name){
+    const e=entries.find(en=>en.name===name);if(!e)return null;
+    const data=e.size<miniCutoff?readMini(e.startSector,miniStream):readChain(e.startSector);
+    return data.subarray(0,e.size);
+  }
+  let body='';
+  const bU=read('__substg1.0_1000001F');
+  if(bU) body=new TextDecoder('utf-16le').decode(bU);
+  else{const bA=read('__substg1.0_1000001E');if(bA) body=new TextDecoder('utf-8').decode(bA);}
+  return {body};
+}
+
+// ════════════════════════════════════════════════════════
+// EMAIL BODY PARSER — extracts VSL / PORT / ETA / fuel qtys
+// ════════════════════════════════════════════════════════
+const FUEL_FO_OPTIONS = ['VLSFO','HSFO','ULSFO','LSFO'];
+
+function timeToTimestamp(val, rejectPast=false){
+  if(!val) return null;
+  const [h,m] = val.split(':').map(Number);
+  if(isNaN(h)||isNaN(m)) return null;
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  if(rejectPast && d.getTime() <= Date.now()) return 'PAST';
+  return firebase.firestore.Timestamp.fromDate(d);
+}
+function extractBidInfo(body){
+  const out={vsl:'',port:'',eta:'',fuels:[]};
+  const vsl=body.match(/-?\s*VSL\s*[:/：]\s*([^\r\n]+)/i);
+  if(vsl) out.vsl=vsl[1].trim();
+  const portLine=body.match(/-?\s*PORT(?:\s*\/\s*TERMINAL)?\s*[:/：]\s*([^\r\n]+)/i);
+  if(portLine){let p=portLine[1].trim();const sl=p.indexOf(' / ');if(sl>0)p=p.slice(0,sl).trim();out.port=p;}
+  const eta=body.match(/-?\s*ETA\s*[:/：]\s*([^\r\n]+)/i);
+  if(eta) out.eta=eta[1].trim();
+  for(const line of body.split(/[\r\n]+/)){
+    if(!/\d+\s*MT/i.test(line)) continue;
+    let fuel=null;
+    if(/\bVLSFO\b/i.test(line)) fuel='VLSFO';
+    else if(/\bULSFO\b/i.test(line)) fuel='ULSFO';
+    else if(/\bHSHFO\b|\bHSFO\b|\bHFO\b/i.test(line)) fuel='HSFO';
+    else if(/\bLSFO\b/i.test(line)) fuel='LSFO';
+    else if(/\bLSMGO\b|\bMGO\b|\bMDO\b/i.test(line)) fuel='MGO';
+    if(!fuel) continue;
+    const num=line.match(/(\d+(?:[.,]\d+)?)\s*MT/i);
+    if(!num) continue;
+    const qty=parseFloat(num[1].replace(/,/g,''));
+    if(!isNaN(qty)&&qty>0) out.fuels.push({fuel,qty});
+  }
+  return out;
+}
+
+// ════════════════════════════════════════════════════════
+// BUYER — NEW DEAL MODAL (with email import)
+// ════════════════════════════════════════════════════════
+function showNewDealModal(){
+  const bg = mkModal('새 입찰 등록',
+    `<div class="nd-dz" id="nd-dz">
+       <div id="nd-dz-label">📧 발주 메일(.msg / .eml) 드래그 또는 클릭하여 자동 입력</div>
+       <input type="file" id="nd-dz-input" accept=".msg,.eml" style="display:none">
+     </div>
+     <div class="field"><label>VSL / VOY</label><input id="nd-vsl" type="text" placeholder="MELBOURNE BRIDGE 2602E"></div>
+     <div class="field"><label>PORT / DATE</label><input id="nd-port" type="text" placeholder="PORT KLANG / 02~06 Jun 2026"></div>
+     <div class="grid3">
+       <div class="field"><label>FO TYPE</label>
+         <select id="nd-fotype"><option>VLSFO</option><option>HSFO</option><option>ULSFO</option><option>LSFO</option></select>
+       </div>
+       <div class="field"><label>FO QTY (MT)</label><input id="nd-foqty" type="text" inputmode="numeric" placeholder="0"></div>
+       <div class="field"><label>MGO QTY (MT)</label><input id="nd-mgoqty" type="text" inputmode="numeric" placeholder="0"></div>
+     </div>
+     <div class="field"><label>입찰 마감 시각 (생략 시 무제한)</label><input id="nd-deadline" type="time" style="font-family:var(--mono);font-size:14px;letter-spacing:.06em"></div>`,
+    `<button class="btn ghost" id="nd-cancel">취소</button><button class="btn primary" id="nd-ok">등록</button>`);
+
+  // ── 드롭존 ──
+  const dz = bg.querySelector('#nd-dz');
+  const dzInput = bg.querySelector('#nd-dz-input');
+  const lblEl = bg.querySelector('#nd-dz-label');
+
+  dz.addEventListener('click', ()=>dzInput.click());
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
+  dz.addEventListener('drop', async e=>{ const f=e.dataTransfer?.files?.[0]; if(f) await parseAndFill(f); });
+  dzInput.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(f) await parseAndFill(f); dzInput.value=''; });
+
+  async function parseAndFill(file){
+    lblEl.textContent = '분석 중…';
+    try{
+      let body='';
+      if(file.name.toLowerCase().endsWith('.eml')){
+        const raw=await file.text();
+        const blank=raw.search(/\r?\n\r?\n/);
+        body=blank>=0?raw.slice(blank).trim():raw;
+      } else {
+        const buf=await file.arrayBuffer();
+        body=parseMsgBuffer(buf).body;
+      }
+      if(!body) throw new Error('본문을 읽을 수 없습니다');
+      const info=extractBidInfo(body);
+      if(info.vsl) bg.querySelector('#nd-vsl').value=info.vsl;
+      const portDate=[info.port,info.eta].filter(Boolean).join(' / ');
+      if(portDate) bg.querySelector('#nd-port').value=portDate;
+      for(const f of info.fuels){
+        if(f.fuel==='MGO'){
+          bg.querySelector('#nd-mgoqty').value=f.qty;
+        } else {
+          if(FUEL_FO_OPTIONS.includes(f.fuel)) bg.querySelector('#nd-fotype').value=f.fuel;
+          bg.querySelector('#nd-foqty').value=f.qty;
+        }
+      }
+      lblEl.innerHTML=`<span class="dz-ok">✓ ${esc(file.name)} 파싱 완료 — 아래 내용을 확인 후 등록하세요</span>`;
+      toast('이메일 정보를 불러왔습니다');
+    } catch(err){
+      lblEl.innerHTML=`<span class="dz-fail">⚠ ${esc(err.message)}</span>`;
+    }
+  }
+
+  bg.querySelector('#nd-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#nd-ok').addEventListener('click', async ()=>{
+    const vsl     = bg.querySelector('#nd-vsl').value.trim();
+    const port    = bg.querySelector('#nd-port').value.trim();
+    const fo_type    = bg.querySelector('#nd-fotype').value;
+    const fo_qty     = parseFloat(bg.querySelector('#nd-foqty').value)||0;
+    const mgo_qty    = parseFloat(bg.querySelector('#nd-mgoqty').value)||0;
+    const deadlineVal = bg.querySelector('#nd-deadline').value;
+    const deadline_at = timeToTimestamp(deadlineVal, true);
+    if(deadline_at === 'PAST'){
+      toast('마감 시각이 이미 지났습니다. 현재 이후 시각으로 입력하세요.');
+      bg.querySelector('#nd-deadline').style.borderBottomColor = 'var(--red)';
+      return;
+    }
+    const btn = bg.querySelector('#nd-ok');
+    btn.disabled=true; btn.textContent='등록 중…';
+    try{
+      await db.collection('deals').add({
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
+        created_by: me.id,
+        vsl, port, fo_type, fo_qty, mgo_qty,
+        deadline_at,
+        status_closed: false, winner_id: null
+      });
+      bg.remove(); toast('새 입찰이 등록되었습니다');
+    } catch(err){
+      toast('등록 실패: '+err.message);
+      btn.disabled=false; btn.textContent='등록';
+    }
+  });
+  bg.querySelectorAll('input[type=text]').forEach(inp=>{
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter') bg.querySelector('#nd-ok').click(); });
+  });
+  bg.querySelector('#nd-vsl').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// TRADER — INIT
+// ════════════════════════════════════════════════════════
+function initTrader(){
+  showScreen('trader');
+  const dispName = me.company||me.name||me.email;
+  document.getElementById('trader-company-lbl').textContent = dispName;
+  document.getElementById('trader-date-lbl').textContent    = today();
+  document.getElementById('trader-avatar').textContent      = initials(dispName);
+  document.getElementById('trader-chpw-btn').addEventListener('click', showChangePasswordModal);
+  document.getElementById('trader-logout-btn').addEventListener('click', doLogout);
+  subscribeTrader();
+}
+
+// ════════════════════════════════════════════════════════
+// TRADER — REALTIME
+// ════════════════════════════════════════════════════════
+function subscribeTrader(){
+  const dot = document.getElementById('rt-dot-trader');
+
+  const _tStart = new Date(); _tStart.setHours(0,0,0,0);
+  const _tEnd   = new Date(_tStart.getTime()+86400000);
+  _unsubDeals = db.collection('deals')
+    .where('created_at','>=',firebase.firestore.Timestamp.fromDate(_tStart))
+    .where('created_at','<', firebase.firestore.Timestamp.fromDate(_tEnd))
+    .orderBy('created_at','desc')
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(chg=>{
+        const d={id:chg.doc.id,...chg.doc.data()};
+        if(chg.type==='added') traderDeals.push(d);
+        else if(chg.type==='modified'){ const i=traderDeals.findIndex(x=>x.id===d.id); if(i>=0) traderDeals[i]=d; }
+        else if(chg.type==='removed') traderDeals=traderDeals.filter(x=>x.id!==d.id);
+      });
+      traderDeals.sort((a,b)=>(b.created_at?.seconds??0)-(a.created_at?.seconds??0));
+      dot.classList.add('live');
+      pulseDot('rt-dot-trader');
+      renderTrader();
+    }, err=>{ dot.classList.remove('live'); toast('연결 오류: '+err.message); });
+
+  _unsubQuotes = db.collection('quotes').where('trader_id','==',me.id)
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(chg=>{
+        const q={id:chg.doc.id,...chg.doc.data()};
+        if(chg.type==='removed') delete myQuotes[q.deal_id];
+        else myQuotes[q.deal_id]=q;
+      });
+      renderTrader();
+    }, ()=>{});
+}
+
+// ════════════════════════════════════════════════════════
+// COUNTDOWN TIMER MANAGEMENT
+// ════════════════════════════════════════════════════════
+const _timerMap = {};
+function stopTimers(){
+  Object.values(_timerMap).forEach(id=>clearInterval(id));
+  Object.keys(_timerMap).forEach(k=>delete _timerMap[k]);
+}
+function startTimers(){
+  traderDeals.forEach(deal=>{
+    const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+      || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+    if(!deadlineMs || deal.status_closed) return;
+    const el = document.querySelector(`.countdown[data-deal-id="${deal.id}"]`);
+    if(!el) return;
+    function tick(){
+      const rem = deadlineMs - Date.now();
+      if(rem <= 0){
+        el.textContent = '00:00'; el.style.color = 'var(--red)';
+        clearInterval(_timerMap[deal.id]); delete _timerMap[deal.id];
+        renderTrader();
+        return;
+      }
+      const m = Math.floor(rem/60000), s = Math.floor((rem%60000)/1000);
+      el.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      el.style.color = rem < 300000 ? 'var(--red)' : 'var(--gold)';
+    }
+    tick();
+    _timerMap[deal.id] = setInterval(tick, 1000);
+  });
+}
+
+// ════════════════════════════════════════════════════════
+// TRADER — RENDER
+// ════════════════════════════════════════════════════════
+function renderTrader(){
+  stopTimers();
+  const wrap = document.getElementById('trader-deals');
+  if(!traderDeals.length){
+    wrap.innerHTML = `<div class="empty-state">
+      <div class="es-icon">📋</div>
+      <div class="es-title">등록된 입찰이 없습니다</div>
+      <div class="es-sub">바이어가 입찰을 등록하면 즉시 여기에 표시됩니다</div>
+    </div>`;
+    return;
+  }
+  const saved = {};
+  wrap.querySelectorAll('.price-inp').forEach(inp=>{
+    saved[inp.dataset.dealId+':'+inp.dataset.field] = inp.value;
+  });
+  wrap.innerHTML = traderDeals.map(d=>buildTraderCard(d, saved)).join('');
+  wireTraderEvents(wrap);
+  startTimers();
+}
+
+function buildTraderCard(deal, saved={}){
+  const q     = myQuotes[deal.id]||null;
+  const noFo  = !deal.fo_qty  || Number(deal.fo_qty)===0;
+  const noMgo = !deal.mgo_qty || Number(deal.mgo_qty)===0;
+  const deadlineMs = deal.deadline_at?.toDate?.()?.getTime()
+    || (deal.deadline_at?.seconds ? deal.deadline_at.seconds*1000 : null);
+  const deadlineExpired = deadlineMs && Date.now()>deadlineMs;
+  const closed = deal.status_closed || deadlineExpired;
+  const iWon   = deal.winner_id === me.id;
+
+  const foVal  = saved[deal.id+':fo_price']  ?? (q?.fo_price  ?? '');
+  const mgoVal = saved[deal.id+':mgo_price'] ?? (q?.mgo_price ?? '');
+  const barVal = saved[deal.id+':barge']     ?? (q?.barge     ?? '');
+
+  const fo=parseFloat(foVal), mgo=parseFloat(mgoVal), bar=parseFloat(barVal)||0;
+  const total = (!noFo&&!isNaN(fo)?fo*deal.fo_qty:0)+(!noMgo&&!isNaN(mgo)?mgo*deal.mgo_qty:0)+bar;
+  const totalStr = (total>0||bar>0) ? fmt(total) : '—';
+
+  let savedAt = '';
+  if(q?.updated_at?.toDate){
+    savedAt = q.updated_at.toDate().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  return `<div class="td-card ${closed?'is-closed':''} ${iWon?'is-winner':''}" data-deal-id="${deal.id}">
+    <div class="td-head">
+      <div class="td-info">
+        <div class="td-field"><span class="lbl">VSL</span><span class="val">${esc(deal.vsl||'—')}</span></div>
+        <div class="td-field"><span class="lbl">PORT / DATE</span><span class="val">${esc(deal.port||'—')}</span></div>
+        <div class="td-field"><span class="lbl">FO TYPE</span><span class="val">${esc(deal.fo_type||'—')}</span></div>
+      </div>
+      ${iWon?`<span style="color:var(--gold);font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.04em">★ 낙찰</span>`:''}
+      ${deadlineMs&&!deal.status_closed?`<span class="countdown" data-deal-id="${deal.id}" style="font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.06em;min-width:52px;text-align:right">--:--</span>`:''}
+      <span class="badge ${closed?'closed':'open'}">${deadlineExpired&&!deal.status_closed?'시간초과':closed?'마감':'OPEN'}</span>
+    </div>
+    <div class="td-body">
+      <div class="qty-row">
+        <span class="qty-pill">FO ${esc(deal.fo_type)} ${fmt(deal.fo_qty)} MT</span>
+        <span class="qty-pill">MGO ${fmt(deal.mgo_qty)} MT</span>
+      </div>
+      <div class="price-grid">
+        <div class="pg-group">
+          <label>FO PRICE${noFo?' (N/A)':''}</label>
+          <input type="text" inputmode="decimal" class="price-inp ${noFo?'off':''}"
+            data-deal-id="${deal.id}" data-field="fo_price"
+            value="${esc(String(foVal))}" placeholder="—" ${closed||noFo?'disabled':''}>
+        </div>
+        <div class="pg-group">
+          <label>MGO PRICE${noMgo?' (N/A)':''}</label>
+          <input type="text" inputmode="decimal" class="price-inp ${noMgo?'off':''}"
+            data-deal-id="${deal.id}" data-field="mgo_price"
+            value="${esc(String(mgoVal))}" placeholder="—" ${closed||noMgo?'disabled':''}>
+        </div>
+        <div class="pg-group">
+          <label>BARGING</label>
+          <input type="text" inputmode="decimal" class="price-inp"
+            data-deal-id="${deal.id}" data-field="barge"
+            value="${esc(String(barVal))}" placeholder="0" ${closed?'disabled':''}>
+        </div>
+        <div class="pg-group pg-total-group">
+          <label>TOTAL</label>
+          <div class="pg-total" data-total-id="${deal.id}">${totalStr}</div>
+        </div>
+      </div>
+      <div class="submit-row">
+        ${savedAt?`<span class="saved-at">최근 저장 ${savedAt}</span>`:''}
+        ${!closed?`<button class="btn ${q?'ghost':'primary'} submit-btn" data-deal-id="${deal.id}">${q?'가격 수정':'가격 제출'}</button>`:''}
+      </div>
+    </div>
+    ${iWon?`<div class="won-banner">★ 낙찰되었습니다 — 바이어가 귀사를 선정하였습니다</div>`
+          :closed?`<div class="closed-banner">입찰이 마감되었습니다</div>`:''}
+  </div>`;
+}
+
+function wireTraderEvents(root){
+  const FIELDS = ['fo_price','mgo_price','barge'];
+
+  function dIds(){ return [...root.querySelectorAll('.td-card')].map(c=>c.dataset.dealId); }
+  function inp(dealId,field){
+    return root.querySelector(`.price-inp[data-deal-id="${dealId}"][data-field="${field}"]:not([disabled])`);
+  }
+  function moveNext(ids,di,fi){
+    for(let f=fi+1;f<FIELDS.length;f++){ const t=inp(ids[di],FIELDS[f]); if(t){t.focus();t.select();return;} }
+    for(let d=di+1;d<ids.length;d++){ for(let f=0;f<FIELDS.length;f++){ const t=inp(ids[d],FIELDS[f]); if(t){t.focus();t.select();return;} } }
+  }
+  function movePrev(ids,di,fi){
+    for(let f=fi-1;f>=0;f--){ const t=inp(ids[di],FIELDS[f]); if(t){t.focus();t.select();return;} }
+    for(let d=di-1;d>=0;d--){ for(let f=FIELDS.length-1;f>=0;f--){ const t=inp(ids[d],FIELDS[f]); if(t){t.focus();t.select();return;} } }
+  }
+
+  root.querySelectorAll('.price-inp').forEach(el=>{
+    el.addEventListener('input', updateLiveTotal);
+    el.addEventListener('keydown', e=>{
+      const ids=dIds(), di=ids.indexOf(el.dataset.dealId), fi=FIELDS.indexOf(el.dataset.field);
+      if(e.key==='Tab'||e.key==='Enter'){
+        e.preventDefault();
+        e.shiftKey ? movePrev(ids,di,fi) : moveNext(ids,di,fi);
+      } else if(e.key==='ArrowDown'){ e.preventDefault(); for(let d=di+1;d<ids.length;d++){ const t=inp(ids[d],el.dataset.field); if(t){t.focus();t.select();break;} } }
+        else if(e.key==='ArrowUp'){   e.preventDefault(); for(let d=di-1;d>=0;d--){      const t=inp(ids[d],el.dataset.field); if(t){t.focus();t.select();break;} } }
+    });
+  });
+  root.querySelectorAll('.submit-btn').forEach(btn=>btn.addEventListener('click', submitQuote));
+}
+
+function updateLiveTotal(e){
+  const inp = e.target, dealId = inp.dataset.dealId;
+  const deal = traderDeals.find(d=>d.id===dealId);
+  if(!deal) return;
+  const getV = f => parseFloat(document.querySelector(`.price-inp[data-deal-id="${dealId}"][data-field="${f}"]`)?.value)||0;
+  const noFo=!deal.fo_qty||Number(deal.fo_qty)===0, noMgo=!deal.mgo_qty||Number(deal.mgo_qty)===0;
+  const total=(!noFo?getV('fo_price')*deal.fo_qty:0)+(!noMgo?getV('mgo_price')*deal.mgo_qty:0)+getV('barge');
+  const el=document.querySelector(`.pg-total[data-total-id="${dealId}"]`);
+  if(el) el.textContent = total>0?fmt(total):'—';
+}
+
+async function submitQuote(e){
+  const btn = e.currentTarget, dealId = btn.dataset.dealId;
+  const getV = f => {
+    const el=document.querySelector(`.price-inp[data-deal-id="${dealId}"][data-field="${f}"]`);
+    return el?.value?.trim()||null;
+  };
+  btn.disabled=true; btn.textContent='저장 중…';
+  try{
+    await db.collection('quotes').doc(`${dealId}_${me.id}`).set({
+      deal_id:   dealId, trader_id: me.id,
+      fo_price:  getV('fo_price')  ? parseFloat(getV('fo_price'))  : null,
+      mgo_price: getV('mgo_price') ? parseFloat(getV('mgo_price')) : null,
+      barge:     getV('barge')     ? parseFloat(getV('barge'))     : 0,
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true});
+    toast('가격이 제출되었습니다');
+  } catch(err){ toast('저장 실패: '+err.message); }
+  btn.disabled=false; btn.textContent='가격 제출';
+}
+
+// ════════════════════════════════════════════════════════
+// SIGN UP
+// ════════════════════════════════════════════════════════
+function showSignUpModal(){
+  const bg = mkModal('회원가입',
+    `<p>가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다. 역할은 <strong>트레이더</strong>로 자동 설정됩니다.</p>
+     <div class="grid3">
+       <div class="field"><label>이름</label><input id="su-name" type="text" placeholder="홍길동"></div>
+       <div class="field" style="grid-column:span 2"><label>회사명</label><input id="su-company" type="text" placeholder=""></div>
+     </div>
+     <div class="field"><label>이메일</label><input id="su-email" type="email" placeholder="user@company.com"></div>
+     <div class="grid3">
+       <div class="field" style="grid-column:span 2"><label>비밀번호</label><input id="su-pw" type="password" placeholder="6자 이상"></div>
+       <div class="field"><label>비밀번호 확인</label><input id="su-pw2" type="password" placeholder="재입력"></div>
+     </div>
+     <div class="err" id="su-err"></div>`,
+    `<button class="btn ghost" id="su-cancel">취소</button><button class="btn primary" id="su-ok">가입 신청</button>`);
+
+  bg.querySelector('#su-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#su-ok').addEventListener('click', async ()=>{
+    const email   = bg.querySelector('#su-email').value.trim();
+    const pw      = bg.querySelector('#su-pw').value;
+    const pw2     = bg.querySelector('#su-pw2').value;
+    const name    = bg.querySelector('#su-name').value.trim();
+    const company = bg.querySelector('#su-company').value.trim();
+    const errEl   = bg.querySelector('#su-err');
+    if(!email||!pw||!name||!company){ errEl.textContent='모든 항목을 입력하세요'; return; }
+    if(pw!==pw2){ errEl.textContent='비밀번호가 일치하지 않습니다'; return; }
+    if(pw.length<6){ errEl.textContent='비밀번호는 6자 이상이어야 합니다'; return; }
+    const btn=bg.querySelector('#su-ok');
+    btn.disabled=true; btn.textContent='신청 중…';
+    _signingUp = true;
+    try{
+      const cred = await auth.createUserWithEmailAndPassword(email, pw);
+      await db.collection('profiles').doc(cred.user.uid).set({
+        name, company, role:'trader', status:'pending',
+        created_at: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await auth.signOut();
+      _signingUp = false;
+      bg.remove();
+      toast('신청 완료. 관리자 승인 후 로그인 가능합니다.', 5000);
+    } catch(err){
+      _signingUp = false;
+      errEl.textContent = err.message;
+      btn.disabled=false; btn.textContent='가입 신청';
+    }
+  });
+  bg.querySelector('#su-email').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// FORGOT PASSWORD
+// ════════════════════════════════════════════════════════
+function showForgotPasswordModal(){
+  const bg = mkModal('비밀번호 찾기',
+    `<p>가입한 이메일을 입력하면 비밀번호 재설정 링크를 보내드립니다.</p>
+     <div class="field"><label>이메일</label><input id="fp-email" type="email" placeholder="user@company.com"></div>
+     <div class="err" id="fp-err"></div>`,
+    `<button class="btn ghost" id="fp-cancel">취소</button><button class="btn primary" id="fp-ok">재설정 메일 전송</button>`);
+
+  bg.querySelector('#fp-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#fp-ok').addEventListener('click', async ()=>{
+    const email = bg.querySelector('#fp-email').value.trim();
+    const errEl = bg.querySelector('#fp-err');
+    if(!email){ errEl.textContent='이메일을 입력하세요'; return; }
+    const btn=bg.querySelector('#fp-ok');
+    btn.disabled=true; btn.textContent='전송 중…';
+    try{
+      await auth.sendPasswordResetEmail(email);
+      bg.remove();
+      toast('비밀번호 재설정 이메일을 발송했습니다.', 4000);
+    } catch(err){
+      errEl.textContent = err.message;
+      btn.disabled=false; btn.textContent='재설정 메일 전송';
+    }
+  });
+  bg.querySelector('#fp-email').addEventListener('keydown',e=>{ if(e.key==='Enter') bg.querySelector('#fp-ok').click(); });
+  bg.querySelector('#fp-email').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// CHANGE PASSWORD
+// ════════════════════════════════════════════════════════
+function showChangePasswordModal(){
+  const bg = mkModal('비밀번호 변경',
+    `<div class="field"><label>현재 비밀번호</label><input id="cp-cur" type="password" placeholder="현재 비밀번호"></div>
+     <div class="field"><label>새 비밀번호</label><input id="cp-new" type="password" placeholder="새 비밀번호 (6자 이상)"></div>
+     <div class="field"><label>새 비밀번호 확인</label><input id="cp-new2" type="password" placeholder="새 비밀번호 재입력"></div>
+     <div class="err" id="cp-err"></div>`,
+    `<button class="btn ghost" id="cp-cancel">취소</button><button class="btn primary" id="cp-ok">변경</button>`);
+
+  bg.querySelector('#cp-cancel').addEventListener('click',()=>bg.remove());
+  bg.querySelector('#cp-ok').addEventListener('click', async ()=>{
+    const cur  = bg.querySelector('#cp-cur').value;
+    const nw   = bg.querySelector('#cp-new').value;
+    const nw2  = bg.querySelector('#cp-new2').value;
+    const errEl = bg.querySelector('#cp-err');
+    if(!cur||!nw||!nw2){ errEl.textContent='모든 항목을 입력하세요'; return; }
+    if(nw!==nw2){ errEl.textContent='새 비밀번호가 일치하지 않습니다'; return; }
+    if(nw.length<6){ errEl.textContent='비밀번호는 6자 이상이어야 합니다'; return; }
+    const btn=bg.querySelector('#cp-ok');
+    btn.disabled=true; btn.textContent='변경 중…';
+    try{
+      const cred = firebase.auth.EmailAuthProvider.credential(me.email, cur);
+      await auth.currentUser.reauthenticateWithCredential(cred);
+      await auth.currentUser.updatePassword(nw);
+      bg.remove();
+      toast('비밀번호가 변경되었습니다');
+    } catch(err){
+      errEl.textContent = err.code==='auth/wrong-password'||err.code==='auth/invalid-credential'
+        ? '현재 비밀번호가 올바르지 않습니다' : err.message;
+      btn.disabled=false; btn.textContent='변경';
+    }
+  });
+  bg.querySelector('#cp-cur').focus();
+}
+
+// ════════════════════════════════════════════════════════
+// USER MANAGEMENT (buyer only)
+// ════════════════════════════════════════════════════════
+async function showUserManagementModal(){
+  const bg = mkModal('사용자 관리',
+    `<p style="color:var(--ink-3);font-size:12px">불러오는 중…</p>`,
+    `<button class="btn ghost" id="um-close">닫기</button>`, true);
+  bg.querySelector('#um-close').addEventListener('click',()=>bg.remove());
+
+  try{
+    const snap = await db.collection('profiles').get();
+    const users = snap.docs.map(d=>({id:d.id,...d.data()}))
+      .filter(u=>u.id!==me.id)
+      .sort((a,b)=>{
+        const o={pending:0,approved:1,rejected:2};
+        return (o[a.status??'approved']??1)-(o[b.status??'approved']??1);
+      });
+
+    const modal = bg.querySelector('.modal');
+    const statusLabel = s=>({pending:'승인 대기',approved:'승인됨',rejected:'정지됨'})[s||'approved']||'승인됨';
+    const statusColor = s=>({pending:'var(--gold)',approved:'var(--green)',rejected:'var(--red)'})[s||'approved']||'var(--green)';
+
+    modal.querySelector('p').outerHTML = users.length
+      ? `<div id="um-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+          ${users.map(u=>`
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--rule)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:500;font-size:13px">${esc(u.company||u.name||'—')}</div>
+                <div style="font-size:11px;color:var(--ink-3);margin-top:2px;font-family:var(--mono)">${esc(u.email||'')} · ${u.role==='buyer'?'바이어':'트레이더'}</div>
+              </div>
+              <span style="font-size:10px;letter-spacing:.08em;color:${statusColor(u.status)};white-space:nowrap">${statusLabel(u.status)}</span>
+              ${u.status==='pending'?`<button class="btn tiny primary" data-act="approve" data-uid="${u.id}">승인</button><button class="btn tiny danger" data-act="reject" data-uid="${u.id}">거절</button>`:''}
+              ${u.status==='approved'||!u.status?`<button class="btn tiny danger" data-act="reject" data-uid="${u.id}">정지</button>`:''}
+              ${u.status==='rejected'?`<button class="btn tiny ghost" data-act="approve" data-uid="${u.id}">복구</button>`:''}
+            </div>`).join('')}
+        </div>`
+      : `<p style="color:var(--ink-3)">등록된 사용자가 없습니다.</p>`;
+
+    if(!users.length) return;
+    bg.querySelector('#um-list').addEventListener('click', async e=>{
+      const btn=e.target.closest('[data-act]');
+      if(!btn) return;
+      btn.disabled=true;
+      try{
+        await db.collection('profiles').doc(btn.dataset.uid).update({
+          status: btn.dataset.act==='approve'?'approved':'rejected'
+        });
+        toast(btn.dataset.act==='approve'?'승인 완료':'처리 완료');
+        bg.remove(); showUserManagementModal();
+      } catch(err){ toast('오류: '+err.message); btn.disabled=false; }
+    });
+  } catch(err){ toast('불러오기 실패: '+err.message); }
+}
+
+// ════════════════════════════════════════════════════════
+// MODAL HELPER
+// ════════════════════════════════════════════════════════
+function mkModal(title, body, footer, wide=false){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal${wide?' wide':''}">
+    <h3>${title}</h3>${body}
+    <div class="modal-foot">${footer}</div>
+  </div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+  return bg;
+}
+
+initApp();
+</script>
+</body>
+</html>

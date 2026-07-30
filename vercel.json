@@ -1,6 +1,6 @@
 {
-  "buildCommand": null,
-  "outputDirectory": ".",
-  "framework": null,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
   "cleanUrls": true
 }
