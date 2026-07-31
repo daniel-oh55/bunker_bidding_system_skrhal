@@ -16,7 +16,7 @@ select has_table('app_private', 'organization_memberships', 'organization member
 select columns_are(
   'app_private',
   'user_accounts',
-  array['user_id', 'status', 'created_at', 'updated_at'],
+  array['user_id', 'status', 'created_at', 'updated_at', 'display_name'],
   'user accounts has the required columns'
 );
 select columns_are(

@@ -74,7 +74,7 @@ async function outcome(promise) {
   try { return { ok: true, value: await promise }; } catch (error) { return { ok: false, error }; }
 }
 
-async function race({ name, fixture, clients, pids, firstQuery, secondQuery, expectedEvent }) {
+async function race({ name, fixture, clients, pids, firstQuery, secondQuery, expectedEvent, expectedStatus, expectedVessel, expectedQuantity }) {
   const bidId = await createBid(clients.observer, fixture, name);
   if (name === 'reopen-vs-cancel') await closeBid(clients.observer, fixture, bidId);
   const expectedRevision = name === 'reopen-vs-cancel' ? 2 : 1;
@@ -96,17 +96,20 @@ async function race({ name, fixture, clients, pids, firstQuery, secondQuery, exp
     assert(!loser.ok && loser.error.code === '40001', `${name}: loser must receive 40001, got ${loser.ok ? 'success' : loser.error.code}`);
     await clients.b.query('rollback'); secondOpen = false;
     const { rows } = await clients.observer.query(
-      `select bid.revision, bid.status::text as status, count(item.fuel_grade)::int as item_count,
-              count(event.id) filter (where event.resulting_revision = bid.revision)::int as final_revision_events,
-              count(event.id) filter (where event.event_type = $2 and event.resulting_revision = bid.revision)::int as expected_events
+      `select bid.revision, bid.status::text as status, bid.vessel_voyage,
+              (select count(*)::int from app_private.bid_items as item where item.bid_id = bid.id) as item_count,
+              (select quantity_mt from app_private.bid_items as item where item.bid_id = bid.id and item.fuel_grade = 'vlsfo') as vlsfo_quantity,
+              (select count(*)::int from app_private.bid_audit_events as event where event.bid_id = bid.id and event.resulting_revision = bid.revision) as final_revision_events,
+              (select count(*)::int from app_private.bid_audit_events as event where event.bid_id = bid.id and event.event_type = $2 and event.resulting_revision = bid.revision) as expected_events
        from app_private.bids as bid
-       left join app_private.bid_items as item on item.bid_id = bid.id
-       left join app_private.bid_audit_events as event on event.bid_id = bid.id
-       where bid.id = $1 group by bid.id`,
+       where bid.id = $1`,
       [bidId, expectedEvent],
     );
     assert(rows.length === 1 && Number(rows[0].revision) === expectedRevision + 1, `${name}: final revision did not increase exactly once.`);
-    assert(rows[0].item_count === 1 && rows[0].final_revision_events === 1 && rows[0].expected_events === 1, `${name}: final items or audit history is inconsistent.`);
+    assert(rows[0].status === expectedStatus, `${name}: final raw status is not ${expectedStatus}.`);
+    assert(rows[0].vessel_voyage === expectedVessel, `${name}: winner data was silently overwritten.`);
+    assert(rows[0].item_count === 1 && Number(rows[0].vlsfo_quantity) === expectedQuantity, `${name}: final fuel items are inconsistent.`);
+    assert(rows[0].final_revision_events === 1 && rows[0].expected_events === 1, `${name}: final revision must have exactly one expected audit event.`);
   } finally {
     if (firstOpen) await rollback(clients.a);
     if (secondOpen) await rollback(clients.b);
@@ -133,9 +136,9 @@ try {
   await Promise.all(Object.values(clients).map(configure));
   const pids = Object.fromEntries(await Promise.all(Object.entries(clients).map(async ([name, client]) => [name, (await client.query('select pg_backend_pid() as pid')).rows[0].pid])));
   fixture = await createFixture(clients.observer, randomUUID());
-  await race({ name: 'update-vs-update', fixture, clients, pids, expectedEvent: 'details_updated', firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query("select public.update_bid($1, $2, $3, 'B', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[12]::numeric[])", [fixture.membershipId, id, rev]) });
-  await race({ name: 'update-vs-close', fixture, clients, pids, expectedEvent: 'details_updated', firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.close_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
-  await race({ name: 'reopen-vs-cancel', fixture, clients, pids, expectedEvent: 'reopened', firstQuery: (id, rev) => clients.a.query("select public.reopen_bid($1, $2, $3, clock_timestamp() + interval '2 days')", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.cancel_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
+  await race({ name: 'update-vs-update', fixture, clients, pids, expectedEvent: 'details_updated', expectedStatus: 'open', expectedVessel: 'A', expectedQuantity: 11, firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query("select public.update_bid($1, $2, $3, 'B', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[12]::numeric[])", [fixture.membershipId, id, rev]) });
+  await race({ name: 'update-vs-close', fixture, clients, pids, expectedEvent: 'details_updated', expectedStatus: 'open', expectedVessel: 'A', expectedQuantity: 11, firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.close_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
+  await race({ name: 'reopen-vs-cancel', fixture, clients, pids, expectedEvent: 'reopened', expectedStatus: 'open', expectedVessel: `race-reopen-vs-cancel`, expectedQuantity: 10, firstQuery: (id, rev) => clients.a.query("select public.reopen_bid($1, $2, $3, clock_timestamp() + interval '2 days')", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.cancel_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
   console.log('Bid concurrency tests passed: 3 deterministic races.');
 } catch (error) {
   primaryError = error;

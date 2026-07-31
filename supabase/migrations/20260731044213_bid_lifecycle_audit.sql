@@ -84,10 +84,10 @@ create table app_private.bid_audit_events (
   constraint bid_audit_revision_step check (
     (event_type = 'created'::app_private.bid_audit_event_type and resulting_revision = 1)
     or (event_type <> 'created'::app_private.bid_audit_event_type and resulting_revision = prior_revision + 1)
-  )
+  ),
+  unique (bid_id, resulting_revision)
 );
 
-create index bid_audit_events_bid_revision_idx on app_private.bid_audit_events (bid_id, resulting_revision);
 create index bids_created_by_idx on app_private.bids (created_by);
 create index bids_responsible_buyer_idx on app_private.bids (responsible_buyer_user_id);
 
@@ -374,8 +374,9 @@ begin
     raise exception using errcode = '22023', message = 'responsible_buyer view requires a target user';
   end if;
   return query
-  select app_private.bid_result(bid.id)
+  select result.*
   from app_private.bids as bid
+  cross join lateral app_private.bid_result(bid.id) as result
   where p_view = 'all'
      or (p_view = 'created_by_me' and bid.created_by = auth.uid())
      or (p_view = 'responsible_buyer' and bid.responsible_buyer_user_id = p_responsible_buyer_user_id)
@@ -432,7 +433,7 @@ begin
   select v_bid_id, grades.grade, p_quantities[grades.ordinality], grades.ordinality::smallint
   from unnest(p_fuel_grades) with ordinality as grades(grade, ordinality);
   perform app_private.append_bid_audit(v_bid_id, 'created', v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_actor.membership_role, null, null, null, null);
-  select app_private.bid_result(v_bid_id) into v_result;
+  select result.* into v_result from app_private.bid_result(v_bid_id) as result;
   return v_result;
 end;
 $$;
@@ -462,7 +463,7 @@ begin
   insert into app_private.bid_items (bid_id, fuel_grade, quantity_mt, display_order)
   select p_bid_id, grades.grade, p_quantities[grades.ordinality], grades.ordinality::smallint from unnest(p_fuel_grades) with ordinality as grades(grade, ordinality);
   perform app_private.append_bid_audit(p_bid_id, 'details_updated', v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_actor.membership_role, v_bid.revision, v_bid.status, v_bid.responsible_buyer_user_id, v_before);
-  select app_private.bid_result(p_bid_id) into v_result; return v_result;
+  select result.* into v_result from app_private.bid_result(p_bid_id) as result; return v_result;
 end;
 $$;
 
@@ -477,11 +478,12 @@ begin
   if not found then raise exception using errcode = 'P0002', message = 'Bid not found'; end if;
   if p_expected_revision is null or v_bid.revision <> p_expected_revision then raise exception using errcode = '40001', message = 'Bid revision conflict'; end if;
   if v_bid.status = 'cancelled' then raise exception using errcode = '55000', message = 'Cancelled bids cannot be reassigned'; end if;
+  if p_responsible_buyer_user_id = v_bid.responsible_buyer_user_id then raise exception using errcode = '22023', message = 'Bid is already assigned to that BUYER'; end if;
   perform app_private.require_active_buyer_target(p_responsible_buyer_user_id);
   v_before := app_private.bid_snapshot(p_bid_id);
   update app_private.bids set responsible_buyer_user_id = p_responsible_buyer_user_id, revision = revision + 1 where id = p_bid_id;
   perform app_private.append_bid_audit(p_bid_id, 'responsible_buyer_changed', v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_actor.membership_role, v_bid.revision, v_bid.status, v_bid.responsible_buyer_user_id, v_before);
-  select app_private.bid_result(p_bid_id) into v_result; return v_result;
+  select result.* into v_result from app_private.bid_result(p_bid_id) as result; return v_result;
 end;
 $$;
 
@@ -499,7 +501,7 @@ begin
   v_before := app_private.bid_snapshot(p_bid_id);
   update app_private.bids set status = 'closed', closed_at = clock_timestamp(), revision = revision + 1 where id = p_bid_id;
   perform app_private.append_bid_audit(p_bid_id, 'closed', v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_actor.membership_role, v_bid.revision, v_bid.status, v_bid.responsible_buyer_user_id, v_before);
-  select app_private.bid_result(p_bid_id) into v_result; return v_result;
+  select result.* into v_result from app_private.bid_result(p_bid_id) as result; return v_result;
 end;
 $$;
 
@@ -518,7 +520,7 @@ begin
   v_before := app_private.bid_snapshot(p_bid_id);
   update app_private.bids set status = 'open', deadline_at = p_deadline_at, closed_at = null, revision = revision + 1 where id = p_bid_id;
   perform app_private.append_bid_audit(p_bid_id, 'reopened', v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_actor.membership_role, v_bid.revision, v_bid.status, v_bid.responsible_buyer_user_id, v_before);
-  select app_private.bid_result(p_bid_id) into v_result; return v_result;
+  select result.* into v_result from app_private.bid_result(p_bid_id) as result; return v_result;
 end;
 $$;
 
@@ -536,7 +538,7 @@ begin
   v_before := app_private.bid_snapshot(p_bid_id);
   update app_private.bids set status = 'cancelled', cancelled_at = clock_timestamp(), revision = revision + 1 where id = p_bid_id;
   perform app_private.append_bid_audit(p_bid_id, 'cancelled', v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_actor.membership_role, v_bid.revision, v_bid.status, v_bid.responsible_buyer_user_id, v_before);
-  select app_private.bid_result(p_bid_id) into v_result; return v_result;
+  select result.* into v_result from app_private.bid_result(p_bid_id) as result; return v_result;
 end;
 $$;
 
