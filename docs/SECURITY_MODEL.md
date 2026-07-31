@@ -28,6 +28,10 @@
 - The bid API accepts a caller-selected membership ID but verifies it against `auth.uid()` and current active account, membership, organization, BUYER kind, and BUYER role rows. JWT metadata, responsibility, and creator identity never authorize access.
 - Bid creation identity is trigger-protected. Private bid/audit tables have RLS enabled with direct `anon`/`authenticated` privileges revoked; privileged public RPCs use fixed search paths and minimal authenticated-only execute grants.
 - Every successful bid mutation locks the row, compares its expected revision, increments it once, and creates exactly one server-generated append-only audit event.
+- TRADER quote authority requires the caller's active account, selected membership, active TRADER organization, and current bid organization-access row. No JWT metadata, quote creator, or client ownership field authorizes an operation.
+- Quotes are organization-owned and one-per-bid/organization. Only active same-organization TRADER users can read or update their quote; all active BUYERs can read all retained quotes. Revocation immediately removes TRADER read/write scope.
+- Quote prices are validated against the exact bid grade set and totals are calculated server-side. Bid-first locks re-evaluate server-time closure after waiting. Quote identity is trigger-immutable and quote/bid audits are server-generated and append-only.
+- Award verifies effective closure, current scope, active TRADER organization, and both revisions within the bid-first transaction. It is terminal in V1 and uses a composite foreign key to prevent cross-bid selection.
 
 ## Future enforcement
 
@@ -43,4 +47,4 @@
 - Active BUYERs may perform cross-BUYER changes through the server RPCs; those changes never rewrite `created_by` and audit the actual actor. Responsibility is a visibility filter, not authority.
 - Privilege tests may use elevated fixture setup, but allowed and denied behavior must run under the target caller role.
 
-Quotes, award, invitations, provisioning, password reset, administration, and frontend bid workflows are not yet implemented. No remote Supabase project is linked.
+Frontend bid/quote workflows, Realtime, invitations, provisioning, password reset, and administration are not implemented. No remote Supabase project is linked.
