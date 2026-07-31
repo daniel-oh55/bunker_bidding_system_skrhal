@@ -22,6 +22,10 @@
 - deadlines use server time, and quote creation or modification after close is rejected server-side
 - close, reopen, award, and cancel are server-side transactional operations
 - immutable creation identity is stored in `created_by`, separately from the actor performing later update, close, reopen, award, or cancel operations
+- PostgreSQL constraints or transactional functions are authoritative for data invariants.
+- RLS or server-side RPC/functions are authoritative for row and operation authorization.
+- Application validation mirrors server rules only for UX.
+- Realtime is limited to necessary bid and quote change notifications; it is not a general authorization mechanism.
 
 ## Planned access contracts
 

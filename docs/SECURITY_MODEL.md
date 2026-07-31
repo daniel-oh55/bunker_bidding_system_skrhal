@@ -8,6 +8,7 @@
 - Authorization never trusts `user_metadata` or other unverified client claims.
 - Suspended or inactive users immediately lose access.
 - Verified membership in an active organization is the basis for current access decisions.
+- Authentication alone never grants business authorization, and application filtering is not an authorization boundary.
 
 ## Implemented access baseline
 
@@ -31,5 +32,7 @@
 - deadlines use server time
 - quote creation and modification after close are rejected server-side
 - close, reopen, award, and cancel are server-side transactional operations
+- Cross-BUYER takeover must be authorized server-side and audited; it must not rewrite `created_by`.
+- Privilege tests may use elevated fixture setup, but allowed and denied behavior must run under the target caller role.
 
-These rules are fixed future contracts. Frontend Auth UI, invitations, administration, bids, quotes, audits, deadlines, and lifecycle server operations are not yet implemented.
+These rules are fixed future contracts. Bid RLS, frontend Auth UI, invitations, administration, bids, quotes, audits, deadlines, and lifecycle server operations are not yet implemented.
