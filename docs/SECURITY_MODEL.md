@@ -25,6 +25,9 @@
 - The loopback-only integration harness isolates elevated local access to fixture preparation and cleanup; its sign-in and RPC checks use the publishable client.
 - This frontend boundary is UX/state coordination, not the enforcement layer for future bid or quote data. Those operations still require RLS or server-side functions.
 - No remote Supabase project is linked and no real operational data is committed.
+- The bid API accepts a caller-selected membership ID but verifies it against `auth.uid()` and current active account, membership, organization, BUYER kind, and BUYER role rows. JWT metadata, responsibility, and creator identity never authorize access.
+- Bid creation identity is trigger-protected. Private bid/audit tables have RLS enabled with direct `anon`/`authenticated` privileges revoked; privileged public RPCs use fixed search paths and minimal authenticated-only execute grants.
+- Every successful bid mutation locks the row, compares its expected revision, increments it once, and creates exactly one server-generated append-only audit event.
 
 ## Future enforcement
 
@@ -37,7 +40,7 @@
 - deadlines use server time
 - quote creation and modification after close are rejected server-side
 - close, reopen, award, and cancel are server-side transactional operations
-- Cross-BUYER takeover must be authorized server-side and audited; it must not rewrite `created_by`.
+- Active BUYERs may perform cross-BUYER changes through the server RPCs; those changes never rewrite `created_by` and audit the actual actor. Responsibility is a visibility filter, not authority.
 - Privilege tests may use elevated fixture setup, but allowed and denied behavior must run under the target caller role.
 
-These rules are fixed future contracts. Bid RLS, invitations, provisioning, password reset, administration, bids, quotes, audits, deadlines, and lifecycle server operations are not yet implemented.
+Quotes, award, invitations, provisioning, password reset, administration, and frontend bid workflows are not yet implemented. No remote Supabase project is linked.

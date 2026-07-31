@@ -4,7 +4,7 @@
 
 - Active branch purpose: maintain the local Supabase V2 authorization baseline
 - Active frontend baseline: React + Vite + TypeScript sign-in-only access gate
-- Active backend baseline: local migrations and pgTAP database tests
+- Active backend baseline: local migrations, pgTAP database tests, and the BUYER bid lifecycle/audit RPCs
 - Legacy reference location: `legacy/firebase-prototype/`
 
 ## Fixed contracts
@@ -24,6 +24,11 @@
 - Browser code will use only the Supabase publishable key.
 - Secret and service-role credentials will never enter browser code, Vite variables, or the repository.
 - The frontend authorized shell requires at least one context returned by `public.current_access_context()`; an Auth session alone is insufficient.
+- Bids use raw `open`, `closed`, and `cancelled` states. Raw open with a non-null passed deadline is effectively closed using server time; no cron transition exists.
+- Details are editable only while effective-open. Every active BUYER can read and mutate bids; `responsible_buyer_user_id` supports filtering and never grants authority.
+- `created_by` is immutable. Cross-BUYER updates and responsibility changes record the actual actor and before/after state in append-only audit history.
+- Reassignment is allowed for raw open/closed bids, not cancelled bids. Reopen requires a null or future deadline; cancellation is irreversible in V1.
+- Quotes, award, and frontend bid workflows remain unimplemented. The remote Supabase project remains unlinked.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
 
@@ -39,7 +44,7 @@
 ## Not yet implemented
 
 - Public signup, invitations, password reset, and administration/provisioning flows.
-- Bids, quotes, audits, deadline controls, and bid lifecycle transition policies.
+- Quotes, award, and frontend bid workflows.
 
 ## Notes
 
