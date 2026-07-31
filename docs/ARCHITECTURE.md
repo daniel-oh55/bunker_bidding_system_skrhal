@@ -16,6 +16,8 @@
 - Auth changes trigger context revalidation, all returned memberships are preserved, and obsolete async results cannot restore access after sign-out.
 - The browser does not receive direct access to private authorization tables.
 - The loopback-only integration harness uses elevated local access only to prepare and delete fixtures. Its sign-in and RPC assertions use the normal publishable client.
+- Bid records, fuel items, and audit events are private RLS-enabled tables. Public bid RPCs verify the selected active BUYER membership server-side and use row locks plus revisions for every non-create mutation.
+- Audit events are append-only and contain server-generated before/after snapshots, actor membership/organization/role snapshots, and the resulting revision.
 
 ## Planned direction
 
@@ -38,7 +40,7 @@
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope.
 
-Bid, quote, audit, deadline, and transactional lifecycle operations remain future work. Signup, invitation, provisioning, password-reset, and admin workflows are also not implemented. The frontend gate is UX/state coordination and is not a substitute for future RLS.
+The bid backend is implemented without a frontend workflow. Raw states are `open`, `closed`, and `cancelled`; raw open becomes effectively closed at a passed server-time deadline without a cron. Quotes, award, signup, invitation, provisioning, password-reset, and admin workflows remain unimplemented. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
 
 ## Foundation boundaries
 

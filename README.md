@@ -17,7 +17,7 @@ Still out of scope:
 
 - public signup, invitations, account provisioning, password reset, or administration
 - buyer or trader workflow UI migration
-- bids, quotes, audits, deadline policies, or lifecycle transitions
+- bid lifecycle and audit backend: active BUYER-only server RPCs, append-only audit history, optimistic revisions, and server-time effective closure
 - secret registration, Supabase project linking, or deployment
 
 ## Local commands
@@ -36,6 +36,7 @@ npm run db:start
 npm run db:reset
 npm run db:test
 npm run db:test:concurrency -- "<local-db-url>"
+npm run db:test:bid-concurrency -- "<local-db-url>"
 npm run auth:test:integration -- "<local-api-url>" "<local-publishable-key>" "<local-elevated-fixture-key>" "<local-db-url>"
 npm run db:stop
 ```
@@ -58,6 +59,9 @@ npm run db:stop
 - A browser session alone does not render the authorized shell; `public.current_access_context()` must return at least one active context.
 - Elevated local access is isolated to fixture preparation and cleanup inside the loopback-only integration harness.
 - The frontend access gate coordinates UX and state. It does not replace RLS or server-side authorization for future protected data.
+- Bids are private tables accessed only through authenticated BUYER RPCs. Every active BUYER may view and mutate bids; responsibility is a filter, never authority.
+- Raw bid states are `open`, `closed`, and `cancelled`. An open bid with a passed deadline is effectively closed by server time without a cron job. Details are editable only while effective-open; cancellation is irreversible in V1.
+- Quotes, award, and frontend bid workflows are not implemented. No remote Supabase project is linked.
 - No remote Supabase project is linked, and no real user, organization, or bidding data is committed.
 
 ## Dependency audit policy

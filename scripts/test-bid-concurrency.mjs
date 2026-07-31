@@ -1,0 +1,154 @@
+import { randomUUID } from 'node:crypto';
+import { Client } from 'pg';
+
+const [databaseUrl] = process.argv.slice(2);
+const timeoutMs = 10_000;
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function validateLocalDatabaseUrl(value) {
+  assert(process.argv.length === 3, 'Expected exactly one local PostgreSQL URL.');
+  let parsed;
+  try { parsed = new URL(value); } catch { throw new Error('The database URL is invalid.'); }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  assert(['postgres:', 'postgresql:'].includes(parsed.protocol) && ['127.0.0.1', 'localhost', '::1', '0:0:0:0:0:0:0:1'].includes(host), `Refusing non-loopback database host: ${parsed.hostname}`);
+}
+
+async function configure(client) {
+  await client.query("set statement_timeout = '10s'");
+  await client.query("set lock_timeout = '5s'");
+  await client.query("set idle_in_transaction_session_timeout = '10s'");
+}
+
+async function rollback(client) { try { await client.query('rollback'); } catch { /* cleanup continues */ } }
+
+async function asBuyer(client, fixture, callback) {
+  await client.query('begin');
+  try {
+    await client.query('set local role authenticated');
+    await client.query("select set_config('request.jwt.claim.sub', $1, true)", [fixture.userId]);
+    const result = await callback();
+    await client.query('commit');
+    return result;
+  } catch (error) {
+    await rollback(client);
+    throw error;
+  }
+}
+
+async function createFixture(client, label) {
+  const fixture = { userId: randomUUID(), organizationId: randomUUID(), membershipId: randomUUID(), bidIds: [] };
+  await client.query('insert into auth.users (id, email) values ($1, $2)', [fixture.userId, `${fixture.userId}@bid-race.test`]);
+  await client.query("update app_private.user_accounts set status = 'active' where user_id = $1", [fixture.userId]);
+  await client.query("insert into app_private.organizations (id, kind, name, status) values ($1, 'buyer', $2, 'active')", [fixture.organizationId, `Bid race ${label}`]);
+  await client.query("insert into app_private.organization_memberships (id, user_id, organization_id, role, status) values ($1, $2, $3, 'buyer_admin', 'active')", [fixture.membershipId, fixture.userId, fixture.organizationId]);
+  return fixture;
+}
+
+async function createBid(client, fixture, suffix) {
+  const { rows } = await asBuyer(client, fixture, () => client.query(
+    `select (public.create_bid($1, $2, 'Busan', 'window', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[10]::numeric[])).id as id`,
+    [fixture.membershipId, `race-${suffix}`],
+  ));
+  fixture.bidIds.push(rows[0].id);
+  return rows[0].id;
+}
+
+async function closeBid(client, fixture, bidId) {
+  await asBuyer(client, fixture, () => client.query('select public.close_bid($1, $2, 1)', [fixture.membershipId, bidId]));
+}
+
+async function waitForLock(observer, waitingPid, blockingPid, raceName) {
+  const until = Date.now() + 5_000;
+  while (Date.now() < until) {
+    const { rows } = await observer.query('select wait_event_type, pg_blocking_pids(pid) as blockers from pg_stat_activity where pid = $1', [waitingPid]);
+    if (rows[0]?.wait_event_type === 'Lock' && rows[0].blockers.map(Number).includes(Number(blockingPid))) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`${raceName}: session B did not block on session A.`);
+}
+
+async function outcome(promise) {
+  try { return { ok: true, value: await promise }; } catch (error) { return { ok: false, error }; }
+}
+
+async function race({ name, fixture, clients, pids, firstQuery, secondQuery, expectedEvent, expectedStatus, expectedVessel, expectedQuantity }) {
+  const bidId = await createBid(clients.observer, fixture, name);
+  if (name === 'reopen-vs-cancel') await closeBid(clients.observer, fixture, bidId);
+  const expectedRevision = name === 'reopen-vs-cancel' ? 2 : 1;
+  let firstOpen = false;
+  let secondOpen = false;
+  try {
+    await clients.a.query('begin'); firstOpen = true;
+    await clients.a.query('set local role authenticated');
+    await clients.a.query("select set_config('request.jwt.claim.sub', $1, true)", [fixture.userId]);
+    await firstQuery(bidId, expectedRevision);
+    await clients.b.query('begin'); secondOpen = true;
+    await clients.b.query('set local role authenticated');
+    await clients.b.query("select set_config('request.jwt.claim.sub', $1, true)", [fixture.userId]);
+    const pendingSecond = secondQuery(bidId, expectedRevision);
+    pendingSecond.catch(() => {});
+    await waitForLock(clients.observer, pids.b, pids.a, name);
+    await clients.a.query('commit'); firstOpen = false;
+    const loser = await outcome(pendingSecond);
+    assert(!loser.ok && loser.error.code === '40001', `${name}: loser must receive 40001, got ${loser.ok ? 'success' : loser.error.code}`);
+    await clients.b.query('rollback'); secondOpen = false;
+    const { rows } = await clients.observer.query(
+      `select bid.revision, bid.status::text as status, bid.vessel_voyage,
+              (select count(*)::int from app_private.bid_items as item where item.bid_id = bid.id) as item_count,
+              (select quantity_mt from app_private.bid_items as item where item.bid_id = bid.id and item.fuel_grade = 'vlsfo') as vlsfo_quantity,
+              (select count(*)::int from app_private.bid_audit_events as event where event.bid_id = bid.id and event.resulting_revision = bid.revision) as final_revision_events,
+              (select count(*)::int from app_private.bid_audit_events as event where event.bid_id = bid.id and event.event_type = $2 and event.resulting_revision = bid.revision) as expected_events
+       from app_private.bids as bid
+       where bid.id = $1`,
+      [bidId, expectedEvent],
+    );
+    assert(rows.length === 1 && Number(rows[0].revision) === expectedRevision + 1, `${name}: final revision did not increase exactly once.`);
+    assert(rows[0].status === expectedStatus, `${name}: final raw status is not ${expectedStatus}.`);
+    assert(rows[0].vessel_voyage === expectedVessel, `${name}: winner data was silently overwritten.`);
+    assert(rows[0].item_count === 1 && Number(rows[0].vlsfo_quantity) === expectedQuantity, `${name}: final fuel items are inconsistent.`);
+    assert(rows[0].final_revision_events === 1 && rows[0].expected_events === 1, `${name}: final revision must have exactly one expected audit event.`);
+  } finally {
+    if (firstOpen) await rollback(clients.a);
+    if (secondOpen) await rollback(clients.b);
+  }
+}
+
+async function cleanup(client, fixture) {
+  for (const bidId of fixture.bidIds) {
+    await client.query('delete from app_private.bid_audit_events where bid_id = $1', [bidId]);
+    await client.query('delete from app_private.bid_items where bid_id = $1', [bidId]);
+    await client.query('delete from app_private.bids where id = $1', [bidId]);
+  }
+  await client.query('delete from app_private.organization_memberships where id = $1', [fixture.membershipId]);
+  await client.query('delete from app_private.organizations where id = $1', [fixture.organizationId]);
+  await client.query('delete from auth.users where id = $1', [fixture.userId]);
+}
+
+validateLocalDatabaseUrl(databaseUrl);
+const clients = Object.fromEntries(['a', 'b', 'observer'].map((name) => [name, new Client({ connectionString: databaseUrl, connectionTimeoutMillis: timeoutMs, query_timeout: timeoutMs, application_name: `bid-concurrency-${name}` })]));
+let fixture;
+let primaryError;
+try {
+  await Promise.all(Object.values(clients).map((client) => client.connect()));
+  await Promise.all(Object.values(clients).map(configure));
+  const pids = Object.fromEntries(await Promise.all(Object.entries(clients).map(async ([name, client]) => [name, (await client.query('select pg_backend_pid() as pid')).rows[0].pid])));
+  fixture = await createFixture(clients.observer, randomUUID());
+  await race({ name: 'update-vs-update', fixture, clients, pids, expectedEvent: 'details_updated', expectedStatus: 'open', expectedVessel: 'A', expectedQuantity: 11, firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query("select public.update_bid($1, $2, $3, 'B', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[12]::numeric[])", [fixture.membershipId, id, rev]) });
+  await race({ name: 'update-vs-close', fixture, clients, pids, expectedEvent: 'details_updated', expectedStatus: 'open', expectedVessel: 'A', expectedQuantity: 11, firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.close_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
+  await race({ name: 'reopen-vs-cancel', fixture, clients, pids, expectedEvent: 'reopened', expectedStatus: 'open', expectedVessel: `race-reopen-vs-cancel`, expectedQuantity: 10, firstQuery: (id, rev) => clients.a.query("select public.reopen_bid($1, $2, $3, clock_timestamp() + interval '2 days')", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.cancel_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
+  console.log('Bid concurrency tests passed: 3 deterministic races.');
+} catch (error) {
+  primaryError = error;
+} finally {
+  const cleanupErrors = [];
+  if (fixture) await cleanup(clients.observer, fixture).catch((error) => cleanupErrors.push(error));
+  await Promise.all(Object.values(clients).map(async (client) => { await rollback(client); await client.end().catch((error) => cleanupErrors.push(error)); }));
+  if (primaryError || cleanupErrors.length) {
+    console.error(`Bid concurrency tests failed: ${(primaryError ?? cleanupErrors[0]).stack ?? (primaryError ?? cleanupErrors[0]).message}`);
+    if (cleanupErrors.length) console.error(`Cleanup errors: ${cleanupErrors.map((error) => error.message).join('; ')}`);
+    process.exitCode = 1;
+  }
+}
