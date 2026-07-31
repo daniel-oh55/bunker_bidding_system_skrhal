@@ -239,7 +239,7 @@ $$;
 create function app_private.effective_bid_status(p_status app_private.bid_status, p_deadline_at timestamptz)
 returns text
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -254,7 +254,7 @@ $$;
 create function app_private.bid_snapshot(p_bid_id uuid)
 returns jsonb
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -283,7 +283,7 @@ $$;
 create function app_private.bid_result(p_bid_id uuid)
 returns app_private.bid_api_result
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$

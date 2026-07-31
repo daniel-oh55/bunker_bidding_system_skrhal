@@ -1,5 +1,5 @@
 begin;
-select plan(77);
+select plan(85);
 
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data) values
   ('00000000-0000-0000-0000-000000000011', 'buyer-a@bid.test', '{"role":"trader"}', '{"role":"trader"}'),
@@ -74,6 +74,7 @@ select throws_like($$insert into app_private.bid_audit_events (bid_id, event_typ
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000012', true);
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000211')$$, '42501', 'An active BUYER membership is required', 'a BUYER cannot use another user''s active BUYER membership ID');
 select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', 'all')), 1::bigint, 'BUYER B in another organization sees all bids');
 select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', 'created_by_me')), 0::bigint, 'created_by_me uses immutable creator');
 select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', 'responsible_buyer', '00000000-0000-0000-0000-000000000011')), 1::bigint, 'responsible_buyer view filters responsibility');
@@ -89,6 +90,9 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000013
 select is((select (public.reassign_bid('00000000-0000-0000-0000-000000000213', (select id from bid_test_ids where name = 'main'), 2, '00000000-0000-0000-0000-000000000012')).responsible_buyer_user_id), '00000000-0000-0000-0000-000000000012'::uuid, 'reassignment returns an expanded responsible BUYER');
 select throws_ok($$select public.reassign_bid('00000000-0000-0000-0000-000000000213', (select id from bid_test_ids where name = 'main'), 3, '00000000-0000-0000-0000-000000000012')$$, '22023', 'Bid is already assigned to that BUYER', 'no-op reassignment is rejected');
 reset role;
+select is((select actor_user_id from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main') and event_type = 'responsible_buyer_changed' and resulting_revision = 3), '00000000-0000-0000-0000-000000000013'::uuid, 'reassignment audit records the actual BUYER actor');
+select is((select prior_responsible_buyer_user_id from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main') and event_type = 'responsible_buyer_changed' and resulting_revision = 3), '00000000-0000-0000-0000-000000000011'::uuid, 'reassignment audit records the prior responsible BUYER');
+select is((select resulting_responsible_buyer_user_id from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main') and event_type = 'responsible_buyer_changed' and resulting_revision = 3), '00000000-0000-0000-0000-000000000012'::uuid, 'reassignment audit records the resulting responsible BUYER');
 select is((select revision from app_private.bids where id = (select id from bid_test_ids where name = 'main')), 3::bigint, 'no-op reassignment leaves revision unchanged');
 select is((select responsible_buyer_user_id from app_private.bids where id = (select id from bid_test_ids where name = 'main')), '00000000-0000-0000-0000-000000000012'::uuid, 'no-op reassignment leaves responsibility unchanged');
 select is((select count(*) from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main')), 3::bigint, 'no-op reassignment creates no audit event');
@@ -99,6 +103,7 @@ select throws_ok($$select public.reassign_bid('00000000-0000-0000-0000-000000000
 select throws_ok($$select public.reassign_bid('00000000-0000-0000-0000-000000000213', (select id from bid_test_ids where name = 'main'), 3, '00000000-0000-0000-0000-000000000015')$$, '22023', 'Responsible BUYER must have an active BUYER membership', 'inactive BUYER cannot be responsible');
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000011', true);
+select throws_ok($$select public.close_bid('00000000-0000-0000-0000-000000000211', '00000000-0000-0000-0000-000000000299', 1)$$, 'P0002', 'Bid not found', 'active BUYER close rejects a nonexistent bid');
 select is((select (public.close_bid('00000000-0000-0000-0000-000000000211', (select id from bid_test_ids where name = 'main'), 3)).raw_status), 'closed', 'close returns an expanded raw status');
 select throws_ok($$select public.reopen_bid('00000000-0000-0000-0000-000000000211', (select id from bid_test_ids where name = 'main'), 4, clock_timestamp() - interval '1 second')$$, '22023', 'Deadline must be strictly in the future', 'reopen with a past deadline is rejected');
 select is((select result.revision from public.reopen_bid('00000000-0000-0000-0000-000000000211', (select id from bid_test_ids where name = 'main'), 4, clock_timestamp() + interval '1 day') as result), 5::bigint, 'reopen returns an expanded revision');
@@ -152,6 +157,9 @@ select is((select array_agg(resulting_revision order by resulting_revision) from
 select is((select actor_membership_id from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main') and resulting_revision = 2), '00000000-0000-0000-0000-000000000212'::uuid, 'audit snapshots actor membership');
 select is((select actor_organization_id from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main') and resulting_revision = 2), '00000000-0000-0000-0000-000000000112'::uuid, 'audit snapshots actor organization');
 select is((select actor_role::text from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main') and resulting_revision = 2), 'buyer_operator', 'audit snapshots actor role');
+select is((select provolatile::text from pg_proc where oid = 'app_private.effective_bid_status(app_private.bid_status,timestamptz)'::regprocedure), 'v', 'effective bid status is VOLATILE');
+select is((select provolatile::text from pg_proc where oid = 'app_private.bid_snapshot(uuid)'::regprocedure), 'v', 'bid snapshot is VOLATILE');
+select is((select provolatile::text from pg_proc where oid = 'app_private.bid_result(uuid)'::regprocedure), 'v', 'bid result is VOLATILE');
 select ok(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('delete_bid', 'remove_bid')), 'no hard-delete public API exists');
 select ok((select prosecdef from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure), 'public create function is security definer');
 select is((select proconfig::text like '%search_path=%' from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure), true, 'public create function has a fixed search path');
