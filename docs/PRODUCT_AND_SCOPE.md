@@ -9,11 +9,11 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 - The PR #1 application foundation and preserved legacy reference are complete.
 - Local Supabase migrations, pgTAP testing, and a CI database-validation job are implemented.
 - Private accounts, organizations, memberships, and server-verified current-access context are implemented.
+- A sign-in-only frontend boundary exposes a minimal shell only after the server returns active membership context.
 
 ## Excluded from this phase
 
-- frontend Auth flows and UI
-- invitation and admin-provisioning flows
+- public signup, invitation, password-reset, and admin-provisioning flows
 - bid, quote, audit, deadline, and transition-policy tables or operations
 - `.msg` or `.eml` migration
 - approval and submission business rules
@@ -33,4 +33,5 @@ These contracts are fixed for later implementation; the authorization baseline d
 - Close, reopen, award, and cancel are server-side transactional operations.
 - Browser code uses only the Supabase publishable key.
 - Secret and service-role credentials never enter browser code, Vite variables, or the repository.
+- The frontend gate mirrors server access for UX but does not replace RLS or server-side authorization.
 - An approved BUYER may take over or modify another BUYER's bid only through server-authorized policy. `created_by` remains immutable, and the actual actor plus any responsible-BUYER reassignment are retained in audit history. Exact permitted bid states, assignment model, quote interaction, and deadline behavior must be decided before the bid-schema PR. This documentation PR does not implement cross-takeover.

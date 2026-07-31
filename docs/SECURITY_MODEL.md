@@ -19,11 +19,16 @@
 - Account, organization, and membership status are evaluated in PostgreSQL, not from JWT metadata.
 - Private authorization tables live in the non-exposed `app_private` schema with RLS enabled and direct `anon`/`authenticated` table privileges revoked.
 - `public.current_access_context()` is executable only by `authenticated` callers and returns only the caller's active memberships through security-definer functions with fixed search paths.
+- The sign-in-only frontend calls that RPC after initial session hydration and after Auth state changes. It authorizes the shell only when at least one context is returned.
+- The state machine immediately clears contexts on sign-out, ignores stale RPC results, distinguishes zero-context denial from transient errors, and preserves multiple active memberships.
+- Missing browser configuration fails closed. The browser client is never partially configured and accepts only the URL and publishable key.
+- The loopback-only integration harness isolates elevated local access to fixture preparation and cleanup; its sign-in and RPC checks use the publishable client.
+- This frontend boundary is UX/state coordination, not the enforcement layer for future bid or quote data. Those operations still require RLS or server-side functions.
 - No remote Supabase project is linked and no real operational data is committed.
 
 ## Future enforcement
 
-- public signup remains disallowed
+- public signup remains disallowed and has no frontend control
 - approved BUYER accounts may number three or more
 - every approved BUYER can see all bids and all quotes
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER
@@ -35,4 +40,4 @@
 - Cross-BUYER takeover must be authorized server-side and audited; it must not rewrite `created_by`.
 - Privilege tests may use elevated fixture setup, but allowed and denied behavior must run under the target caller role.
 
-These rules are fixed future contracts. Bid RLS, frontend Auth UI, invitations, administration, bids, quotes, audits, deadlines, and lifecycle server operations are not yet implemented.
+These rules are fixed future contracts. Bid RLS, invitations, provisioning, password reset, administration, bids, quotes, audits, deadlines, and lifecycle server operations are not yet implemented.

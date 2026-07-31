@@ -31,22 +31,22 @@ const requiredLegacyFiles = [
   'vercel.json',
 ];
 
-const signupSettings = [
-  { section: 'auth', key: 'enable_signup' },
-  { section: 'auth', key: 'enable_anonymous_sign_ins' },
-  { section: 'auth.email', key: 'enable_signup' },
-  { section: 'auth.sms', key: 'enable_signup' },
+const requiredAuthSettings = [
+  { section: 'auth', key: 'enable_signup', expected: false },
+  { section: 'auth', key: 'enable_anonymous_sign_ins', expected: false },
+  { section: 'auth.email', key: 'enable_signup', expected: true },
+  { section: 'auth.sms', key: 'enable_signup', expected: false },
 ];
 
 const requiredEnvPlaceholders = [
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_PUBLISHABLE_KEY',
 ];
-const signupFailureCategories = {
-  missing: 'Missing required signup setting',
-  duplicated: 'Duplicated signup setting',
-  malformed: 'Malformed signup setting',
-  'non-false': 'Signup setting must be false',
+const requiredAuthFailureCategories = {
+  missing: 'Missing required Auth setting',
+  duplicated: 'Duplicated required Auth setting',
+  malformed: 'Malformed required Auth setting',
+  'incorrect-value': 'Required Auth setting',
 };
 const legacyProjectIdentifier = ['spot', 'bidding', 'skrhal'].join('-');
 const firebaseNamespace = ['fire', 'base'].join('');
@@ -109,8 +109,8 @@ function replaceFixtureFileWithFileSymlink(root, relativePath) {
 
 function renderConfig(mutation = {}) {
   const lines = [];
-  for (const [index, setting] of signupSettings.entries()) {
-    if (index === 0 || signupSettings[index - 1].section !== setting.section) {
+  for (const [index, setting] of requiredAuthSettings.entries()) {
+    if (index === 0 || requiredAuthSettings[index - 1].section !== setting.section) {
       lines.push(`[${setting.section}]`);
     }
 
@@ -119,15 +119,17 @@ function renderConfig(mutation = {}) {
     }
 
     if (mutation.index === index && mutation.mode === 'malformed') {
-      lines.push(`${setting.key} false`);
+      lines.push(`${setting.key} ${setting.expected}`);
       continue;
     }
 
-    const value = mutation.index === index && mutation.mode === 'non-false' ? 'true' : 'false';
+    const value = mutation.index === index && mutation.mode === 'incorrect-value'
+      ? String(!setting.expected)
+      : String(setting.expected);
     lines.push(`${setting.key} = ${value}`);
 
     if (mutation.index === index && mutation.mode === 'duplicated') {
-      lines.push(`${setting.key} = false`);
+      lines.push(`${setting.key} = ${setting.expected}`);
     }
   }
 
@@ -179,6 +181,7 @@ function expectFailure(root, expectedMessage) {
   expect(result.status).toBe(1);
   expect(result.output).toContain('Foundation boundary check failed.');
   expect(result.output).toContain(expectedMessage);
+  return result;
 }
 
 afterEach(() => {
@@ -422,17 +425,33 @@ describe('foundation boundary checker', () => {
     });
   }
 
-  for (const [index, setting] of signupSettings.entries()) {
+  for (const [index, setting] of requiredAuthSettings.entries()) {
     const settingPath = `${setting.section}.${setting.key}`;
-    for (const mode of ['missing', 'duplicated', 'malformed', 'non-false']) {
-      it(`rejects ${mode} signup setting: ${settingPath}`, () => {
+    for (const mode of ['missing', 'duplicated', 'malformed', 'incorrect-value']) {
+      it(`rejects ${mode} required Auth setting: ${settingPath}`, () => {
         const root = createPassingFixture();
         writeFixtureFile(root, 'supabase/config.toml', renderConfig({ index, mode }));
 
-        expectFailure(root, signupFailureCategories[mode]);
+        const result = expectFailure(root, requiredAuthFailureCategories[mode]);
+        expect(result.output).toContain(settingPath);
+        expect(result.output).toContain(String(setting.expected));
+        if (mode !== 'missing') {
+          expect(result.output).toContain('line');
+        }
       });
     }
   }
+
+  it('does not accept an unrelated similarly named Auth setting', () => {
+    const root = createPassingFixture();
+    const config = renderConfig().replace(
+      'enable_signup = false',
+      'enable_signup_extra = false',
+    );
+    writeFixtureFile(root, 'supabase/config.toml', config);
+
+    expectFailure(root, 'Missing required Auth setting: auth.enable_signup; expected false.');
+  });
 
   it('rejects a missing required documentation file', () => {
     const root = createPassingFixture();
