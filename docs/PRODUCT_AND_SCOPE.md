@@ -33,3 +33,4 @@ These contracts are fixed for later implementation; the authorization baseline d
 - Close, reopen, award, and cancel are server-side transactional operations.
 - Browser code uses only the Supabase publishable key.
 - Secret and service-role credentials never enter browser code, Vite variables, or the repository.
+- An approved BUYER may take over or modify another BUYER's bid only through server-authorized policy. `created_by` remains immutable, and the actual actor plus any responsible-BUYER reassignment are retained in audit history. Exact permitted bid states, assignment model, quote interaction, and deadline behavior must be decided before the bid-schema PR. This documentation PR does not implement cross-takeover.

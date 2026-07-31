@@ -19,6 +19,39 @@ This repository is set up so AI coding agents can work on narrowly scoped PRs wi
 - Codex: implementation and repository updates
 - Claude Code: independent review and risk spotting
 
+## Think before coding
+
+Before implementation, define the protected business invariant; allowed and denied actors; allowed and denied actions; data ownership and organization boundary; database enforcement; application presentation or UX validation; positive tests; denial and bypass tests; concurrency tests when applicable; and stop and recovery conditions.
+
+Authentication is not authorization. `auth.uid()` alone is insufficient when organization membership or business scope is required. Client-supplied role, organization, membership, or metadata is never authoritative.
+
+## Enforcement-layer rules
+
+- Put data integrity in PostgreSQL constraints or transactional functions.
+- Put row visibility and mutation authorization in RLS or server-side RPC/functions.
+- Application validation is UX-only and cannot be the final authorization boundary.
+- Do not implement one rule as independent, potentially conflicting authority in multiple layers.
+- Application presentation may mirror a server rule, but must never weaken it.
+
+## Migration states
+
+Keep separate records of the repository migration set, local clean-replay state, and remote applied migration history. A migration merged to `main` or applied to a shared or production environment is never rewritten; use a forward migration. An unmerged, unapplied Draft PR migration may be corrected in that PR. Never infer remote history while the remote project is unconnected. Production migration or rollback requires owner approval; prefer data-preserving forward fixes to destructive rollback.
+
+## Model allocation
+
+- Codex implements the assigned single PR; Claude Code reviews security-sensitive work.
+- Use medium or lower reasoning for document, configuration, or small UI work.
+- Use high reasoning and independent review for Auth, membership, RLS, `SECURITY DEFINER`, audit, deadline, lifecycle transition, or concurrency work.
+- After corrective commits, use focused delta reviews instead of repeating the entire analysis.
+
+## Required Task Card
+
+Use [docs/AI_TASK_CARD_TEMPLATE.md](docs/AI_TASK_CARD_TEMPLATE.md) for implementation work.
+
+## Required Review Report
+
+Use [docs/AI_REVIEW_TEMPLATE.md](docs/AI_REVIEW_TEMPLATE.md) for review work.
+
 ## Required checks
 
 Before handoff, run:

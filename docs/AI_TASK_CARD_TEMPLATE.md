@@ -1,34 +1,59 @@
-# AI Task Card Template
+# AI Task Card
 
-## Summary
+## Repository and Git state
 
-State the narrow goal of the PR in one or two sentences.
+- Repository:
+- Base branch and exact base SHA:
+- Working branch:
+- Target PR and expected HEAD:
+- Working tree status:
 
-## Included scope
+## Current migration state
 
-- item
+- Repository migrations:
+- Local clean-replay status:
+- Remote applied status:
 
-## Excluded scope
+## Single purpose
 
-- item
+## Protected business invariant
 
-## Security checks
+## Actor and action matrix
 
-- no secrets added
-- no legacy Firebase imports added
-- no unauthorized boundary expansion
+| Actor | Precondition | Read | Create | Update | Transition | Expected result |
+| --- | --- | --- | --- | --- | --- | --- |
+| | | | | | | |
 
-## Validation
+## Enforcement layers
 
-- `npm ci`
-- `npm audit --json` (full-tree classification and reporting)
-- `npm audit --audit-level=critical` (critical hard gate)
-- `npm audit --omit=dev --audit-level=high` (production high+ hard gate)
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test -- --run`
-- `npm run build`
-- `npm run check:foundation`
-- `git diff --check`
+| Rule | Constraint | RLS | RPC/server function | Application UX |
+| --- | --- | --- | --- | --- |
+| | | | | |
 
-Known ESLint development-only high findings are report-and-continue only while the production audit is clean, the full audit has no critical finding, and there is no concrete impact on secrets, CI execution, or production build output. Do not use `npm audit fix --force` or upgrade ESLint to a new major version in this PR.
+## Allowed files
+
+## Forbidden scope
+
+## Database and migration plan
+
+## Test scenarios
+
+- Positive, denial, and cross-organization cases:
+- Client-claim bypass, inactive/suspended, and privilege cases:
+- Concurrency cases where relevant:
+
+## Validation commands
+
+## Stop conditions
+
+Stop for a dirty tree, HEAD mismatch, migration-history mismatch, unexpected existing data, or conflict with a canonical contract.
+
+## Git and PR rules
+
+## Completion report
+
+Record starting and final HEAD; exact files; migration files; tests; audits; CI; deviations; and confirmation of no deploy or merge unless expressly approved.
+
+## Recommended model and reasoning
+
+## Owner approval point
