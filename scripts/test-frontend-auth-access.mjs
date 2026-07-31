@@ -151,7 +151,11 @@ async function run() {
       }),
       `${label} sign-in`,
     );
-    assert(!error && data.session, `${label} sign-in failed unexpectedly.`);
+    const errorCode = error?.code ?? 'unknown';
+    assert(
+      !error && data.session,
+      `${label} sign-in failed unexpectedly (${errorCode}).`,
+    );
     authenticatedCallers.push(caller);
   }
 
@@ -245,10 +249,10 @@ async function run() {
 
     const noContextUser = await createUser('no-context');
     await setAccountStatus(noContextUser.id, 'active');
-    const noContextCaller = newCaller();
+    const invalidPasswordCaller = newCaller();
 
     const invalidPasswordResult = await withTimeout(
-      noContextCaller.auth.signInWithPassword({
+      invalidPasswordCaller.auth.signInWithPassword({
         email: noContextUser.email,
         password: `Wrong-${randomUUID()}-9a!`,
       }),
@@ -259,6 +263,7 @@ async function run() {
       'Invalid credentials unexpectedly produced a session.',
     );
 
+    const noContextCaller = newCaller();
     await signIn(noContextCaller, noContextUser, 'no-context user');
     const noContexts = await contextsFor(noContextCaller, 'no-context user');
     assert(
