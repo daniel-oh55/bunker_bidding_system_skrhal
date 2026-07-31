@@ -196,18 +196,44 @@ describe('foundation boundary checker', () => {
     expect(result.output).toContain('Foundation boundary check passed.');
   });
 
+  it('allows a migration SQL file', () => {
+    const root = createPassingFixture();
+    writeFixtureFile(root, 'supabase/migrations/20260101000000_fixture.sql', 'select 1;\n');
+
+    const result = runChecker(root);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
+  it('allows a database test SQL file', () => {
+    const root = createPassingFixture();
+    writeFixtureFile(root, 'supabase/tests/database/fixture.sql', 'select 1;\n');
+
+    const result = runChecker(root);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
+  it('continues to scan approved SQL files for elevated credential markers', () => {
+    const root = createPassingFixture();
+    const marker = ['service', 'role'].join('_');
+    writeFixtureFile(root, 'supabase/migrations/20260101000000_fixture.sql', `select '${marker}';\n`);
+
+    expectFailure(root, 'Elevated credential marker');
+  });
+
   it('rejects a root Supabase schema SQL file', () => {
     const root = createPassingFixture();
     writeFixtureFile(root, 'supabase/schema.sql', 'select 1;\n');
 
-    expectFailure(root, 'SQL files are not allowed');
+    expectFailure(root, 'SQL files are only allowed');
   });
 
   it('rejects a nested SQL file outside the migrations directory', () => {
     const root = createPassingFixture();
     writeFixtureFile(root, 'src/database/nested/deeper/fixture.SQL', 'select 1;\n');
 
-    expectFailure(root, 'SQL files are not allowed');
+    expectFailure(root, 'SQL files are only allowed');
   });
 
   for (const implementationCase of [

@@ -49,6 +49,10 @@ const ignoredDirs = new Set([
 ]);
 
 const markdownProseExtensions = new Set(['.md', '.markdown']);
+const approvedSqlPathPrefixes = [
+  'supabase/migrations/',
+  'supabase/tests/database/',
+];
 const firebaseNamespace = ['fire', 'base'].join('');
 const initializeAppName = ['initialize', 'App'].join('');
 const getAuthName = ['get', 'Auth'].join('');
@@ -192,6 +196,10 @@ function recordFailure(message) {
   failures.push(message);
 }
 
+function isApprovedSqlPath(relativePath) {
+  return approvedSqlPathPrefixes.some((prefix) => relativePath.startsWith(prefix));
+}
+
 function checkRequiredDocs() {
   for (const relativePath of requiredDocs) {
     if (!isRegularFile(path.join(rootDir, relativePath))) {
@@ -320,14 +328,16 @@ function checkFiles() {
     const normalizedRelPath = normalizeRelativePath(relPath);
     const extension = path.extname(fullPath).toLowerCase();
 
-    if (extension === '.sql') {
-      recordFailure(`SQL files are not allowed in this foundation PR: ${normalizedRelPath}`);
-      continue;
+    const isApprovedSqlFile = extension === '.sql' && isApprovedSqlPath(normalizedRelPath);
+    if (extension === '.sql' && !isApprovedSqlFile) {
+      recordFailure(
+        `SQL files are only allowed in supabase/migrations/ or supabase/tests/database/: ${normalizedRelPath}`,
+      );
     }
 
     const content = fs.readFileSync(fullPath, 'utf8');
 
-    if (!markdownProseExtensions.has(extension)) {
+    if (!markdownProseExtensions.has(extension) && !isApprovedSqlFile) {
       for (const { label, pattern } of schemaImplementationPatterns) {
         if (pattern.test(content)) {
           recordFailure(

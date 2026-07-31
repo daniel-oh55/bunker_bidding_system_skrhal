@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - chore/pr-0-supabase-v2-foundation
   pull_request:
 
 jobs:
@@ -101,3 +100,42 @@ jobs:
             echo "Checking whitespace for fallback range ${range_start}...${head}"
             git diff --check "${range_start}...${head}"
           fi
+
+  database-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project-pinned Supabase CLI
+        run: npm ci
+
+      - name: Start local Supabase stack
+        run: npm run db:start
+
+      - name: Replay migrations from a clean local database
+        run: npm run db:reset
+
+      - name: Run pgTAP database tests
+        run: npm run db:test
+
+      - name: Resolve local database URL
+        shell: bash
+        run: |
+          db_url="$(npx supabase status -o json | jq -r '.DB_URL')"
+          [[ "$db_url" == postgresql://* ]] || { echo 'Supabase did not return a PostgreSQL database URL.'; exit 1; }
+          echo "LOCAL_DB_URL=$db_url" >> "$GITHUB_ENV"
+
+      - name: Run membership concurrency regression tests
+        run: npm run db:test:concurrency -- "$LOCAL_DB_URL"
+
+      - name: Stop and clean local Supabase stack
+        if: always()
+        run: npm run db:stop

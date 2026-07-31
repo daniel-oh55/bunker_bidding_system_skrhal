@@ -4,24 +4,24 @@
 
 Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preserving the existing Firebase prototype only as a reference artifact.
 
-## Foundation PR scope
+## Implemented baseline
 
-- create the new application shell
-- preserve the legacy prototype
-- prepare local tooling, CI, and documentation
+- The PR #1 application foundation and preserved legacy reference are complete.
+- Local Supabase migrations, pgTAP testing, and a CI database-validation job are implemented.
+- Private accounts, organizations, memberships, and server-verified current-access context are implemented.
 
 ## Excluded from this phase
 
-- auth flows
-- invitation flows
-- organization, deal, or quote tables
+- frontend Auth flows and UI
+- invitation and admin-provisioning flows
+- bid, quote, audit, deadline, and transition-policy tables or operations
 - `.msg` or `.eml` migration
 - approval and submission business rules
-- schema migrations and RLS policies
+- remote Supabase linking, deployment, or committed user, organization, or bidding data
 
 ## Future implementation contracts
 
-These contracts are fixed for later implementation; this foundation PR does not implement them:
+These contracts are fixed for later implementation; the authorization baseline does not yet implement them:
 
 - Approved BUYER accounts may number three or more.
 - Every approved BUYER can see all bids and all quotes.
