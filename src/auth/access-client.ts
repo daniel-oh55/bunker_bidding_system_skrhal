@@ -99,7 +99,7 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
   return contexts;
 }
 
-function createAccessClient(client: SupabaseClient): AccessClient {
+export function createSupabaseAccessClient(client: SupabaseClient): AccessClient {
   return {
     async getSession() {
       const { data, error } = await client.auth.getSession();
@@ -141,13 +141,35 @@ function createAccessClient(client: SupabaseClient): AccessClient {
     },
 
     onAuthStateChange(callback) {
+      const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+      let active = true;
+
       const {
         data: { subscription },
       } = client.auth.onAuthStateChange((event, session) => {
-        callback(event, toAccessSession(session));
+        const accessSession = toAccessSession(session);
+        const timer = setTimeout(() => {
+          pendingTimers.delete(timer);
+          if (active) {
+            callback(event, accessSession);
+          }
+        }, 0);
+
+        pendingTimers.add(timer);
       });
 
       return () => {
+        if (!active) {
+          return;
+        }
+
+        active = false;
+
+        for (const timer of pendingTimers) {
+          clearTimeout(timer);
+        }
+
+        pendingTimers.clear();
         subscription.unsubscribe();
       };
     },
@@ -180,7 +202,7 @@ export function createBrowserAccessConfiguration(
 
     return {
       status: 'configured',
-      client: createAccessClient(client),
+      client: createSupabaseAccessClient(client),
     };
   } catch {
     return { status: 'configuration_error', client: null };
