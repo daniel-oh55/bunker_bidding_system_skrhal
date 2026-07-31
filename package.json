@@ -14,6 +14,7 @@
     "db:reset": "supabase db reset --local",
     "db:test": "supabase test db --local supabase/tests/database",
     "db:test:concurrency": "node scripts/test-membership-concurrency.mjs",
+    "auth:test:integration": "node scripts/test-frontend-auth-access.mjs",
     "db:stop": "supabase stop --no-backup",
     "preview": "vite preview"
   },
