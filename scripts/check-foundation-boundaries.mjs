@@ -29,11 +29,11 @@ const requiredLegacyFiles = [
   'vercel.json',
 ];
 
-const requiredSignupSettings = [
-  { section: 'auth', key: 'enable_signup' },
-  { section: 'auth', key: 'enable_anonymous_sign_ins' },
-  { section: 'auth.email', key: 'enable_signup' },
-  { section: 'auth.sms', key: 'enable_signup' },
+const requiredAuthSettings = [
+  { section: 'auth', key: 'enable_signup', expected: false },
+  { section: 'auth', key: 'enable_anonymous_sign_ins', expected: false },
+  { section: 'auth.email', key: 'enable_signup', expected: true },
+  { section: 'auth.sms', key: 'enable_signup', expected: false },
 ];
 
 const requiredEnvPlaceholders = [
@@ -217,14 +217,14 @@ function checkRequiredLegacyFiles() {
   }
 }
 
-function checkSignupSettings() {
+function checkRequiredAuthSettings() {
   if (!isRegularFile(supabaseConfigPath)) {
     recordFailure('Missing required Supabase config: supabase/config.toml');
     return;
   }
 
   const valuesBySetting = new Map(
-    requiredSignupSettings.map(({ section, key }) => [`${section}.${key}`, []]),
+    requiredAuthSettings.map(({ section, key }) => [`${section}.${key}`, []]),
   );
   let currentSection = '';
 
@@ -258,32 +258,40 @@ function checkSignupSettings() {
       continue;
     }
 
-    const malformedSetting = requiredSignupSettings.find(
-      ({ section, key }) => section === currentSection && line.startsWith(key),
+    const malformedSetting = requiredAuthSettings.find(
+      ({ section, key }) => (
+        section === currentSection
+        && (line === key || line.startsWith(`${key} `) || line.startsWith(`${key}\t`))
+      ),
     );
     if (malformedSetting) {
       recordFailure(
-        `Malformed signup setting ${currentSection}.${malformedSetting.key} on line ${index + 1}`,
+        `Malformed required Auth setting ${currentSection}.${malformedSetting.key} on line ${index + 1}; expected boolean ${malformedSetting.expected}.`,
       );
     }
   }
 
-  for (const { section, key } of requiredSignupSettings) {
+  for (const { section, key, expected } of requiredAuthSettings) {
     const settingPath = `${section}.${key}`;
     const values = valuesBySetting.get(settingPath);
 
     if (values.length === 0) {
-      recordFailure(`Missing required signup setting: ${settingPath}`);
+      recordFailure(`Missing required Auth setting: ${settingPath}; expected ${expected}.`);
       continue;
     }
 
     if (values.length > 1) {
-      recordFailure(`Duplicated signup setting: ${settingPath}`);
+      const lines = values.map((value) => value.line).join(', ');
+      recordFailure(
+        `Duplicated required Auth setting: ${settingPath} on lines ${lines}; expected ${expected}.`,
+      );
     }
 
     for (const { value, line } of values) {
-      if (value !== 'false') {
-        recordFailure(`Signup setting must be false: ${settingPath} (line ${line})`);
+      if (value !== String(expected)) {
+        recordFailure(
+          `Required Auth setting ${settingPath} on line ${line} must be ${expected}; found ${value}.`,
+        );
       }
     }
   }
@@ -389,7 +397,7 @@ function checkFiles() {
 
 checkRequiredDocs();
 checkRequiredLegacyFiles();
-checkSignupSettings();
+checkRequiredAuthSettings();
 checkEnvPlaceholders();
 checkFiles();
 
