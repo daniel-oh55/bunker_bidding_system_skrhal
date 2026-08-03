@@ -16,9 +16,21 @@ function quote(overrides: Record<string, unknown> = {}) {
 }
 
 describe('bidding protocol parsers', () => {
-  it('rejects invalid bid lifecycle combinations and negative awards', () => {
+  it('rejects invalid bid lifecycle combinations and non-positive awards', () => {
     expect(parseBid(bid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now, awarded_quote_id: id, awarded_trader_organization_id: otherId, awarded_trader_organization_label: 'Trader', awarded_total_amount: -1, awarded_at: now }))).toBeNull();
     expect(parseBid(bid({ raw_status: 'cancelled', effective_status: 'cancelled', cancelled_at: null }))).toBeNull();
+    expect(parseBid(bid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now, awarded_quote_id: id, awarded_trader_organization_id: otherId, awarded_trader_organization_label: 'Trader', awarded_total_amount: 0, awarded_at: now }))).toBeNull();
+    expect(parseTraderBid({ ...bid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now, awarded_total_amount: 0 }), created_by: undefined, created_by_label: undefined, responsible_buyer_user_id: undefined, responsible_buyer_label: undefined, awarded_quote_id: undefined, awarded_trader_organization_id: undefined, awarded_trader_organization_label: undefined, awarded_at: undefined })).toBeNull();
+  });
+
+  it('accepts only coherent deadline-derived open states in both bid parsers', () => {
+    const trader = (value: Record<string, unknown>) => parseTraderBid({ ...value, created_by: undefined, created_by_label: undefined, responsible_buyer_user_id: undefined, responsible_buyer_label: undefined, awarded_quote_id: undefined, awarded_trader_organization_id: undefined, awarded_trader_organization_label: undefined, awarded_total_amount: undefined, awarded_at: undefined });
+    expect(parseBid(bid({ raw_status: 'open', effective_status: 'closed', deadline_at: null }))).toBeNull();
+    expect(trader(bid({ raw_status: 'open', effective_status: 'closed', deadline_at: null }))).toBeNull();
+    expect(parseBid(bid({ raw_status: 'open', effective_status: 'closed', deadline_at: now }))).not.toBeNull();
+    expect(trader(bid({ raw_status: 'open', effective_status: 'closed', deadline_at: now }))).not.toBeNull();
+    expect(parseBid(bid({ raw_status: 'open', effective_status: 'open', deadline_at: null }))).not.toBeNull();
+    expect(parseBid(bid({ raw_status: 'cancelled', effective_status: 'cancelled', closed_at: now, cancelled_at: now }))).not.toBeNull();
   });
 
   it('rejects an invalid non-null audit revision and unknown event', () => {

@@ -7,6 +7,16 @@ export function isoToLocalInput(value: string | null): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** Format an ISO instant as a wall-clock value at a supplied UTC offset. */
+export function isoToInputAtOffset(value: string | null, offsetMinutes: number): string {
+  if (!value || !Number.isFinite(offsetMinutes)) return '';
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return '';
+  const wallClock = new Date(instant.getTime() + offsetMinutes * 60_000);
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${wallClock.getUTCFullYear()}-${pad(wallClock.getUTCMonth() + 1)}-${pad(wallClock.getUTCDate())}T${pad(wallClock.getUTCHours())}:${pad(wallClock.getUTCMinutes())}`;
+}
+
 /** Convert a valid datetime-local value to its ISO UTC representation. */
 export function localInputToIso(value: string): string | null {
   if (!value) return null;

@@ -37,4 +37,23 @@ describe('BUYER bid forms and detail editor', () => {
     render(<BuyerBidDetail bid={bid} buyers={buyers} organizations={[]} detail={{ access: [], quotes, audit: [] }} pending={false} client={fakeClient} membershipId={membership} mutate={vi.fn()} refresh={vi.fn()} />);
     expect(screen.getByLabelText('Edit vessel / voyage')).toBeDisabled(); expect(screen.getByLabelText('Edit port')).toBeDisabled(); expect(screen.getByLabelText('Fuel grade 1')).toBeDisabled(); expect(screen.getByLabelText('Fuel quantity 1')).toBeDisabled(); expect(screen.getByLabelText('Edit deadline')).toBeEnabled();
   });
+
+  it('binds award confirmation to the exact reviewed quote revision', () => {
+    const revision7: Quote = { id: '10000000-0000-4000-8000-000000000004', bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000001', trader_organization_label: 'Trader', revision: 7, created_by: membership, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 1 }], barge_fee: 0, total_amount: 10, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false };
+    const { rerender } = render(<BuyerBidDetail bid={bid} buyers={buyers} organizations={[]} detail={{ access: [], quotes: [revision7], audit: [] }} pending={false} client={fakeClient} membershipId={membership} mutate={vi.fn()} refresh={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Award' }));
+    expect(screen.getByRole('button', { name: 'Confirm award' })).toBeInTheDocument();
+    rerender(<BuyerBidDetail bid={bid} buyers={buyers} organizations={[]} detail={{ access: [], quotes: [{ ...revision7, revision: 8, total_amount: 11 }], audit: [] }} pending={false} client={fakeClient} membershipId={membership} mutate={vi.fn()} refresh={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Confirm award' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Award' }));
+    expect(screen.getByRole('button', { name: 'Confirm award' })).toBeInTheDocument();
+  });
+
+  it('renders quote comparison and audit timeline operational fields accessibly', () => {
+    const quotes: Quote[] = [{ id: '10000000-0000-4000-8000-000000000004', bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000001', trader_organization_label: 'Trader', revision: 2, created_by: membership, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 3 }], barge_fee: 5, total_amount: 35, created_at: now, updated_at: now, access_active: false, organization_active: false, eligible_for_award: false, is_awarded: true }];
+    const audit = [{ id: '10000000-0000-4000-8000-000000000005', bid_id: bidId, event_type: 'responsible_buyer_changed', actor_user_id: membership, actor_membership_id: membership, actor_organization_id: membership, actor_role: 'buyer_operator' as const, occurred_at: now, prior_revision: 2, resulting_revision: 3, prior_status: 'open' as const, resulting_status: 'open' as const, prior_responsible_buyer_user_id: membership, resulting_responsible_buyer_user_id: buyerId, before_snapshot: {}, after_snapshot: {} }];
+    render(<BuyerBidDetail bid={bid} buyers={buyers} organizations={[]} detail={{ access: [], quotes, audit }} pending={false} client={fakeClient} membershipId={membership} mutate={vi.fn()} refresh={vi.fn()} />);
+    expect(screen.getByText('TRADER organization')).toBeInTheDocument(); expect(screen.getByText('Grade prices')).toBeInTheDocument(); expect(screen.getByText('Barge fee')).toBeInTheDocument(); expect(screen.getByText('Authoritative total')).toBeInTheDocument(); expect(screen.getByText('Quote revision')).toBeInTheDocument(); expect(screen.getByText('revoked')).toBeInTheDocument(); expect(screen.getByText('inactive')).toBeInTheDocument(); expect(screen.getByText('ineligible')).toBeInTheDocument(); expect(screen.getByText('yes')).toBeInTheDocument();
+    expect(screen.getByText('Event type')).toBeInTheDocument(); expect(screen.getByText('Occurred')).toBeInTheDocument(); expect(screen.getByText('Actor role')).toBeInTheDocument(); expect(screen.getAllByText('Revision')).toHaveLength(2); expect(screen.getByText('Status')).toBeInTheDocument(); expect(screen.getByText('Responsible BUYER transition')).toBeInTheDocument();
+  });
 });

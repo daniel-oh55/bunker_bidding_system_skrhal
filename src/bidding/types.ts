@@ -65,18 +65,21 @@ export function parseBid(value: unknown): Bid | null {
   const awardValues = [r.awarded_quote_id, r.awarded_trader_organization_id, r.awarded_trader_organization_label, r.awarded_total_amount, r.awarded_at];
   const hasAward = awardValues.every((item) => item !== null);
   const noAward = awardValues.every((item) => item === null);
-  const legal = (raw === 'open' && (effective === 'open' || effective === 'closed') && !closed && !cancelled && noAward)
+  const deadline = nullableDate(r.deadline_at);
+  const legal = (raw === 'open' && effective === 'open' && !closed && !cancelled && noAward)
+    || (raw === 'open' && effective === 'closed' && deadline !== null && !closed && !cancelled && noAward)
     || (raw === 'closed' && effective === 'closed' && !!closed && !cancelled && noAward)
     || (raw === 'cancelled' && effective === 'cancelled' && !!cancelled && noAward)
-    || (raw === 'awarded' && effective === 'awarded' && !!closed && !cancelled && hasAward && (nullableNumber(r.awarded_total_amount) as number) >= 0);
+    || (raw === 'awarded' && effective === 'awarded' && !!closed && !cancelled && hasAward && (nullableNumber(r.awarded_total_amount) as number) > 0);
   if (!legal) return null;
   return { id: r.id as string, vessel_voyage: r.vessel_voyage as string, port_name: r.port_name as string, delivery_window: r.delivery_window as string, deadline_at: r.deadline_at as string | null, raw_status: raw, effective_status: effective, revision: revision(r.revision)!, created_by: r.created_by as string, created_by_label: r.created_by_label as string, responsible_buyer_user_id: r.responsible_buyer_user_id as string, responsible_buyer_label: r.responsible_buyer_label as string, fuel_items: fuelItems(r.fuel_items)!, created_at: r.created_at as string, updated_at: r.updated_at as string, closed_at: r.closed_at as string | null, cancelled_at: r.cancelled_at as string | null, awarded_quote_id: r.awarded_quote_id as string | null, awarded_trader_organization_id: r.awarded_trader_organization_id as string | null, awarded_trader_organization_label: r.awarded_trader_organization_label as string | null, awarded_total_amount: nullableNumber(r.awarded_total_amount)!, awarded_at: r.awarded_at as string | null };
 }
 export function parseTraderBid(value: unknown): TraderBid | null {
   const r = record(value); if (!r) return null; const raw = text(r.raw_status); const effective = text(r.effective_status);
   if (!id(r.id) || !text(r.vessel_voyage) || !text(r.port_name) || !text(r.delivery_window) || nullableDate(r.deadline_at) === undefined || !raw || !statuses.has(raw as BidStatus) || !effective || !statuses.has(effective as BidStatus) || revision(r.revision) === null || !fuelItems(r.fuel_items) || date(r.created_at) === undefined || date(r.updated_at) === undefined || nullableDate(r.closed_at) === undefined || nullableDate(r.cancelled_at) === undefined) return null;
-  const closed = r.closed_at; const cancelled = r.cancelled_at;
-  if (!((raw === 'open' && (effective === 'open' || effective === 'closed') && !closed && !cancelled) || (raw === 'closed' && effective === 'closed' && !!closed && !cancelled) || (raw === 'cancelled' && effective === 'cancelled' && !!cancelled) || (raw === 'awarded' && effective === 'awarded' && !!closed && !cancelled))) return null;
+  const closed = r.closed_at; const cancelled = r.cancelled_at; const deadline = nullableDate(r.deadline_at);
+  if (raw === 'awarded' && r.awarded_total_amount !== undefined && (finite(r.awarded_total_amount) === null || finite(r.awarded_total_amount)! <= 0)) return null;
+  if (!((raw === 'open' && effective === 'open' && !closed && !cancelled) || (raw === 'open' && effective === 'closed' && deadline !== null && !closed && !cancelled) || (raw === 'closed' && effective === 'closed' && !!closed && !cancelled) || (raw === 'cancelled' && effective === 'cancelled' && !!cancelled) || (raw === 'awarded' && effective === 'awarded' && !!closed && !cancelled))) return null;
   return { id: r.id as string, vessel_voyage: r.vessel_voyage as string, port_name: r.port_name as string, delivery_window: r.delivery_window as string, deadline_at: r.deadline_at as string | null, raw_status: raw, effective_status: effective, revision: revision(r.revision)!, fuel_items: fuelItems(r.fuel_items)!, created_at: r.created_at as string, updated_at: r.updated_at as string, closed_at: r.closed_at as string | null, cancelled_at: r.cancelled_at as string | null };
 }
 export function parseActiveBuyer(value: unknown): ActiveBuyer | null { const r = record(value); const count = r && finite(r.active_buyer_membership_count); return r && id(r.user_id) && text(r.display_label) && count !== null && Number.isInteger(count) && count >= 1 ? { user_id: r.user_id as string, display_label: r.display_label as string, active_buyer_membership_count: count } : null; }

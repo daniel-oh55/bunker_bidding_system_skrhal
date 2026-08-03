@@ -72,6 +72,9 @@ body {
 .trader-bids { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
 .trader-card { margin-top: 0; }
 .trader-card h2 { font-size: 1.35rem; }
+.operational-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px 16px; margin: 14px 0; }
+.operational-data div { min-width: 0; }
+.operational-data dd { margin: 3px 0 0; overflow-wrap: anywhere; }
 
 .hero {
   margin-bottom: 28px;

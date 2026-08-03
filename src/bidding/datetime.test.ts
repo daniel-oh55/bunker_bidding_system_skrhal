@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isoToLocalInput, localInputToIso } from './datetime';
+import { isoToInputAtOffset, isoToLocalInput, localInputToIso } from './datetime';
 
 describe('datetime-local conversion', () => {
   it('preserves null and empty deadlines', () => {
@@ -17,5 +17,9 @@ describe('datetime-local conversion', () => {
     expect(localInputToIso('2026-99-03T12:00')).toBeNull();
     expect(localInputToIso('not-a-date')).toBeNull();
     expect(isoToLocalInput('not-a-date')).toBe('');
+  });
+
+  it('proves the Asia/Seoul UTC+09:00 display contract independently of the runner timezone', () => {
+    expect(isoToInputAtOffset('2026-08-03T03:00:00.000Z', 9 * 60)).toBe('2026-08-03T12:00');
   });
 });
