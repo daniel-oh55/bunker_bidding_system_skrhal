@@ -1,0 +1,76 @@
+export type FuelGrade = 'vlsfo' | 'hsfo' | 'ulsfo' | 'lsfo' | 'lsmgo';
+export type BidStatus = 'open' | 'closed' | 'cancelled' | 'awarded';
+export type EffectiveBidStatus = 'open' | 'closed' | 'cancelled' | 'awarded';
+
+export type BidFuelItem = { fuel_grade: FuelGrade; quantity_mt: number };
+export type QuoteFuelPrice = { fuel_grade: FuelGrade; unit_price: number };
+export type Bid = {
+  id: string; vessel_voyage: string; port_name: string; delivery_window: string;
+  deadline_at: string | null; raw_status: BidStatus; effective_status: EffectiveBidStatus;
+  revision: number; created_by: string; created_by_label: string;
+  responsible_buyer_user_id: string; responsible_buyer_label: string;
+  fuel_items: BidFuelItem[]; created_at: string; updated_at: string;
+  closed_at: string | null; cancelled_at: string | null;
+  awarded_quote_id: string | null; awarded_trader_organization_id: string | null;
+  awarded_trader_organization_label: string | null; awarded_total_amount: number | null;
+  awarded_at: string | null;
+};
+export type TraderBid = Omit<Bid, 'created_by' | 'created_by_label' | 'responsible_buyer_user_id' | 'responsible_buyer_label' | 'awarded_quote_id' | 'awarded_trader_organization_id' | 'awarded_trader_organization_label' | 'awarded_total_amount' | 'awarded_at'>;
+export type ActiveBuyer = { user_id: string; display_label: string; active_buyer_membership_count: number };
+export type TraderOrganization = { organization_id: string; organization_label: string };
+export type BidTraderAccess = { bid_id: string; trader_organization_id: string; trader_organization_label: string; granted_at: string; granted_by_user_id: string; granted_by_membership_id: string };
+export type Quote = { id: string; bid_id: string; trader_organization_id: string; trader_organization_label: string; revision: number; created_by: string; fuel_prices: QuoteFuelPrice[]; barge_fee: number; total_amount: number; created_at: string; updated_at: string; access_active: boolean; organization_active: boolean; eligible_for_award: boolean; is_awarded: boolean };
+export type BidAuditEvent = { id: string; bid_id: string; event_type: string; actor_user_id: string; actor_membership_id: string; actor_organization_id: string; actor_role: 'buyer_admin' | 'buyer_operator' | 'trader'; occurred_at: string; prior_revision: number | null; resulting_revision: number; prior_status: BidStatus | null; resulting_status: BidStatus; prior_responsible_buyer_user_id: string | null; resulting_responsible_buyer_user_id: string; before_snapshot: Record<string, unknown> | null; after_snapshot: Record<string, unknown> };
+export type WorkflowErrorKind = 'authorization' | 'conflict' | 'lifecycle' | 'validation' | 'not_found' | 'duplicate' | 'unknown' | 'protocol';
+export type WorkflowError = { kind: WorkflowErrorKind; code: string | null; message: string };
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const grades = new Set<FuelGrade>(['vlsfo', 'hsfo', 'ulsfo', 'lsfo', 'lsmgo']);
+const statuses = new Set<BidStatus>(['open', 'closed', 'cancelled', 'awarded']);
+const roles = new Set<BidAuditEvent['actor_role']>(['buyer_admin', 'buyer_operator', 'trader']);
+
+function record(value: unknown): Record<string, unknown> | null { return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null; }
+function text(value: unknown): string | null { return typeof value === 'string' ? value : null; }
+function id(value: unknown): string | null { const candidate = text(value); return candidate && uuid.test(candidate) ? candidate : null; }
+function finite(value: unknown): number | null { const candidate = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN; return Number.isFinite(candidate) ? candidate : null; }
+function revision(value: unknown): number | null { const candidate = finite(value); return candidate !== null && Number.isInteger(candidate) && candidate >= 1 ? candidate : null; }
+function date(value: unknown, nullable = false): string | null | undefined { if (value === null && nullable) return null; const candidate = text(value); return candidate && Number.isFinite(Date.parse(candidate)) ? candidate : undefined; }
+function nullableId(value: unknown): string | null | undefined { if (value === null) return null; return id(value) ?? undefined; }
+function nullableNumber(value: unknown): number | null | undefined { if (value === null) return null; return finite(value) ?? undefined; }
+function nullableDate(value: unknown): string | null | undefined { return date(value, true); }
+function bool(value: unknown): boolean | null { return typeof value === 'boolean' ? value : null; }
+
+function fuelItems(value: unknown): BidFuelItem[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 5) return null;
+  const found = new Set<string>(); const output: BidFuelItem[] = [];
+  for (const candidate of value) { const item = record(candidate); const grade = item && text(item.fuel_grade); const quantity = item && finite(item.quantity_mt); if (!item || !grade || !grades.has(grade as FuelGrade) || quantity === null || quantity <= 0 || found.has(grade)) return null; found.add(grade); output.push({ fuel_grade: grade as FuelGrade, quantity_mt: quantity }); }
+  return output;
+}
+function fuelPrices(value: unknown): QuoteFuelPrice[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 5) return null;
+  const found = new Set<string>(); const output: QuoteFuelPrice[] = [];
+  for (const candidate of value) { const item = record(candidate); const grade = item && text(item.fuel_grade); const price = item && finite(item.unit_price); if (!item || !grade || !grades.has(grade as FuelGrade) || price === null || price <= 0 || found.has(grade)) return null; found.add(grade); output.push({ fuel_grade: grade as FuelGrade, unit_price: price }); }
+  return output;
+}
+function objectOrNull(value: unknown): Record<string, unknown> | null | undefined { if (value === null) return null; return record(value) ?? undefined; }
+
+export function parseBid(value: unknown): Bid | null {
+  const r = record(value); if (!r) return null;
+  const raw = text(r.raw_status); const effective = text(r.effective_status);
+  const parsed = r && id(r.id) && text(r.vessel_voyage) && text(r.port_name) && text(r.delivery_window) && nullableDate(r.deadline_at) !== undefined && raw && statuses.has(raw as BidStatus) && effective && statuses.has(effective as BidStatus) && revision(r.revision) !== null && id(r.created_by) && text(r.created_by_label) && id(r.responsible_buyer_user_id) && text(r.responsible_buyer_label) && fuelItems(r.fuel_items) && date(r.created_at) !== undefined && date(r.updated_at) !== undefined && nullableDate(r.closed_at) !== undefined && nullableDate(r.cancelled_at) !== undefined && nullableId(r.awarded_quote_id) !== undefined && nullableId(r.awarded_trader_organization_id) !== undefined && (r.awarded_trader_organization_label === null || text(r.awarded_trader_organization_label)) && nullableNumber(r.awarded_total_amount) !== undefined && nullableDate(r.awarded_at) !== undefined;
+  if (!parsed) return null;
+  return { id: r.id as string, vessel_voyage: r.vessel_voyage as string, port_name: r.port_name as string, delivery_window: r.delivery_window as string, deadline_at: r.deadline_at as string | null, raw_status: raw as BidStatus, effective_status: effective as EffectiveBidStatus, revision: revision(r.revision)!, created_by: r.created_by as string, created_by_label: r.created_by_label as string, responsible_buyer_user_id: r.responsible_buyer_user_id as string, responsible_buyer_label: r.responsible_buyer_label as string, fuel_items: fuelItems(r.fuel_items)!, created_at: r.created_at as string, updated_at: r.updated_at as string, closed_at: r.closed_at as string | null, cancelled_at: r.cancelled_at as string | null, awarded_quote_id: r.awarded_quote_id as string | null, awarded_trader_organization_id: r.awarded_trader_organization_id as string | null, awarded_trader_organization_label: r.awarded_trader_organization_label as string | null, awarded_total_amount: nullableNumber(r.awarded_total_amount)!, awarded_at: r.awarded_at as string | null };
+}
+export function parseTraderBid(value: unknown): TraderBid | null {
+  const r = record(value); if (!r) return null; const raw = text(r.raw_status); const effective = text(r.effective_status);
+  if (!id(r.id) || !text(r.vessel_voyage) || !text(r.port_name) || !text(r.delivery_window) || nullableDate(r.deadline_at) === undefined || !raw || !statuses.has(raw as BidStatus) || !effective || !statuses.has(effective as BidStatus) || revision(r.revision) === null || !fuelItems(r.fuel_items) || date(r.created_at) === undefined || date(r.updated_at) === undefined || nullableDate(r.closed_at) === undefined || nullableDate(r.cancelled_at) === undefined) return null;
+  return { id: r.id as string, vessel_voyage: r.vessel_voyage as string, port_name: r.port_name as string, delivery_window: r.delivery_window as string, deadline_at: r.deadline_at as string | null, raw_status: raw as BidStatus, effective_status: effective as EffectiveBidStatus, revision: revision(r.revision)!, fuel_items: fuelItems(r.fuel_items)!, created_at: r.created_at as string, updated_at: r.updated_at as string, closed_at: r.closed_at as string | null, cancelled_at: r.cancelled_at as string | null };
+}
+export function parseActiveBuyer(value: unknown): ActiveBuyer | null { const r = record(value); const count = r && finite(r.active_buyer_membership_count); return r && id(r.user_id) && text(r.display_label) && count !== null && Number.isInteger(count) && count >= 1 ? { user_id: r.user_id as string, display_label: r.display_label as string, active_buyer_membership_count: count } : null; }
+export function parseTraderOrganization(value: unknown): TraderOrganization | null { const r = record(value); return r && id(r.organization_id) && text(r.organization_label) ? { organization_id: r.organization_id as string, organization_label: r.organization_label as string } : null; }
+export function parseBidTraderAccess(value: unknown): BidTraderAccess | null { const r = record(value); return r && id(r.bid_id) && id(r.trader_organization_id) && text(r.trader_organization_label) && date(r.granted_at) !== undefined && id(r.granted_by_user_id) && id(r.granted_by_membership_id) ? { bid_id: r.bid_id as string, trader_organization_id: r.trader_organization_id as string, trader_organization_label: r.trader_organization_label as string, granted_at: r.granted_at as string, granted_by_user_id: r.granted_by_user_id as string, granted_by_membership_id: r.granted_by_membership_id as string } : null; }
+export function parseQuote(value: unknown): Quote | null { const r = record(value); if (!r || !id(r.id) || !id(r.bid_id) || !id(r.trader_organization_id) || !text(r.trader_organization_label) || revision(r.revision) === null || !id(r.created_by) || !fuelPrices(r.fuel_prices) || finite(r.barge_fee) === null || finite(r.barge_fee)! < 0 || finite(r.total_amount) === null || !date(r.created_at) || !date(r.updated_at) || bool(r.access_active) === null || bool(r.organization_active) === null || bool(r.eligible_for_award) === null || bool(r.is_awarded) === null) return null; return { id: r.id as string, bid_id: r.bid_id as string, trader_organization_id: r.trader_organization_id as string, trader_organization_label: r.trader_organization_label as string, revision: revision(r.revision)!, created_by: r.created_by as string, fuel_prices: fuelPrices(r.fuel_prices)!, barge_fee: finite(r.barge_fee)!, total_amount: finite(r.total_amount)!, created_at: r.created_at as string, updated_at: r.updated_at as string, access_active: r.access_active as boolean, organization_active: r.organization_active as boolean, eligible_for_award: r.eligible_for_award as boolean, is_awarded: r.is_awarded as boolean }; }
+export function parseBidAuditEvent(value: unknown): BidAuditEvent | null { const r = record(value); const role = r && text(r.actor_role); const prior = r && (r.prior_revision === null ? null : revision(r.prior_revision)); const priorStatus = r && (r.prior_status === null ? null : text(r.prior_status)); const before = r && objectOrNull(r.before_snapshot); const after = r && record(r.after_snapshot); if (!r || !id(r.id) || !id(r.bid_id) || !text(r.event_type) || !id(r.actor_user_id) || !id(r.actor_membership_id) || !id(r.actor_organization_id) || !role || !roles.has(role as BidAuditEvent['actor_role']) || !date(r.occurred_at) || prior === undefined || revision(r.resulting_revision) === null || priorStatus === undefined || (priorStatus !== null && !statuses.has(priorStatus as BidStatus)) || !text(r.resulting_status) || !statuses.has(r.resulting_status as BidStatus) || nullableId(r.prior_responsible_buyer_user_id) === undefined || !id(r.resulting_responsible_buyer_user_id) || before === undefined || !after) return null; return { id: r.id as string, bid_id: r.bid_id as string, event_type: r.event_type as string, actor_user_id: r.actor_user_id as string, actor_membership_id: r.actor_membership_id as string, actor_organization_id: r.actor_organization_id as string, actor_role: role as BidAuditEvent['actor_role'], occurred_at: r.occurred_at as string, prior_revision: prior, resulting_revision: revision(r.resulting_revision)!, prior_status: priorStatus as BidStatus | null, resulting_status: r.resulting_status as BidStatus, prior_responsible_buyer_user_id: r.prior_responsible_buyer_user_id as string | null, resulting_responsible_buyer_user_id: r.resulting_responsible_buyer_user_id as string, before_snapshot: before, after_snapshot: after }; }
+export function parseArray<T>(value: unknown, parser: (candidate: unknown) => T | null): T[] | null { if (!Array.isArray(value)) return null; const result: T[] = []; for (const candidate of value) { const item = parser(candidate); if (!item) return null; result.push(item); } return result; }
+export function protocolError(): WorkflowError { return { kind: 'protocol', code: null, message: 'The server returned an invalid response. Protected data was not displayed.' }; }
+export function mapWorkflowError(error: { code?: string | null } | null | undefined): WorkflowError { const code = error?.code ?? null; if (code === '42501') return { kind: 'authorization', code, message: 'Your authorization changed. Access is being verified again.' }; if (code === '40001') return { kind: 'conflict', code, message: 'This record changed elsewhere. The latest data was loaded.' }; if (code === '55000') return { kind: 'lifecycle', code, message: 'The bid state or deadline changed. The latest data was loaded.' }; if (code === '22023' || code === '23514') return { kind: 'validation', code, message: 'Please review the submitted values.' }; if (code === 'P0002') return { kind: 'not_found', code, message: 'That record no longer exists.' }; if (code === '23505') return { kind: 'duplicate', code, message: 'That operation conflicts with the current record.' }; return { kind: 'unknown', code, message: 'The request could not be completed. Please try again.' }; }
