@@ -52,4 +52,39 @@ describe('BUYER workspace', () => {
     expect(screen.getByText(/Fuel: VLSFO 10/)).toBeInTheDocument();
     expect(screen.getByText(/awarded to Awarded Trader; total 100/)).toBeInTheDocument();
   });
+
+  it.each(['40001', '55000', 'P0002'])('does not retry a %s BUYER state error and retains it after the authoritative reload', async (code) => {
+    const initial = bid({ vessel_voyage: 'MV Stale', revision: 3 });
+    const refreshed = bid({ vessel_voyage: 'MV Fresh', raw_status: 'closed', effective_status: 'closed', revision: 4, closed_at: now });
+    const { client, listBids } = fakeClient([initial]);
+    const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
+    const listQuotesForBuyers = vi.fn(() => Promise.resolve(ok<Quote[]>([])));
+    const listBidAudit = vi.fn(() => Promise.resolve(ok<BidAuditEvent[]>([])));
+    const closeBid = vi.fn<BiddingClient['closeBid']>();
+    const error = { kind: code === '40001' ? 'conflict' : code === '55000' ? 'lifecycle' : 'not_found', code, message: 'Safe BUYER state error' } as const;
+    client.listBidTraderAccess = listBidTraderAccess;
+    client.listQuotesForBuyers = listQuotesForBuyers;
+    client.listBidAudit = listBidAudit;
+    client.closeBid = closeBid;
+    closeBid.mockResolvedValueOnce({ data: null, error });
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByRole('button', { name: /MV Stale/ });
+    fireEvent.click(screen.getByRole('button', { name: /MV Stale/ }));
+    await waitFor(() => expect(listBidTraderAccess).toHaveBeenCalledTimes(1));
+    listBids.mockResolvedValueOnce(ok([refreshed]));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await screen.findByRole('alert');
+    await screen.findAllByText('MV Fresh');
+    await waitFor(() => {
+      expect(closeBid).toHaveBeenCalledOnce();
+      expect(listBids).toHaveBeenCalledTimes(2);
+      expect(listBidTraderAccess).toHaveBeenCalledTimes(2);
+      expect(listQuotesForBuyers).toHaveBeenCalledTimes(2);
+      expect(listBidAudit).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Safe BUYER state error');
+    expect(screen.getByText('Revision 4')).toBeInTheDocument();
+    expect(screen.queryByText('Revision 3')).not.toBeInTheDocument();
+    expect(screen.queryByText('MV Stale')).not.toBeInTheDocument();
+  });
 });

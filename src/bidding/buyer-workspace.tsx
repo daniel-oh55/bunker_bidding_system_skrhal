@@ -44,7 +44,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure }:
       return false;
     }
   }, [client, handleError, membershipId]);
-  const loadList = useCallback(async (nextView: View, target?: string, retainId?: string) => {
+  const loadList = useCallback(async (nextView: View, target?: string, retainId?: string, errorAfterReload?: WorkflowError) => {
     const keep = retainId ?? selectedRef.current?.id;
     const operation = ++listOperation.current;
     ++detailOperation.current;
@@ -67,6 +67,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure }:
       setLoading(false);
       const nextSelected = keep ? nextBids.find((bid) => bid.id === keep) : undefined;
       if (nextSelected) void loadDetail(nextSelected);
+      setError(errorAfterReload ?? null);
       return true;
     } catch {
       if (operation === listOperation.current) { clearVisible(); handleError(unknownError); setLoading(false); }
@@ -85,8 +86,11 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure }:
     setPending(false);
     if (result.error) {
       const retainId = selectedRef.current?.id;
+      if (result.error.kind === 'conflict' || result.error.kind === 'lifecycle' || result.error.kind === 'not_found') {
+        await loadList(view, responsible || undefined, retainId, result.error);
+        return false;
+      }
       handleError(result.error);
-      if (result.error.kind === 'conflict' || result.error.kind === 'lifecycle' || result.error.kind === 'not_found') await loadList(view, responsible || undefined, retainId);
       return false;
     }
     return loadList(view, responsible || undefined, selectedRef.current?.id);
