@@ -33,18 +33,18 @@
 - Quote prices are validated against the exact bid grade set and totals are calculated server-side. Bid-first locks re-evaluate server-time closure after waiting. Quote identity is trigger-immutable and quote/bid audits are server-generated and append-only.
 - Award verifies effective closure, current scope, active TRADER organization, and both revisions within the bid-first transaction. It is terminal in V1 and uses a composite foreign key to prevent cross-bid selection.
 
-## Future enforcement
+## Enforced bidding and scope rules
 
-- public signup remains disallowed and has no frontend control
+- Public signup remains disallowed and has no frontend control.
 - approved BUYER accounts may number three or more
 - every approved BUYER can see all bids and all quotes
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER
-- TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope
+- TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope.
 - `created_by` is immutable and remains separate from the actor performing update, close, reopen, award, or cancel operations
-- deadlines use server time
-- quote creation and modification after close are rejected server-side
-- close, reopen, award, and cancel are server-side transactional operations
+- Deadlines use server time.
+- Quote creation and modification after close are rejected server-side.
+- Close, reopen, award, and cancel are server-side transactional operations.
 - Active BUYERs may perform cross-BUYER changes through the server RPCs; those changes never rewrite `created_by` and audit the actual actor. Responsibility is a visibility filter, not authority.
-- Privilege tests may use elevated fixture setup, but allowed and denied behavior must run under the target caller role.
+- Privilege tests may use elevated fixture setup, but allowed and denied behavior run under the target caller role.
 
 The integrated frontend workspace does not grant authority and does not request competitor data from a TRADER context. It uses manual refresh and post-mutation reload; Realtime, invitations, provisioning, password reset, and administration are not implemented. No remote Supabase project is linked, deployed, or populated with real data.

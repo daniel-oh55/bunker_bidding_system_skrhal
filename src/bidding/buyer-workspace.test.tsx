@@ -7,6 +7,7 @@ import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, Quote, TraderBid
 const id = '10000000-0000-4000-8000-000000000001'; const target = '10000000-0000-4000-8000-000000000002'; const bidId = '10000000-0000-4000-8000-000000000003'; const now = '2026-08-03T03:00:00.000Z';
 const ok = <T,>(data: T): BiddingResult<T> => ({ data, error: null });
 const bid = (overrides: Partial<Bid> = {}): Bid => ({ id: bidId, vessel_voyage: 'MV Buyer', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: now, raw_status: 'open', effective_status: 'open', revision: 3, created_by: id, created_by_label: 'Creator', responsible_buyer_user_id: target, responsible_buyer_label: 'Target buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null, ...overrides });
+const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
 function fakeClient(bids: Bid[] = [bid()]) {
   const listBids = vi.fn(() => Promise.resolve(ok(bids)));
   const listActiveBuyers = vi.fn(() => Promise.resolve(ok<ActiveBuyer[]>([{ user_id: target, display_label: 'Target buyer', active_buyer_membership_count: 1 }])));
@@ -41,6 +42,57 @@ describe('BUYER workspace', () => {
     await screen.findByRole('alert');
     expect(screen.queryByText('MV Buyer')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+  });
+
+  it('fails closed on a BUYER 42501 response, revalidates authorization, and ignores stale detail results', async () => {
+    const { client, listBids } = fakeClient(); const onAuthorizationFailure = vi.fn();
+    const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
+    const detailQuotes = deferred<BiddingResult<Quote[]>>(); const detailAudit = deferred<BiddingResult<BidAuditEvent[]>>();
+    client.listBidTraderAccess = listBidTraderAccess;
+    client.listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok([{ organization_id: '20000000-0000-4000-8000-000000000001', organization_label: 'Trader A' }])));
+    client.listQuotesForBuyers = vi.fn(() => detailQuotes.promise);
+    client.listBidAudit = vi.fn(() => detailAudit.promise);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
+    await screen.findByRole('button', { name: /MV Buyer/ });
+    fireEvent.click(screen.getByRole('button', { name: /MV Buyer/ }));
+    await waitFor(() => expect(listBidTraderAccess).toHaveBeenCalledOnce());
+    expect(screen.getAllByRole('option', { name: 'Target buyer' })).toHaveLength(2);
+    expect(screen.getByRole('option', { name: 'Trader A' })).toBeInTheDocument();
+    listBids.mockResolvedValueOnce({ data: null, error: { kind: 'authorization', code: '42501', message: 'Authorization changed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByRole('alert');
+    expect(onAuthorizationFailure).toHaveBeenCalledOnce();
+    expect(screen.queryByText('MV Buyer')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('option', { name: 'Target buyer' })).toHaveLength(0);
+    expect(screen.queryByRole('option', { name: 'Trader A' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Assign responsible BUYER')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Grant TRADER organization')).not.toBeInTheDocument();
+    detailQuotes.resolve(ok([])); detailAudit.resolve(ok([]));
+    await Promise.resolve();
+    expect(screen.queryByText('MV Buyer')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('option', { name: 'Target buyer' })).toHaveLength(0);
+    expect(screen.queryByRole('option', { name: 'Trader A' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Assign responsible BUYER')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Grant TRADER organization')).not.toBeInTheDocument();
+  });
+
+  it('invalidates award confirmation when any quote revision changes before confirmation', async () => {
+    const closedBid = bid({ raw_status: 'closed', effective_status: 'closed', revision: 4, closed_at: now });
+    const initialQuote: Quote = { id: '10000000-0000-4000-8000-000000000004', bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000003', trader_organization_label: 'Trader A', revision: 1, created_by: id, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 100 }], barge_fee: 0, total_amount: 1000, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false };
+    const { client } = fakeClient([closedBid]); const awardBid = vi.fn<BiddingClient['awardBid']>();
+    client.listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
+    client.listBidAudit = vi.fn(() => Promise.resolve(ok<BidAuditEvent[]>([])));
+    client.listQuotesForBuyers = vi.fn().mockResolvedValueOnce(ok([initialQuote])).mockResolvedValueOnce(ok([{ ...initialQuote, revision: 2, updated_at: '2026-08-03T04:00:00.000Z' }]));
+    client.awardBid = awardBid;
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByRole('button', { name: /MV Buyer/ });
+    fireEvent.click(screen.getByRole('button', { name: /MV Buyer/ }));
+    await screen.findByRole('button', { name: 'Award' });
+    fireEvent.click(screen.getByRole('button', { name: 'Award' }));
+    expect(screen.getByRole('button', { name: 'Confirm award' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh detail' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirm award' })).not.toBeInTheDocument());
+    expect(awardBid).not.toHaveBeenCalled();
   });
 
   it('renders the required BUYER bid list information', async () => {

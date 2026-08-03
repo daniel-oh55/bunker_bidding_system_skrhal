@@ -1,6 +1,6 @@
 # SKRHAL Bunker Bidding
 
-This repository hosts the Supabase V2 authorization baseline for the SKRHAL bunker bidding rebuild. The React application now includes a sign-in-only Auth boundary backed by the server-verified current-access-context RPC.
+This repository hosts the Supabase V2 authorization and bidding baseline for the SKRHAL bunker bidding rebuild. The React application includes a sign-in-only Auth boundary backed by the server-verified `current_access_context()` RPC and an integrated BUYER/TRADER workspace.
 
 The current scope is intentionally limited to:
 
@@ -11,13 +11,13 @@ The current scope is intentionally limited to:
 - deriving current access through a server-verified authenticated RPC
 - granting the minimal frontend shell only after that RPC returns active membership context
 - testing frontend state behavior with deterministic fakes and the Auth/RPC boundary against the local stack
+- operating the server-authorized BUYER bid lifecycle, responsibility reassignment, TRADER bid scope, organization-owned quotes, terminal award, optimistic revisions, and append-only audit history
 - adding CI, test, lint, typecheck, and boundary guardrails
 
 Still out of scope:
 
 - public signup, invitations, account provisioning, password reset, or administration
 - Realtime delivery, invitations, and administration UI
-- bid lifecycle, organization-owned quote, and award backend: explicit TRADER scope, append-only audit history, optimistic revisions, server-time closure, and final awards
 - secret registration, Supabase project linking, or deployment
 
 ## Local commands
@@ -60,7 +60,7 @@ npm run db:stop
 - Authorization uses server-verified account, organization, and membership rows in PostgreSQL/RLS, never `user_metadata`.
 - A browser session alone does not render the authorized shell; `public.current_access_context()` must return at least one active context.
 - Elevated local access is isolated to fixture preparation and cleanup inside the loopback-only integration harness.
-- The frontend access gate coordinates UX and state. It does not replace RLS or server-side authorization for future protected data.
+- The frontend access gate coordinates UX and state. It does not replace RLS or server-side authorization for protected data.
 - Bids are private tables accessed only through authenticated BUYER RPCs. Every active BUYER may view and mutate bids; responsibility is a filter, never authority.
 - Raw bid states are `open`, `closed`, `awarded`, and `cancelled`. An open bid with a passed deadline is effectively closed by server time without a cron job. Details are editable only while effective-open; after the first quote only a real deadline change is allowed.
 - Quotes are owned by a TRADER organization, not an individual. Selected active TRADER members of that organization may collaborate on its one quote; other TRADER organizations cannot see competing quotes. A BUYER explicitly grants and can immediately revoke per-bid scope.
@@ -73,6 +73,6 @@ npm run db:stop
 - The full audit is used for classification and reporting.
 - Any critical vulnerability in the full dependency tree is a hard gate.
 - High or critical production dependency findings are a hard gate.
-- The known `GHSA-mh99-v99m-4gvg` high findings remain confined to ESLint development-only transitive dependencies, so they are reported and allowed to continue in this PR.
+- The current committed lockfile reports no known vulnerabilities in the full or production-only audit. Re-run the audit for every release candidate; do not carry historical advisory conclusions forward.
 - Do not run `npm audit fix --force`.
 - Do not upgrade ESLint to a new major version in this PR.

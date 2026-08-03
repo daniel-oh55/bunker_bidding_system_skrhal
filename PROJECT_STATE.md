@@ -2,15 +2,15 @@
 
 ## Rolling state
 
-- Active branch purpose: maintain the local Supabase V2 authorization baseline
-- Active frontend baseline: React + Vite + TypeScript sign-in-only access gate
-- Active backend baseline: local migrations, pgTAP database tests, and the BUYER bid lifecycle/audit RPCs
+- Active branch purpose: maintain the local Supabase V2 authorization and bidding baseline
+- Active frontend baseline: React + Vite + TypeScript sign-in-only access gate and integrated BUYER/TRADER workspace
+- Active backend baseline: local migrations, pgTAP database tests, and server-authorized bid, quote, award, scope, and audit RPCs
 - Legacy reference location: `legacy/firebase-prototype/`
 
 ## Fixed contracts
 
 - Firebase data and accounts are not being migrated.
-- Roles are planned as `buyer_admin`, `buyer_operator`, and `trader`.
+- Roles are `buyer_admin`, `buyer_operator`, and `trader`.
 - Public signup is not allowed.
 - Approved BUYER accounts may number three or more.
 - Every approved BUYER will be able to see all bids and all quotes, with views for all bids, bids created by the current BUYER, and filtering by BUYER.
@@ -29,7 +29,7 @@
 - `created_by` is immutable. Cross-BUYER updates and responsibility changes record the actual actor and before/after state in append-only audit history.
 - Reassignment is allowed for raw open/closed bids, not cancelled or awarded bids. Reopen requires a null or future deadline and preserves quotes; cancellation and award are irreversible in V1.
 - TRADER organizations receive explicit current per-bid scope. Each organization owns one quote, active members collaborate, and scope revocation immediately removes TRADER visibility/write access without deleting retained quotes.
-- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated frontend workspace is implemented; Realtime remains unimplemented. The remote Supabase project remains unlinked.
+- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated BUYER/TRADER frontend workspace is implemented; it uses server RPCs, manual refresh, and post-mutation reload. Realtime remains unimplemented. The remote Supabase project remains unlinked.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
 
@@ -45,7 +45,7 @@
 ## Not yet implemented
 
 - Public signup, invitations, password reset, and administration/provisioning flows.
-- Realtime, invitations, and administration UI.
+- Realtime, invitations, password reset, and administration/provisioning UI.
 
 ## Notes
 
