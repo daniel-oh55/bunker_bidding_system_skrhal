@@ -130,7 +130,7 @@ reset role;
 select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_revoked'),2::bigint,'each successful scope revoke creates exactly one bid audit event');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
-select throws_ok($$select public.cancel_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),6)$$,'55000','Only raw open or closed bids can be cancelled','awarded bid cannot cancel'); -- 47
+select throws_ok($$select public.cancel_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),7)$$,'55000','Only raw open or closed bids can be cancelled','awarded bid cannot cancel'); -- 47
 select ok(to_regprocedure('public.unaward_bid(uuid,uuid,bigint)') is null,'no public unaward API exists'); -- 48
 
 create temporary table post_quote_bid_ids (bid_id uuid, deadline_at timestamptz) on commit drop;
