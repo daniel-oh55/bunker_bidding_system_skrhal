@@ -1,5 +1,5 @@
 begin;
-select plan(48);
+select plan(57);
 
 insert into auth.users (id,email,raw_user_meta_data,raw_app_meta_data) values
   ('10000000-0000-0000-0000-000000000001','buyer-a@quote.test','{"role":"trader"}','{"role":"trader"}'),
@@ -52,46 +52,75 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 create temporary table quote_test_ids (bid_id uuid, quote_id uuid) on commit drop;
 insert into quote_test_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Quote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id;
-select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001,bid_id,1,'20000000-0000-0000-0000-000000000003')).revision from quote_test_ids),2::bigint,'BUYER grants active TRADER organization'); -- 20
+select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',bid_id,1,'20000000-0000-0000-0000-000000000003')).revision from quote_test_ids),2::bigint,'BUYER grants active TRADER organization'); -- 20
 select is((select count(*) from public.list_bid_trader_access('30000000-0000-0000-0000-000000000002',(select bid_id from quote_test_ids))),1::bigint,'every active BUYER sees current access scope'); -- 21
 select throws_ok($$select public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000003')$$,'23505','TRADER organization already has bid access','duplicate scope grant is rejected'); -- 22
 select throws_ok($$select public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000005')$$,'22023','Target organization must be an active TRADER organization','inactive target organization is rejected'); -- 23
 
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 select is((select count(*) from public.list_trader_bids('30000000-0000-0000-0000-000000000003') where id=(select bid_id from quote_test_ids)),1::bigint,'scoped TRADER lists bid'); -- 24
-insert into quote_test_ids(quote_id) select (public.create_quote('30000000-0000-0000-0000-000000000003,(select bid_id from quote_test_ids),array['vlsfo','lsmgo'],array[100,200]::numeric[],5)).id;
+insert into quote_test_ids(quote_id) select (public.create_quote('30000000-0000-0000-0000-000000000003',(select bid_id from quote_test_ids),array['vlsfo','lsmgo'],array[100,200]::numeric[],5)).id;
 select is((select total_amount from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),1405::numeric,'quote total is server calculated'); -- 25
+reset role;
 select is((select count(*) from app_private.quote_audit_events where quote_id=(select quote_id from quote_test_ids)),1::bigint,'create produces one quote audit event'); -- 26
-select throws_ok($$select public.create_quote('30000000-0000-0000-0000-000000000003,(select bid_id from quote_test_ids),array['vlsfo','lsmgo'],array[100,200]::numeric[],5)$$,'23505','Organization already has a quote for this bid','organization cannot create second quote'); -- 27
-select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003,(select quote_id from quote_test_ids),1,array['vlsfo'],array[100]::numeric[],5)$$,'22023','Quote fuel grades must exactly match bid fuel grades','missing grade is rejected'); -- 28
-select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003,(select quote_id from quote_test_ids),1,array['vlsfo','lsmgo'],array[0,200]::numeric[],5)$$,'22023','Unit price must be finite and greater than zero','zero price is rejected'); -- 29
-select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003,(select quote_id from quote_test_ids),1,array['vlsfo','lsmgo'],array[100,200]::numeric[],5)$$,'22023','Quote update makes no changes','no-op quote update is rejected'); -- 30
-select is((select (public.update_quote('30000000-0000-0000-0000-000000000004,(select quote_id from quote_test_ids),1,array['vlsfo','lsmgo'],array[101,201]::numeric[],6)).revision),2::bigint,'same-organization TRADER collaborates on quote'); -- 31
-select is((select created_by from app_private.quotes where id=(select quote_id from quote_test_ids)),'10000000-0000-0000-0000-000000000003'::uuid,'quote creator stays immutable'); -- 32
-select is((select count(*) from app_private.quote_audit_events where quote_id=(select quote_id from quote_test_ids)),2::bigint,'one audit event per successful quote mutation'); -- 33
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
+select throws_ok($$select public.create_quote('30000000-0000-0000-0000-000000000003',(select bid_id from quote_test_ids),array['vlsfo','lsmgo'],array[100,200]::numeric[],5)$$,'23505','Organization already has a quote for this bid','organization cannot create second quote'); -- 27
+select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003',(select quote_id from quote_test_ids),1,array['vlsfo'],array[100]::numeric[],5)$$,'22023','Quote fuel grades must exactly match bid fuel grades','missing grade is rejected'); -- 28
+select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003',(select quote_id from quote_test_ids),1,array['vlsfo','lsmgo'],array[0,200]::numeric[],5)$$,'22023','Unit price must be finite and greater than zero','zero price is rejected'); -- 29
+select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003',(select quote_id from quote_test_ids),1,array['lsmgo','vlsfo'],array[200,100]::numeric[],5)$$,'22023','Quote update makes no changes','reordered equivalent quote update is rejected'); -- 30
+reset role;
+select is((select revision from app_private.quotes where id=(select quote_id from quote_test_ids)),1::bigint,'reordered quote no-op preserves revision'); -- 31
+select is((select count(*) from app_private.quote_audit_events where quote_id=(select quote_id from quote_test_ids)),1::bigint,'reordered quote no-op creates no audit event'); -- 32
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000004',true);
+select is((select (public.update_quote('30000000-0000-0000-0000-000000000004',(select quote_id from quote_test_ids),1,array['vlsfo','lsmgo'],array[101,201]::numeric[],6)).revision),2::bigint,'same-organization TRADER collaborates on quote'); -- 31
+reset role;
+select is((select created_by from app_private.quotes where id=(select quote_id from quote_test_ids)),'10000000-0000-0000-0000-000000000003'::uuid,'quote creator stays immutable'); -- 33
+select is((select count(*) from app_private.quote_audit_events where quote_id=(select quote_id from quote_test_ids)),2::bigint,'one audit event per successful quote mutation'); -- 34
 select throws_ok($$update app_private.quotes set created_by='10000000-0000-0000-0000-000000000004' where id=(select quote_id from quote_test_ids)$$,'42501','Quote identity is immutable','elevated direct identity change is rejected'); -- 34
 
+set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000005',true);
 select is((select count(*) from public.list_my_quotes('30000000-0000-0000-0000-000000000005') where id=(select quote_id from quote_test_ids)),0::bigint,'different organization cannot read quote'); -- 35
-select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000005,(select quote_id from quote_test_ids),2,array['vlsfo','lsmgo'],array[102,202]::numeric[],6)$$,'42501','Current TRADER bid access is required','different organization cannot update quote'); -- 36
+select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000005',(select quote_id from quote_test_ids),2,array['vlsfo','lsmgo'],array[102,202]::numeric[],6)$$,'42501','Current TRADER bid access is required','different organization cannot update quote'); -- 36
 
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select count(*) from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids))),1::bigint,'BUYER sees retained quote'); -- 37
-select is((select (public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001,(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000003')).revision),3::bigint,'BUYER revokes scope in one revision'); -- 38
+select is((select (public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000003')).revision),3::bigint,'BUYER revokes scope in one revision'); -- 38
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 select is((select count(*) from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),0::bigint,'revocation immediately removes quote visibility'); -- 39
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select count(*) from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids))),1::bigint,'revocation preserves BUYER visibility'); -- 40
-select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001,(select bid_id from quote_test_ids),3,'20000000-0000-0000-0000-000000000003')).revision),4::bigint,'regrant restores scope while open'); -- 41
-select is((select (public.close_bid('30000000-0000-0000-0000-000000000001,(select bid_id from quote_test_ids),4)).raw_status),'closed','close bid with quote'); -- 42
+select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),3,'20000000-0000-0000-0000-000000000003')).revision),4::bigint,'regrant restores scope while open'); -- 41
+select is((select (public.close_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),4)).raw_status),'closed','close bid with quote'); -- 42
+select is((select eligible_for_award from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),true,'closed bid quote is eligible for award');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
-select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003,(select quote_id from quote_test_ids),2,array['vlsfo','lsmgo'],array[102,202]::numeric[],6)$$,'55000','Quotes are editable only while effective-open','close blocks quote update'); -- 43
+select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003',(select quote_id from quote_test_ids),2,array['vlsfo','lsmgo'],array[102,202]::numeric[],6)$$,'55000','Quotes are editable only while effective-open','close blocks quote update'); -- 43
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
-select is((select (public.award_bid('30000000-0000-0000-0000-000000000001,(select bid_id from quote_test_ids),5,(select quote_id from quote_test_ids),2)).raw_status),'awarded','effective-closed bid award succeeds'); -- 44
+select is((select (public.award_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),5,(select quote_id from quote_test_ids),2)).raw_status),'awarded','effective-closed bid award succeeds'); -- 44
+select ok((select is_awarded and not eligible_for_award from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),'awarded quote remains selected but is no longer eligible');
+reset role;
 select is((select awarded_quote_id from app_private.bids where id=(select bid_id from quote_test_ids)),(select quote_id from quote_test_ids),'award stores selected quote'); -- 45
 select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='awarded'),1::bigint,'award creates one bid audit event'); -- 46
-select throws_ok($$select public.cancel_bid('30000000-0000-0000-0000-000000000001,(select bid_id from quote_test_ids),6)$$,'55000','Only raw open or closed bids can be cancelled','awarded bid cannot cancel'); -- 47
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+select throws_ok($$select public.cancel_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),6)$$,'55000','Only raw open or closed bids can be cancelled','awarded bid cannot cancel'); -- 47
 select ok(to_regprocedure('public.unaward_bid(uuid,uuid,bigint)') is null,'no public unaward API exists'); -- 48
+
+create temporary table post_quote_bid_ids (bid_id uuid, deadline_at timestamptz) on commit drop;
+insert into post_quote_bid_ids(bid_id,deadline_at)
+select (public.create_bid('30000000-0000-0000-0000-000000000001','Prequote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id, clock_timestamp()+interval '2 days';
+select is((select (public.update_bid('30000000-0000-0000-0000-000000000001',bid_id,1,'Updated vessel','Incheon','Updated window',deadline_at,array['lsmgo','vlsfo'],array[3,12]::numeric[])).revision from post_quote_bid_ids),2::bigint,'full commercial update is allowed before the first quote');
+select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',bid_id,2,'20000000-0000-0000-0000-000000000003')).revision from post_quote_bid_ids;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
+select public.create_quote('30000000-0000-0000-0000-000000000003',(select bid_id from post_quote_bid_ids),array['vlsfo','lsmgo'],array[100,200]::numeric[],5);
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+select throws_ok($$select public.update_bid('30000000-0000-0000-0000-000000000001',(select bid_id from post_quote_bid_ids),3,'Changed vessel','Incheon','Updated window',(select deadline_at from post_quote_bid_ids),array['vlsfo','lsmgo'],array[12,3]::numeric[])$$,'55000','Commercial bid terms are immutable after the first quote','post-quote commercial change is rejected');
+select is((select (public.update_bid('30000000-0000-0000-0000-000000000001',bid_id,3,'Updated vessel','Incheon','Updated window',deadline_at + interval '1 day',array['lsmgo','vlsfo'],array[3,12]::numeric[])).revision from post_quote_bid_ids),4::bigint,'post-quote reordered equivalents with a real deadline change succeed');
+select throws_ok($$select public.update_bid('30000000-0000-0000-0000-000000000001',(select bid_id from post_quote_bid_ids),4,'Updated vessel','Incheon','Updated window',(select deadline_at + interval '1 day' from post_quote_bid_ids),array['lsmgo','vlsfo'],array[3,12]::numeric[])$$,'22023','Bid update makes no changes','post-quote reordered equivalent update is a no-op');
+reset role;
+select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from post_quote_bid_ids)),4::bigint,'failed post-quote bid changes create no audit event');
 
 select * from finish();
 rollback;

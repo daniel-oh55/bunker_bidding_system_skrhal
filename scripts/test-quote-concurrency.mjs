@@ -31,6 +31,20 @@ async function waitForLock(observer, waitingPid, blockingPid, label) {
   throw new Error(`${label}: waiting session did not block on the bid row.`);
 }
 async function result(promise) { try { await promise; return null; } catch (error) { return error; } }
+async function assertFinalQuote(observer, { bidId, quoteId }, expected, label) {
+  const { rows: [row] } = await observer.query(`
+    select bid.status::text bid_status, bid.revision bid_revision, quote.revision quote_revision,
+      quote.barge_fee, (select item.unit_price from app_private.quote_items item where item.quote_id=quote.id and item.fuel_grade='vlsfo') unit_price,
+      quote.barge_fee + (select coalesce(sum(item.unit_price * bid_item.quantity_mt),0) from app_private.quote_items item join app_private.bid_items bid_item on bid_item.bid_id=bid.id and bid_item.fuel_grade=item.fuel_grade where item.quote_id=quote.id) total_amount,
+      (select count(*) from app_private.quote_items item where item.quote_id=quote.id) item_count,
+      (select array_agg(item.fuel_grade order by item.display_order) from app_private.quote_items item where item.quote_id=quote.id) grades,
+      (select count(*) from app_private.quote_audit_events audit where audit.quote_id=quote.id and audit.resulting_revision=quote.revision) final_revision_audits,
+      (select count(*) from app_private.quote_audit_events audit where audit.quote_id=quote.id) audit_count
+    from app_private.bids bid join app_private.quotes quote on quote.id=$2 where bid.id=$1`, [bidId, quoteId]);
+  assert(row?.bid_status === expected.bidStatus && Number(row.bid_revision) === expected.bidRevision && Number(row.quote_revision) === expected.quoteRevision, `${label}: final revisions or bid status are wrong`);
+  assert(Number(row.unit_price) === expected.unitPrice && Number(row.barge_fee) === 5 && Number(row.total_amount) === expected.total, `${label}: final commercial values were silently overwritten`);
+  assert(Number(row.item_count) === 1 && JSON.stringify(row.grades) === JSON.stringify(['vlsfo']) && Number(row.final_revision_audits) === 1 && Number(row.audit_count) === expected.auditCount, `${label}: item or audit final invariant is wrong`);
+}
 
 async function fixture(client) {
   const ids = { buyer: randomUUID(), buyerOrg: randomUUID(), buyerMembership: randomUUID(), trader: randomUUID(), traderOrg: randomUUID(), traderMembership: randomUUID(), bids: [], quotes: [] };
@@ -50,8 +64,9 @@ async function bidWithQuote(observer, ids, label, deadline = "clock_timestamp() 
 }
 async function beginAs(client, userId) { await client.query('begin'); await client.query('set local role authenticated'); await client.query("select set_config('request.jwt.claim.sub',$1,true)", [userId]); }
 async function cleanup(client, ids) {
+  for (const bidId of ids.bids) await client.query("update app_private.bids set status='closed', awarded_quote_id=null, awarded_at=null, closed_at=coalesce(closed_at,clock_timestamp()) where id=$1 and status='awarded'", [bidId]);
   for (const quoteId of ids.quotes) { await client.query('delete from app_private.quote_audit_events where quote_id=$1', [quoteId]); await client.query('delete from app_private.quote_items where quote_id=$1', [quoteId]); }
-  for (const bidId of ids.bids) { await client.query('delete from app_private.bid_audit_events where bid_id=$1', [bidId]); await client.query('delete from app_private.bid_trader_organization_access where bid_id=$1', [bidId]); await client.query('delete from app_private.quotes where bid_id=$1', [bidId]); await client.query('delete from app_private.bid_items where bid_id=$1', [bidId]); await client.query('delete from app_private.bids where id=$1', [bidId]); }
+  for (const bidId of ids.bids) { await client.query('delete from app_private.bid_trader_organization_access where bid_id=$1', [bidId]); await client.query('delete from app_private.quotes where bid_id=$1', [bidId]); await client.query('delete from app_private.bid_audit_events where bid_id=$1', [bidId]); await client.query('delete from app_private.bid_items where bid_id=$1', [bidId]); await client.query('delete from app_private.bids where id=$1', [bidId]); }
   await client.query('delete from app_private.organization_memberships where id=any($1::uuid[])', [[ids.buyerMembership, ids.traderMembership]]);
   await client.query('delete from app_private.organizations where id=any($1::uuid[])', [[ids.buyerOrg, ids.traderOrg]]);
   await client.query('delete from auth.users where id=any($1::uuid[])', [[ids.buyer, ids.trader]]);
@@ -71,6 +86,7 @@ try {
     await beginAs(clients.b, ids.trader); const waiting = clients.b.query('select public.update_quote($1,$2,1,array[\'vlsfo\'],array[102]::numeric[],5)', [ids.traderMembership, x.quoteId]); waiting.catch(() => {});
     await waitForLock(clients.observer, pids.b, pids.a, 'update vs update'); await clients.a.query('commit'); const error = await result(waiting); assert(error?.code === '40001', 'update vs update loser must receive 40001'); await rollback(clients.b);
     const { rows } = await clients.observer.query('select revision,(select count(*) from app_private.quote_audit_events where quote_id=$1) audits from app_private.quotes where id=$1', [x.quoteId]); assert(Number(rows[0].revision) === 2 && Number(rows[0].audits) === 2, 'update vs update must increment revision and audit exactly once');
+    await assertFinalQuote(clients.observer, x, { bidStatus: 'open', bidRevision: 2, quoteRevision: 2, unitPrice: 101, total: 1015, auditCount: 2 }, 'update vs update');
   }
   { // close wins while a quote update is blocked behind the same bid lock.
     const x = await bidWithQuote(clients.observer, ids, 'close-update');
@@ -78,12 +94,14 @@ try {
     await beginAs(clients.b, ids.trader); const waiting = clients.b.query('select public.update_quote($1,$2,1,array[\'vlsfo\'],array[101]::numeric[],5)', [ids.traderMembership, x.quoteId]); waiting.catch(() => {});
     await waitForLock(clients.observer, pids.b, pids.a, 'close vs update'); await clients.a.query('commit'); const error = await result(waiting); assert(error?.code === '55000', 'blocked post-close quote update must receive 55000'); await rollback(clients.b);
     const { rows } = await clients.observer.query('select (select count(*) from app_private.quote_audit_events where quote_id=$1) audits from app_private.quotes where id=$1', [x.quoteId]); assert(Number(rows[0].audits) === 1, 'close vs update must not append a post-close quote audit');
+    await assertFinalQuote(clients.observer, x, { bidStatus: 'closed', bidRevision: 3, quoteRevision: 1, unitPrice: 100, total: 1005, auditCount: 1 }, 'close vs update');
   }
   { // the server-time check runs after a wait, not only at call start.
     const x = await bidWithQuote(clients.observer, ids, 'deadline-wait', "clock_timestamp() + interval '1 second'");
     await beginAs(clients.a, ids.buyer); await clients.a.query('select 1 from app_private.bids where id=$1 for update', [x.bidId]);
     await beginAs(clients.b, ids.trader); const waiting = clients.b.query('select public.update_quote($1,$2,1,array[\'vlsfo\'],array[101]::numeric[],5)', [ids.traderMembership, x.quoteId]); waiting.catch(() => {});
     await waitForLock(clients.observer, pids.b, pids.a, 'deadline expiry'); await new Promise((resolve) => setTimeout(resolve, 1200)); await clients.a.query('commit'); const error = await result(waiting); assert(error?.code === '55000', 'deadline-expired waiting update must receive 55000'); await rollback(clients.b);
+    await assertFinalQuote(clients.observer, x, { bidStatus: 'open', bidRevision: 2, quoteRevision: 1, unitPrice: 100, total: 1005, auditCount: 1 }, 'deadline expiry');
   }
   { // award and reopen share the bid revision; award deterministically obtains the lock first.
     const x = await bidWithQuote(clients.observer, ids, 'award-reopen'); await caller(clients.observer, ids.buyer, () => clients.observer.query('select public.close_bid($1,$2,2)', [ids.buyerMembership, x.bidId]));
@@ -91,6 +109,7 @@ try {
     await beginAs(clients.b, ids.buyer); const waiting = clients.b.query("select public.reopen_bid($1,$2,3,clock_timestamp()+interval '1 day')", [ids.buyerMembership, x.bidId]); waiting.catch(() => {});
     await waitForLock(clients.observer, pids.b, pids.a, 'award vs reopen'); await clients.a.query('commit'); const error = await result(waiting); assert(error?.code === '40001', 'award vs reopen loser must receive 40001'); await rollback(clients.b);
     const { rows } = await clients.observer.query("select status::text status,revision,(select count(*) from app_private.bid_audit_events where bid_id=$1 and event_type='awarded') awards from app_private.bids where id=$1", [x.bidId]); assert(rows[0].status === 'awarded' && Number(rows[0].revision) === 4 && Number(rows[0].awards) === 1, 'award vs reopen must leave one awarded final state and audit');
+    await assertFinalQuote(clients.observer, x, { bidStatus: 'awarded', bidRevision: 4, quoteRevision: 1, unitPrice: 100, total: 1005, auditCount: 1 }, 'award vs reopen');
   }
   console.log('Quote concurrency tests passed: 4 deterministic races.');
 } catch (error) { failure = error; }

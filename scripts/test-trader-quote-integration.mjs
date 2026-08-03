@@ -50,19 +50,21 @@ async function run() {
     const otherQuotes = await rpc(otherCaller, 'list_my_quotes', { p_actor_membership_id: traderOther.membershipId }, 'other trader quote list');
     assert(!otherQuotes.error && !otherQuotes.data.some((value) => value.id === state.quoteId), 'Another TRADER organization can see a competing quote.');
     const otherUpdate = await rpc(otherCaller, 'update_quote', { p_actor_membership_id: traderOther.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'other trader quote update');
-    assert(otherUpdate.error, 'Another TRADER organization can update a competing quote.');
+    assert(otherUpdate.error?.code === '42501', 'Another TRADER organization update must return 42501.');
     const buyerQuotes = await rpc(buyerCaller, 'list_quotes_for_buyers', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId }, 'buyer quote list');
     assert(!buyerQuotes.error && buyerQuotes.data.length === 1 && buyerQuotes.data[0].total_amount === 1015, 'BUYER cannot see the authoritative quote total.');
     const revoked = await rpc(buyerCaller, 'revoke_bid_trader_access', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 2, p_trader_organization_id: traderOne.organizationId }, 'buyer revokes scope');
     assert(!revoked.error && revoked.data.revision === 3, 'BUYER could not revoke current TRADER scope.');
     const revokedQuotes = await rpc(traderOneCaller, 'list_my_quotes', { p_actor_membership_id: traderOne.membershipId }, 'revoked trader quote list');
     assert(!revokedQuotes.error && !revokedQuotes.data.some((value) => value.id === state.quoteId), 'Revoked TRADER retains quote visibility.');
+    const revokedUpdate = await rpc(traderOneCaller, 'update_quote', { p_actor_membership_id: traderOne.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'revoked trader quote update');
+    assert(revokedUpdate.error?.code === '42501', 'Revoked TRADER quote mutation must return 42501.');
     const regranted = await rpc(buyerCaller, 'grant_bid_trader_access', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 3, p_trader_organization_id: traderOne.organizationId }, 'buyer regrants scope');
     assert(!regranted.error && regranted.data.revision === 4, 'BUYER could not regrant scope while effective-open.');
     const closed = await rpc(buyerCaller, 'close_bid', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 4 }, 'buyer closes bid');
     assert(!closed.error && closed.data.raw_status === 'closed', 'BUYER could not close quote bid.');
     const afterClose = await rpc(traderOneCaller, 'update_quote', { p_actor_membership_id: traderOne.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'post-close quote update');
-    assert(afterClose.error, 'Closed bid accepts quote modification.');
+    assert(afterClose.error?.code === '55000', 'Closed bid quote update must return 55000.');
     const awarded = await rpc(buyerCaller, 'award_bid', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 5, p_quote_id: state.quoteId, p_expected_quote_revision: 2 }, 'buyer awards quote');
     assert(!awarded.error && awarded.data.raw_status === 'awarded' && awarded.data.awarded_quote_id === state.quoteId && awarded.data.awarded_total_amount === 1015, 'BUYER did not receive authoritative final award result.');
     console.log('Trader quote REST integration tests passed: 9 boundary scenarios.');
@@ -70,9 +72,10 @@ async function run() {
   finally {
     for (const caller of callers) await within(caller.auth.signOut({ scope: 'local' }), 'sign out').catch((error) => cleanupErrors.push(error));
     if (state.bidId) {
-      await query('delete from app_private.quote_audit_events where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.bid_audit_events where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error));
-      await query('delete from app_private.bid_trader_organization_access where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.quote_items where quote_id in (select id from app_private.quotes where bid_id=$1)', [state.bidId]).catch((error) => cleanupErrors.push(error));
-      await query('delete from app_private.quotes where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.bid_items where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.bids where id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error));
+      await query("update app_private.bids set status='closed', awarded_quote_id=null, awarded_at=null, closed_at=coalesce(closed_at,clock_timestamp()) where id=$1 and status='awarded'", [state.bidId]).catch((error) => cleanupErrors.push(error));
+      await query('delete from app_private.quote_audit_events where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.quote_items where quote_id in (select id from app_private.quotes where bid_id=$1)', [state.bidId]).catch((error) => cleanupErrors.push(error));
+      await query('delete from app_private.bid_trader_organization_access where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.quotes where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error));
+      await query('delete from app_private.bid_audit_events where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.bid_items where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.bids where id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error));
     }
     if (state.memberships.length) await query('delete from app_private.organization_memberships where id=any($1::uuid[])', [state.memberships]).catch((error) => cleanupErrors.push(error));
     if (state.orgs.length) await query('delete from app_private.organizations where id=any($1::uuid[])', [state.orgs]).catch((error) => cleanupErrors.push(error));

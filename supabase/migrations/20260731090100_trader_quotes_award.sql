@@ -206,7 +206,9 @@ returns app_private.quote_api_result language sql volatile security definer set 
     quote.created_at, quote.updated_at,
     exists (select 1 from app_private.bid_trader_organization_access access where access.bid_id = quote.bid_id and access.trader_organization_id = quote.trader_organization_id),
     organization.status = 'active'::app_private.organization_status,
-    exists (select 1 from app_private.bid_trader_organization_access access where access.bid_id = quote.bid_id and access.trader_organization_id = quote.trader_organization_id) and organization.status = 'active'::app_private.organization_status,
+    exists (select 1 from app_private.bid_trader_organization_access access where access.bid_id = quote.bid_id and access.trader_organization_id = quote.trader_organization_id)
+      and organization.status = 'active'::app_private.organization_status
+      and app_private.effective_bid_status(bid.status, bid.deadline_at) = 'closed',
     bid.awarded_quote_id = quote.id
   )::app_private.quote_api_result
   from app_private.quotes quote join app_private.organizations organization on organization.id = quote.trader_organization_id
@@ -247,7 +249,7 @@ $$;
 
 create or replace function public.update_bid(p_actor_membership_id uuid, p_bid_id uuid, p_expected_revision bigint, p_vessel_voyage text, p_port_name text, p_delivery_window text, p_deadline_at timestamptz, p_fuel_grades text[], p_quantities numeric[])
 returns app_private.bid_api_result language plpgsql security definer set search_path = '' as $$
-declare v_actor record; v_bid app_private.bids%rowtype; v_before jsonb; v_result app_private.bid_api_result; v_has_quote boolean;
+declare v_actor record; v_bid app_private.bids%rowtype; v_before jsonb; v_result app_private.bid_api_result; v_has_quote boolean; v_normalized_items jsonb;
 begin
   select * into v_actor from app_private.require_active_buyer_actor(p_actor_membership_id);
   select * into v_bid from app_private.bids where id = p_bid_id for update;
@@ -255,18 +257,26 @@ begin
   if p_expected_revision is null or v_bid.revision <> p_expected_revision then raise exception using errcode = '40001', message = 'Bid revision conflict'; end if;
   if app_private.effective_bid_status(v_bid.status, v_bid.deadline_at) <> 'open' then raise exception using errcode = '55000', message = 'Bid details are editable only while effective-open'; end if;
   perform app_private.validate_bid_deadline(p_deadline_at); perform app_private.validate_bid_items(p_fuel_grades, p_quantities);
+  select jsonb_agg(jsonb_build_object('fuel_grade', bid_item.fuel_grade, 'quantity_mt', submitted.quantity_mt, 'display_order', bid_item.display_order) order by bid_item.display_order)
+    into v_normalized_items
+  from app_private.bid_items bid_item
+  join unnest(p_fuel_grades, p_quantities) submitted(fuel_grade, quantity_mt) on submitted.fuel_grade = bid_item.fuel_grade
+  where bid_item.bid_id = p_bid_id;
   select exists(select 1 from app_private.quotes quote where quote.bid_id = p_bid_id) into v_has_quote;
   if v_has_quote and (app_private.validate_bid_text(p_vessel_voyage, 'vessel_voyage') is distinct from v_bid.vessel_voyage or app_private.validate_bid_text(p_port_name, 'port_name') is distinct from v_bid.port_name or app_private.validate_bid_text(p_delivery_window, 'delivery_window') is distinct from v_bid.delivery_window
     or (select array_agg(grade order by grade) from unnest(p_fuel_grades) grade) is distinct from (select array_agg(item.fuel_grade order by item.fuel_grade) from app_private.bid_items item where item.bid_id = p_bid_id)
-    or (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'quantity_mt', item.quantity_mt) order by item.display_order) from (select p_fuel_grades[i] fuel_grade, p_quantities[i] quantity_mt, i::smallint display_order from generate_subscripts(p_fuel_grades, 1) i) item) is distinct from (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'quantity_mt', item.quantity_mt) order by item.display_order) from app_private.bid_items item where item.bid_id = p_bid_id)) then
+    or v_normalized_items is distinct from (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'quantity_mt', item.quantity_mt, 'display_order', item.display_order) order by item.display_order) from app_private.bid_items item where item.bid_id = p_bid_id)) then
     raise exception using errcode = '55000', message = 'Commercial bid terms are immutable after the first quote';
   end if;
   if v_bid.vessel_voyage = app_private.validate_bid_text(p_vessel_voyage, 'vessel_voyage') and v_bid.port_name = app_private.validate_bid_text(p_port_name, 'port_name') and v_bid.delivery_window = app_private.validate_bid_text(p_delivery_window, 'delivery_window') and v_bid.deadline_at is not distinct from p_deadline_at
-    and (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'quantity_mt', item.quantity_mt) order by item.display_order) from app_private.bid_items item where item.bid_id = p_bid_id) = (select jsonb_agg(jsonb_build_object('fuel_grade', p_fuel_grades[i], 'quantity_mt', p_quantities[i]) order by i) from generate_subscripts(p_fuel_grades, 1) i) then raise exception using errcode = '22023', message = 'Bid update makes no changes'; end if;
+    and (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'quantity_mt', item.quantity_mt, 'display_order', item.display_order) order by item.display_order) from app_private.bid_items item where item.bid_id = p_bid_id) = v_normalized_items then raise exception using errcode = '22023', message = 'Bid update makes no changes'; end if;
   v_before := app_private.bid_snapshot(p_bid_id);
   update app_private.bids set vessel_voyage=app_private.validate_bid_text(p_vessel_voyage,'vessel_voyage'), port_name=app_private.validate_bid_text(p_port_name,'port_name'), delivery_window=app_private.validate_bid_text(p_delivery_window,'delivery_window'), deadline_at=p_deadline_at, revision=revision+1 where id=p_bid_id;
   delete from app_private.bid_items where bid_id=p_bid_id;
-  insert into app_private.bid_items (bid_id,fuel_grade,quantity_mt,display_order) select p_bid_id,p_fuel_grades[i],p_quantities[i],i::smallint from generate_subscripts(p_fuel_grades,1) i;
+  insert into app_private.bid_items (bid_id,fuel_grade,quantity_mt,display_order)
+    select p_bid_id, item.fuel_grade, item.quantity_mt, item.display_order
+    from jsonb_to_recordset(v_normalized_items) as item(fuel_grade text, quantity_mt numeric, display_order smallint)
+    order by item.display_order;
   perform app_private.append_bid_audit(p_bid_id,'details_updated',v_actor.user_id,v_actor.membership_id,v_actor.organization_id,v_actor.membership_role,v_bid.revision,v_bid.status,v_bid.responsible_buyer_user_id,v_before);
   select * into v_result from app_private.bid_result(p_bid_id); return v_result;
 end;
@@ -366,7 +376,7 @@ $$;
 
 create function public.update_quote(p_actor_membership_id uuid,p_quote_id uuid,p_expected_revision bigint,p_fuel_grades text[],p_unit_prices numeric[],p_barge_fee numeric)
 returns app_private.quote_api_result language plpgsql security definer set search_path = '' as $$
-declare v_actor record; v_bid app_private.bids%rowtype; v_quote app_private.quotes%rowtype; v_before jsonb; v_result app_private.quote_api_result;
+declare v_actor record; v_bid app_private.bids%rowtype; v_quote app_private.quotes%rowtype; v_before jsonb; v_result app_private.quote_api_result; v_normalized_items jsonb;
 begin
   select * into v_actor from app_private.require_active_trader_actor(p_actor_membership_id);
   select bid.* into v_bid from app_private.bids bid join app_private.quotes quote on quote.bid_id=bid.id where quote.id=p_quote_id for update of bid;
@@ -377,9 +387,17 @@ begin
   if v_quote.trader_organization_id<>v_actor.organization_id then raise exception using errcode='42501',message='Quote belongs to another TRADER organization'; end if;
   if p_expected_revision is null or v_quote.revision<>p_expected_revision then raise exception using errcode='40001',message='Quote revision conflict'; end if;
   perform app_private.validate_quote_values(v_bid.id,p_fuel_grades,p_unit_prices,p_barge_fee);
-  if v_quote.barge_fee=p_barge_fee and (select jsonb_agg(jsonb_build_object('fuel_grade',item.fuel_grade,'unit_price',item.unit_price) order by item.display_order) from app_private.quote_items item where item.quote_id=p_quote_id) = (select jsonb_agg(jsonb_build_object('fuel_grade',p_fuel_grades[i],'unit_price',p_unit_prices[i]) order by i) from generate_subscripts(p_fuel_grades,1) i) then raise exception using errcode='22023',message='Quote update makes no changes'; end if;
+  select jsonb_agg(jsonb_build_object('fuel_grade', bid_item.fuel_grade, 'unit_price', submitted.unit_price, 'display_order', bid_item.display_order) order by bid_item.display_order)
+    into v_normalized_items
+  from app_private.bid_items bid_item
+  join unnest(p_fuel_grades, p_unit_prices) submitted(fuel_grade, unit_price) on submitted.fuel_grade = bid_item.fuel_grade
+  where bid_item.bid_id = v_bid.id;
+  if v_quote.barge_fee=p_barge_fee and (select jsonb_agg(jsonb_build_object('fuel_grade',item.fuel_grade,'unit_price',item.unit_price,'display_order',item.display_order) order by item.display_order) from app_private.quote_items item where item.quote_id=p_quote_id) = v_normalized_items then raise exception using errcode='22023',message='Quote update makes no changes'; end if;
   v_before:=app_private.quote_snapshot(p_quote_id); update app_private.quotes set barge_fee=p_barge_fee,revision=revision+1 where id=p_quote_id; delete from app_private.quote_items where quote_id=p_quote_id;
-  insert into app_private.quote_items(quote_id,fuel_grade,unit_price,display_order) select p_quote_id,bid_item.fuel_grade,p_unit_prices[array_position(p_fuel_grades,bid_item.fuel_grade)],bid_item.display_order from app_private.bid_items bid_item where bid_item.bid_id=v_bid.id order by bid_item.display_order;
+  insert into app_private.quote_items(quote_id,fuel_grade,unit_price,display_order)
+    select p_quote_id,item.fuel_grade,item.unit_price,item.display_order
+    from jsonb_to_recordset(v_normalized_items) as item(fuel_grade text, unit_price numeric, display_order smallint)
+    order by item.display_order;
   perform app_private.append_quote_audit(p_quote_id,'updated',v_actor.user_id,v_actor.membership_id,v_actor.organization_id,v_actor.membership_role,v_quote.revision,v_before); select * into v_result from app_private.quote_result(p_quote_id); return v_result;
 end;
 $$;
