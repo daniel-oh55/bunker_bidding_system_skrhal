@@ -98,7 +98,7 @@ try {
   }
   { // the server-time check runs after a wait, not only at call start.
     const x = await bidWithQuote(clients.observer, ids, 'deadline-wait', "clock_timestamp() + interval '1 second'");
-    await beginAs(clients.a, ids.buyer); await clients.a.query('select 1 from app_private.bids where id=$1 for update', [x.bidId]);
+    await clients.a.query('begin'); await clients.a.query('select 1 from app_private.bids where id=$1 for update', [x.bidId]);
     await beginAs(clients.b, ids.trader); const waiting = clients.b.query('select public.update_quote($1,$2,1,array[\'vlsfo\'],array[101]::numeric[],5)', [ids.traderMembership, x.quoteId]); waiting.catch(() => {});
     await waitForLock(clients.observer, pids.b, pids.a, 'deadline expiry'); await new Promise((resolve) => setTimeout(resolve, 1200)); await clients.a.query('commit'); const error = await result(waiting); assert(error?.code === '55000', 'deadline-expired waiting update must receive 55000'); await rollback(clients.b);
     await assertFinalQuote(clients.observer, x, { bidStatus: 'open', bidRevision: 2, quoteRevision: 1, unitPrice: 100, total: 1005, auditCount: 1 }, 'deadline expiry');
