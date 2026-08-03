@@ -118,7 +118,15 @@ jobs:
         run: npm ci
 
       - name: Start local Supabase stack
-        run: npm run db:start
+        shell: bash
+        run: |
+          start_log="$RUNNER_TEMP/supabase-start.log"
+          if ! npm run db:start >"$start_log" 2>&1; then
+            echo "::error::Supabase start failed. CLI output was withheld because it may contain generated local credentials."
+            exit 1
+          fi
+          rm -f "$start_log"
+          echo "Local Supabase stack started."
 
       - name: Replay migrations from a clean local database
         run: npm run db:reset

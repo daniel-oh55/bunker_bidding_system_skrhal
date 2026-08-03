@@ -58,6 +58,8 @@ For each provisioned identity, authenticate as that user and call `public.curren
 
 After owner approval, discover or import the intended Vercel project through the Vercel dashboard or approved CLI session. Local `.vercel/` metadata is ignored by Git and must never be committed. Do not create or link a project as part of code review.
 
+An existing Vercel Git Integration may automatically create or update a Preview deployment when a PR branch is pushed. Before release work, the owner must decide whether that automatic Preview behavior is approved or should be disabled in Vercel. An automatically generated Preview is not approval for Production promotion; independently verify Preview environment variables and access protection. This documentation does not authorize or perform a Vercel setting change.
+
 Configure only these Preview and Production environment variable names:
 
 ```text
