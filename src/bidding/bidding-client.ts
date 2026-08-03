@@ -1,4 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseQuote, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type Quote, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
 
 export type BiddingResult<T> = { data: T | null; error: WorkflowError | null };
@@ -27,10 +26,11 @@ export interface BiddingClient {
 }
 
 type RpcResponse = { data: unknown; error: { code?: string | null } | null };
-export function createSupabaseBiddingClient(client: SupabaseClient): BiddingClient {
+export type BiddingRpcClient = { rpc(name: string, args: Record<string, unknown>): PromiseLike<RpcResponse> };
+export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingClient {
   async function rpc<T>(name: string, args: Record<string, unknown>, parser: (value: unknown) => T | null): Promise<BiddingResult<T>> {
     let response: RpcResponse;
-    try { response = await client.rpc(name, args) as RpcResponse; } catch { return { data: null, error: mapWorkflowError(null) }; }
+    try { response = await client.rpc(name, args); } catch { return { data: null, error: mapWorkflowError(null) }; }
     if (response.error) return { data: null, error: mapWorkflowError(response.error) };
     const data = parser(response.data); return data === null ? { data: null, error: protocolError() } : { data, error: null };
   }

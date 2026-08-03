@@ -64,6 +64,7 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
   }
 
   const contexts: AccessContext[] = [];
+  const membershipIds = new Set<string>();
 
   for (const candidate of value) {
     if (
@@ -90,9 +91,12 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
       || !membershipRoles.has(membershipRole)
       || (organizationKind === 'buyer' && membershipRole === 'trader')
       || (organizationKind === 'trader' && membershipRole !== 'trader')
+      || membershipIds.has(membershipId)
     ) {
       return null;
     }
+
+    membershipIds.add(membershipId);
 
     contexts.push({
       membership_id: membershipId,
