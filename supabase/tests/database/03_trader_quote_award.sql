@@ -61,7 +61,7 @@ select throws_ok($$select public.grant_bid_trader_access('30000000-0000-0000-000
 
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 select is((select count(*) from public.list_trader_bids('30000000-0000-0000-0000-000000000003') where id=(select bid_id from quote_test_ids)),1::bigint,'scoped TRADER lists bid'); -- 24
-insert into quote_test_ids(quote_id) select (public.create_quote('30000000-0000-0000-0000-000000000003',(select bid_id from quote_test_ids),array['vlsfo','lsmgo'],array[100,200]::numeric[],5)).id;
+update quote_test_ids set quote_id = (select (public.create_quote('30000000-0000-0000-0000-000000000003',bid_id,array['vlsfo','lsmgo'],array[100,200]::numeric[],5)).id from quote_test_ids);
 select is((select total_amount from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),1405::numeric,'quote total is server calculated'); -- 25
 reset role;
 select is((select count(*) from app_private.quote_audit_events where quote_id=(select quote_id from quote_test_ids)),1::bigint,'create produces one quote audit event'); -- 26
