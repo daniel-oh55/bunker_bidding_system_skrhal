@@ -1,5 +1,5 @@
 begin;
-select plan(57);
+select plan(70);
 
 insert into auth.users (id,email,raw_user_meta_data,raw_app_meta_data) values
   ('10000000-0000-0000-0000-000000000001','buyer-a@quote.test','{"role":"trader"}','{"role":"trader"}'),
@@ -123,6 +123,62 @@ select is((select (public.update_bid('30000000-0000-0000-0000-000000000001',bid_
 select throws_ok($$select public.update_bid('30000000-0000-0000-0000-000000000001',(select bid_id from post_quote_bid_ids),4,'Updated vessel','Incheon','Updated window',(select deadline_at + interval '1 day' from post_quote_bid_ids),array['lsmgo','vlsfo'],array[3,12]::numeric[])$$,'22023','Bid update makes no changes','post-quote reordered equivalent update is a no-op');
 reset role;
 select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from post_quote_bid_ids)),4::bigint,'failed post-quote bid changes create no audit event');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+create temporary table pre_quote_replacement_bid_ids (bid_id uuid) on commit drop;
+insert into pre_quote_replacement_bid_ids(bid_id)
+select (public.create_bid('30000000-0000-0000-0000-000000000001','Replacement vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id;
+reset role;
+select is((select array_agg(fuel_grade order by display_order) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),array['vlsfo','lsmgo']::text[],'replacement bid initially has VLSFO and LSMGO');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+create temporary table pre_quote_replacement_results (revision bigint, fuel_items jsonb) on commit drop;
+with result as (
+  select public.update_bid('30000000-0000-0000-0000-000000000001',bid_id,1,'Replacement vessel','Busan','Window',clock_timestamp()+interval '2 days',array['hsfo','lsmgo'],array[8,3]::numeric[]) as bid
+  from pre_quote_replacement_bid_ids
+)
+insert into pre_quote_replacement_results(revision,fuel_items)
+select (bid).revision,(bid).fuel_items from result;
+reset role;
+select is((select fuel_items from pre_quote_replacement_results),'[{"fuel_grade": "hsfo", "quantity_mt": 8}, {"fuel_grade": "lsmgo", "quantity_mt": 3}]'::jsonb,'pre-quote response contains exactly replacement grades');
+select is((select array_agg(fuel_grade order by display_order) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),array['hsfo','lsmgo']::text[],'pre-quote replacement is stored completely');
+select is((select count(*) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids) and fuel_grade='vlsfo'),0::bigint,'removed pre-quote VLSFO no longer exists');
+select is((select jsonb_agg(jsonb_build_object('fuel_grade',fuel_grade,'quantity_mt',quantity_mt) order by display_order) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),'[{"fuel_grade": "hsfo", "quantity_mt": 8}, {"fuel_grade": "lsmgo", "quantity_mt": 3}]'::jsonb,'pre-quote replacement quantities are exact');
+select is((select array_agg(display_order order by display_order) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),array[1,2]::smallint[],'pre-quote replacement display order follows submitted ordinality');
+select is((select count(*) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),cardinality(array['hsfo','lsmgo']::text[])::bigint,'pre-quote inserted count equals submitted cardinality');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+with result as (
+  select public.update_bid('30000000-0000-0000-0000-000000000001',bid_id,2,'Replacement vessel','Busan','Window',clock_timestamp()+interval '3 days',array['ulsfo','lsfo'],array[7,9]::numeric[]) as bid
+  from pre_quote_replacement_bid_ids
+)
+insert into pre_quote_replacement_results(revision,fuel_items)
+select (bid).revision,(bid).fuel_items from result;
+reset role;
+select is((select array_agg(fuel_grade order by display_order) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),array['ulsfo','lsfo']::text[],'all-new pre-quote grades persist completely');
+select ok((select count(*) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)) > 0,'pre-quote replacement bid never has zero items');
+select is((select array_agg(revision order by revision) from pre_quote_replacement_results),array[2,3]::bigint[],'successful pre-quote replacements increment revision');
+select is((select array_agg(resulting_revision order by resulting_revision) from app_private.bid_audit_events where bid_id=(select bid_id from pre_quote_replacement_bid_ids) and event_type='details_updated'),array[2,3]::bigint[],'each successful pre-quote replacement appends one audit event');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+select public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from pre_quote_replacement_bid_ids),3,'20000000-0000-0000-0000-000000000003');
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
+select public.create_quote('30000000-0000-0000-0000-000000000003',(select bid_id from pre_quote_replacement_bid_ids),array['ulsfo','lsfo'],array[100,200]::numeric[],5);
+reset role;
+create temporary table post_quote_replacement_state as
+select bid.revision,
+  (select jsonb_agg(jsonb_build_object('fuel_grade',item.fuel_grade,'quantity_mt',item.quantity_mt,'display_order',item.display_order) order by item.display_order) from app_private.bid_items item where item.bid_id=bid.id) as fuel_items,
+  (select count(*) from app_private.bid_audit_events event where event.bid_id=bid.id) as audit_count
+from app_private.bids bid where bid.id=(select bid_id from pre_quote_replacement_bid_ids);
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+select throws_ok($$select public.update_bid('30000000-0000-0000-0000-000000000001',(select bid_id from pre_quote_replacement_bid_ids),4,'Replacement vessel','Busan','Window',clock_timestamp()+interval '4 days',array['vlsfo','hsfo'],array[7,9]::numeric[])$$,'55000','Commercial bid terms are immutable after the first quote','post-quote grade replacement is rejected');
+reset role;
+select ok((select bid.revision=state.revision and (select jsonb_agg(jsonb_build_object('fuel_grade',item.fuel_grade,'quantity_mt',item.quantity_mt,'display_order',item.display_order) order by item.display_order) from app_private.bid_items item where item.bid_id=bid.id)=state.fuel_items and (select count(*) from app_private.bid_audit_events event where event.bid_id=bid.id)=state.audit_count from app_private.bids bid cross join post_quote_replacement_state state where bid.id=(select bid_id from pre_quote_replacement_bid_ids)),'failed post-quote grade replacement preserves revision, rows, and audit count');
 
 select * from finish();
 rollback;

@@ -249,7 +249,7 @@ $$;
 
 create or replace function public.update_bid(p_actor_membership_id uuid, p_bid_id uuid, p_expected_revision bigint, p_vessel_voyage text, p_port_name text, p_delivery_window text, p_deadline_at timestamptz, p_fuel_grades text[], p_quantities numeric[])
 returns app_private.bid_api_result language plpgsql security definer set search_path = '' as $$
-declare v_actor record; v_bid app_private.bids%rowtype; v_before jsonb; v_result app_private.bid_api_result; v_has_quote boolean; v_normalized_items jsonb;
+declare v_actor record; v_bid app_private.bids%rowtype; v_before jsonb; v_result app_private.bid_api_result; v_has_quote boolean; v_normalized_items jsonb; v_inserted_count bigint;
 begin
   select * into v_actor from app_private.require_active_buyer_actor(p_actor_membership_id);
   select * into v_bid from app_private.bids where id = p_bid_id for update;
@@ -257,12 +257,18 @@ begin
   if p_expected_revision is null or v_bid.revision <> p_expected_revision then raise exception using errcode = '40001', message = 'Bid revision conflict'; end if;
   if app_private.effective_bid_status(v_bid.status, v_bid.deadline_at) <> 'open' then raise exception using errcode = '55000', message = 'Bid details are editable only while effective-open'; end if;
   perform app_private.validate_bid_deadline(p_deadline_at); perform app_private.validate_bid_items(p_fuel_grades, p_quantities);
-  select jsonb_agg(jsonb_build_object('fuel_grade', bid_item.fuel_grade, 'quantity_mt', submitted.quantity_mt, 'display_order', bid_item.display_order) order by bid_item.display_order)
-    into v_normalized_items
-  from app_private.bid_items bid_item
-  join unnest(p_fuel_grades, p_quantities) submitted(fuel_grade, quantity_mt) on submitted.fuel_grade = bid_item.fuel_grade
-  where bid_item.bid_id = p_bid_id;
   select exists(select 1 from app_private.quotes quote where quote.bid_id = p_bid_id) into v_has_quote;
+  if v_has_quote then
+    select jsonb_agg(jsonb_build_object('fuel_grade', bid_item.fuel_grade, 'quantity_mt', submitted.quantity_mt, 'display_order', bid_item.display_order) order by bid_item.display_order)
+      into v_normalized_items
+    from app_private.bid_items bid_item
+    join unnest(p_fuel_grades, p_quantities) submitted(fuel_grade, quantity_mt) on submitted.fuel_grade = bid_item.fuel_grade
+    where bid_item.bid_id = p_bid_id;
+  else
+    select jsonb_agg(jsonb_build_object('fuel_grade', submitted.fuel_grade, 'quantity_mt', submitted.quantity_mt, 'display_order', submitted.ordinality::smallint) order by submitted.ordinality)
+      into v_normalized_items
+    from unnest(p_fuel_grades, p_quantities) with ordinality submitted(fuel_grade, quantity_mt, ordinality);
+  end if;
   if v_has_quote and (app_private.validate_bid_text(p_vessel_voyage, 'vessel_voyage') is distinct from v_bid.vessel_voyage or app_private.validate_bid_text(p_port_name, 'port_name') is distinct from v_bid.port_name or app_private.validate_bid_text(p_delivery_window, 'delivery_window') is distinct from v_bid.delivery_window
     or (select array_agg(grade order by grade) from unnest(p_fuel_grades) grade) is distinct from (select array_agg(item.fuel_grade order by item.fuel_grade) from app_private.bid_items item where item.bid_id = p_bid_id)
     or v_normalized_items is distinct from (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'quantity_mt', item.quantity_mt, 'display_order', item.display_order) order by item.display_order) from app_private.bid_items item where item.bid_id = p_bid_id)) then
@@ -277,6 +283,8 @@ begin
     select p_bid_id, item.fuel_grade, item.quantity_mt, item.display_order
     from jsonb_to_recordset(v_normalized_items) as item(fuel_grade text, quantity_mt numeric, display_order smallint)
     order by item.display_order;
+  get diagnostics v_inserted_count = row_count;
+  if v_inserted_count <> cardinality(p_fuel_grades) then raise exception using errcode = '23514', message = 'Bid item insertion count mismatch'; end if;
   perform app_private.append_bid_audit(p_bid_id,'details_updated',v_actor.user_id,v_actor.membership_id,v_actor.organization_id,v_actor.membership_role,v_bid.revision,v_bid.status,v_bid.responsible_buyer_user_id,v_before);
   select * into v_result from app_private.bid_result(p_bid_id); return v_result;
 end;
