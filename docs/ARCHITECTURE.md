@@ -18,6 +18,8 @@
 - The loopback-only integration harness uses elevated local access only to prepare and delete fixtures. Its sign-in and RPC assertions use the normal publishable client.
 - Bid records, fuel items, and audit events are private RLS-enabled tables. Public bid RPCs verify the selected active BUYER membership server-side and use row locks plus revisions for every non-create mutation.
 - Audit events are append-only and contain server-generated before/after snapshots, actor membership/organization/role snapshots, and the resulting revision.
+- Bid/TRADER scope is a private current access relation. Quotes and quote items are private, RLS-enabled organization-owned records; public RPCs authenticate the selected membership from `auth.uid()` and database state before every access.
+- Quote mutation and award lock the bid first, use database server time for closure, calculate totals from stored bid quantities and quote prices, and append server-generated audit snapshots. The composite award foreign key proves the award quote belongs to its bid.
 
 ## Planned direction
 
@@ -31,7 +33,7 @@
 - PostgreSQL constraints or transactional functions are authoritative for data invariants.
 - RLS or server-side RPC/functions are authoritative for row and operation authorization.
 - Application validation mirrors server rules only for UX.
-- Realtime is limited to necessary bid and quote change notifications; it is not a general authorization mechanism.
+- Realtime is not implemented and is not an authorization mechanism.
 
 ## Planned access contracts
 
@@ -40,7 +42,7 @@
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope.
 
-The bid backend is implemented without a frontend workflow. Raw states are `open`, `closed`, and `cancelled`; raw open becomes effectively closed at a passed server-time deadline without a cron. Quotes, award, signup, invitation, provisioning, password-reset, and admin workflows remain unimplemented. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
+The bid/quote/award backend is implemented without a frontend workflow. TRADER scope is explicit per bid, quotes are organization-owned and confidential from competitors, and award is terminal in V1. Raw open becomes effectively closed at a passed server-time deadline without a cron. Realtime, signup, invitation, provisioning, password-reset, and admin workflows remain unimplemented. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
 
 ## Foundation boundaries
 

@@ -24,11 +24,12 @@
 - Browser code will use only the Supabase publishable key.
 - Secret and service-role credentials will never enter browser code, Vite variables, or the repository.
 - The frontend authorized shell requires at least one context returned by `public.current_access_context()`; an Auth session alone is insufficient.
-- Bids use raw `open`, `closed`, and `cancelled` states. Raw open with a non-null passed deadline is effectively closed using server time; no cron transition exists.
-- Details are editable only while effective-open. Every active BUYER can read and mutate bids; `responsible_buyer_user_id` supports filtering and never grants authority.
+- Bids use raw `open`, `closed`, `awarded`, and `cancelled` states. Raw open with a non-null passed deadline is effectively closed using server time; no cron transition exists.
+- Details are editable only while effective-open. After an organization quote exists, commercial terms and quantities are immutable; a real future/null deadline-only update remains possible.
 - `created_by` is immutable. Cross-BUYER updates and responsibility changes record the actual actor and before/after state in append-only audit history.
-- Reassignment is allowed for raw open/closed bids, not cancelled bids. Reopen requires a null or future deadline; cancellation is irreversible in V1.
-- Quotes, award, and frontend bid workflows remain unimplemented. The remote Supabase project remains unlinked.
+- Reassignment is allowed for raw open/closed bids, not cancelled or awarded bids. Reopen requires a null or future deadline and preserves quotes; cancellation and award are irreversible in V1.
+- TRADER organizations receive explicit current per-bid scope. Each organization owns one quote, active members collaborate, and scope revocation immediately removes TRADER visibility/write access without deleting retained quotes.
+- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. Frontend workflows and Realtime remain unimplemented. The remote Supabase project remains unlinked.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
 
@@ -44,7 +45,7 @@
 ## Not yet implemented
 
 - Public signup, invitations, password reset, and administration/provisioning flows.
-- Quotes, award, and frontend bid workflows.
+- Frontend bid and quote workflows, Realtime, invitations, and administration UI.
 
 ## Notes
 
