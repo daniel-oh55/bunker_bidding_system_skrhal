@@ -53,7 +53,9 @@ select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001'
 create temporary table quote_test_ids (bid_id uuid, quote_id uuid) on commit drop;
 insert into quote_test_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Quote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id;
 select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',bid_id,1,'20000000-0000-0000-0000-000000000003')).revision from quote_test_ids),2::bigint,'BUYER grants active TRADER organization'); -- 20
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000002',true);
 select is((select count(*) from public.list_bid_trader_access('30000000-0000-0000-0000-000000000002',(select bid_id from quote_test_ids))),1::bigint,'every active BUYER sees current access scope'); -- 21
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select throws_ok($$select public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000003')$$,'23505','TRADER organization already has bid access','duplicate scope grant is rejected'); -- 22
 select throws_ok($$select public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000005')$$,'22023','Target organization must be an active TRADER organization','inactive target organization is rejected'); -- 23
 
