@@ -15,14 +15,14 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 ## Excluded from this phase
 
 - public signup, invitation, password-reset, and admin-provisioning flows
-- frontend bid or quote workflow UI, Realtime, quote withdrawal, unaward, or award replacement
+- Realtime, quote withdrawal, unaward, or award replacement
 - `.msg` or `.eml` migration
 - approval and submission business rules
 - remote Supabase linking, deployment, or committed user, organization, or bidding data
 
 ## Future implementation contracts
 
-These contracts are implemented in the private database/RPC backend; frontend workflows remain out of scope:
+These contracts are implemented in the private database/RPC backend and surfaced through an integrated RPC-only frontend workspace:
 
 - Approved BUYER accounts may number three or more.
 - Every approved BUYER can see all bids and all quotes.
@@ -37,3 +37,5 @@ These contracts are implemented in the private database/RPC backend; frontend wo
 - Secret and service-role credentials never enter browser code, Vite variables, or the repository.
 - The frontend gate mirrors server access for UX but does not replace RLS or server-side authorization.
 - An approved BUYER may take over or modify another BUYER's bid only through server-authorized policy. `created_by` remains immutable, and the actual actor plus any responsible-BUYER reassignment are retained in audit history. Exact permitted bid states, assignment model, quote interaction, and deadline behavior must be decided before the bid-schema PR. This documentation PR does not implement cross-takeover.
+
+The frontend selects only server-returned memberships, never grants authority, clears protected data on context switch, sign-out, or authorization failure, and uses manual refresh plus post-mutation server reload. Realtime, deployment, remote Supabase linking, and real data remain out of scope.

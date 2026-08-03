@@ -29,7 +29,7 @@
 - `created_by` is immutable. Cross-BUYER updates and responsibility changes record the actual actor and before/after state in append-only audit history.
 - Reassignment is allowed for raw open/closed bids, not cancelled or awarded bids. Reopen requires a null or future deadline and preserves quotes; cancellation and award are irreversible in V1.
 - TRADER organizations receive explicit current per-bid scope. Each organization owns one quote, active members collaborate, and scope revocation immediately removes TRADER visibility/write access without deleting retained quotes.
-- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. Frontend workflows and Realtime remain unimplemented. The remote Supabase project remains unlinked.
+- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated frontend workspace is implemented; Realtime remains unimplemented. The remote Supabase project remains unlinked.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
 
@@ -45,7 +45,7 @@
 ## Not yet implemented
 
 - Public signup, invitations, password reset, and administration/provisioning flows.
-- Frontend bid and quote workflows, Realtime, invitations, and administration UI.
+- Realtime, invitations, and administration UI.
 
 ## Notes
 

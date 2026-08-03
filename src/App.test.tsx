@@ -18,6 +18,7 @@ import {
   type AccessContext,
   type AccessSession,
 } from './auth/access-client';
+import type { BiddingClient } from './bidding/bidding-client';
 
 const session: AccessSession = { email: 'operator@example.test' };
 const buyerContext: AccessContext = {
@@ -32,6 +33,14 @@ const traderContext: AccessContext = {
   organization_kind: 'trader',
   membership_role: 'trader',
 };
+
+const fakeBiddingClient = {
+  listActiveBuyers: vi.fn(() => Promise.resolve({ data: [], error: null })),
+  listBids: vi.fn(() => Promise.resolve({ data: [], error: null })),
+  listActiveTraderOrganizations: vi.fn(() => Promise.resolve({ data: [], error: null })),
+  listTraderBids: vi.fn(() => Promise.resolve({ data: [], error: null })),
+  listMyQuotes: vi.fn(() => Promise.resolve({ data: [], error: null })),
+} as unknown as BiddingClient;
 
 function success<T>(data: T): AccessClientResult<T> {
   return { data, error: false };
@@ -93,8 +102,8 @@ class FakeAccessClient implements AccessClient {
 function renderWithClient(client: FakeAccessClient, wrapper?: (children: ReactNode) => ReactNode) {
   return render(
     wrapper
-      ? wrapper(<App accessClient={client} />)
-      : <App accessClient={client} />,
+      ? wrapper(<App accessClient={client} biddingClient={fakeBiddingClient} />)
+      : <App accessClient={client} biddingClient={fakeBiddingClient} />,
   );
 }
 
@@ -113,6 +122,7 @@ describe('frontend Auth access gate', () => {
     expect(createBrowserAccessConfiguration({})).toEqual({
       status: 'configuration_error',
       client: null,
+      biddingClient: null,
     });
 
     render(<App configurationError />);
@@ -242,9 +252,11 @@ describe('frontend Auth access gate', () => {
     renderWithClient(client);
 
     await waitForAuthorized();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('buyer_operator')).toBeInTheDocument();
-    expect(screen.getAllByText('trader')).toHaveLength(2);
+    const selector = screen.getByRole('combobox', { name: /membership context/i });
+    expect(selector).toHaveValue(buyerContext.membership_id);
+    expect(selector.querySelectorAll('option')).toHaveLength(2);
+    expect(screen.getByRole('option', { name: /buyer.*buyer_operator/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /trader.*trader/i })).toBeInTheDocument();
   });
 
   it('revalidates access on an Auth state change', async () => {
@@ -259,7 +271,7 @@ describe('frontend Auth access gate', () => {
 
     await waitForAuthorized();
     expect(client.getAccessContexts).toHaveBeenCalledTimes(1);
-    expect(screen.getAllByText('trader')).toHaveLength(2);
+    expect(screen.getByText(/trader.*trader/i)).toBeInTheDocument();
   });
 
   it('cleans up subscriptions under React Strict Mode and on unmount', async () => {

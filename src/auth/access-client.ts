@@ -4,6 +4,7 @@ import {
   type Session,
   type SupabaseClient,
 } from '@supabase/supabase-js';
+import { createSupabaseBiddingClient, type BiddingClient } from '../bidding/bidding-client';
 
 export type AccessContext = {
   membership_id: string;
@@ -40,11 +41,12 @@ type BrowserEnvironment = {
 };
 
 export type BrowserAccessConfiguration =
-  | { status: 'configured'; client: AccessClient }
-  | { status: 'configuration_error'; client: null };
+  | { status: 'configured'; client: AccessClient; biddingClient: BiddingClient }
+  | { status: 'configuration_error'; client: null; biddingClient: null };
 
 const organizationKinds = new Set(['buyer', 'trader']);
 const membershipRoles = new Set(['buyer_admin', 'buyer_operator', 'trader']);
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function toAccessSession(session: Session | null): AccessSession | null {
   if (!session) {
@@ -62,6 +64,7 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
   }
 
   const contexts: AccessContext[] = [];
+  const membershipIds = new Set<string>();
 
   for (const candidate of value) {
     if (
@@ -82,11 +85,18 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
       || typeof organizationId !== 'string'
       || typeof organizationKind !== 'string'
       || typeof membershipRole !== 'string'
+      || !uuid.test(membershipId)
+      || !uuid.test(organizationId)
       || !organizationKinds.has(organizationKind)
       || !membershipRoles.has(membershipRole)
+      || (organizationKind === 'buyer' && membershipRole === 'trader')
+      || (organizationKind === 'trader' && membershipRole !== 'trader')
+      || membershipIds.has(membershipId)
     ) {
       return null;
     }
+
+    membershipIds.add(membershipId);
 
     contexts.push({
       membership_id: membershipId,
@@ -183,13 +193,13 @@ export function createBrowserAccessConfiguration(
   const publishableKey = environment.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
 
   if (!url || !publishableKey) {
-    return { status: 'configuration_error', client: null };
+    return { status: 'configuration_error', client: null, biddingClient: null };
   }
 
   try {
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      return { status: 'configuration_error', client: null };
+      return { status: 'configuration_error', client: null, biddingClient: null };
     }
 
     const client = createClient(url, publishableKey, {
@@ -203,9 +213,10 @@ export function createBrowserAccessConfiguration(
     return {
       status: 'configured',
       client: createSupabaseAccessClient(client),
+      biddingClient: createSupabaseBiddingClient(client),
     };
   } catch {
-    return { status: 'configuration_error', client: null };
+    return { status: 'configuration_error', client: null, biddingClient: null };
   }
 }
 

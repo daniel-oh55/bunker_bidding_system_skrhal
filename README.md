@@ -16,7 +16,7 @@ The current scope is intentionally limited to:
 Still out of scope:
 
 - public signup, invitations, account provisioning, password reset, or administration
-- buyer or trader workflow UI migration
+- Realtime delivery, invitations, and administration UI
 - bid lifecycle, organization-owned quote, and award backend: explicit TRADER scope, append-only audit history, optimistic revisions, server-time closure, and final awards
 - secret registration, Supabase project linking, or deployment
 
@@ -65,7 +65,7 @@ npm run db:stop
 - Raw bid states are `open`, `closed`, `awarded`, and `cancelled`. An open bid with a passed deadline is effectively closed by server time without a cron job. Details are editable only while effective-open; after the first quote only a real deadline change is allowed.
 - Quotes are owned by a TRADER organization, not an individual. Selected active TRADER members of that organization may collaborate on its one quote; other TRADER organizations cannot see competing quotes. A BUYER explicitly grants and can immediately revoke per-bid scope.
 - Award is a server-side terminal V1 transition of an eligible quote. Reopen preserves quotes; revocation preserves quotes and BUYER visibility while immediately removing TRADER access.
-- Frontend bid and quote workflows, Realtime, and remote Supabase linking are not implemented.
+- The integrated BUYER/TRADER workspace uses only server RPCs, server-returned membership contexts, manual refresh, and post-mutation reload. It clears protected data on context switch, sign-out, and authorization failure. Realtime and remote Supabase linking are not implemented.
 - No remote Supabase project is linked, and no real user, organization, or bidding data is committed.
 
 ## Dependency audit policy

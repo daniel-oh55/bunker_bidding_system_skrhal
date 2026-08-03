@@ -30,12 +30,10 @@ const fullSession = {
 function createSupabaseHarness() {
   let authCallback: AuthCallback | undefined;
   let authCallbackActive = false;
+  let accessResponse: { data: unknown; error: unknown } = { data: [], error: null };
   const rpcCallStates: boolean[] = [];
   const unsubscribe = vi.fn();
-  const overrideTypes = vi.fn(() => Promise.resolve({
-    data: [],
-    error: null,
-  }));
+  const overrideTypes = vi.fn(() => Promise.resolve(accessResponse));
   const rpc = vi.fn(() => {
     rpcCallStates.push(authCallbackActive);
     return { overrideTypes };
@@ -70,6 +68,9 @@ function createSupabaseHarness() {
     onAuthStateChange,
     rpc,
     rpcCallStates,
+    setAccessResponse(response: { data: unknown; error: unknown }) {
+      accessResponse = response;
+    },
     unsubscribe,
   };
 }
@@ -160,5 +161,14 @@ describe('Supabase access client Auth adapter', () => {
     await vi.runAllTimersAsync();
     expect(consumer).not.toHaveBeenCalled();
     expect(harness.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('rejects duplicate server membership IDs as a complete access protocol failure', async () => {
+    const harness = createSupabaseHarness();
+    const client = createSupabaseAccessClient(harness.client);
+    const context = { membership_id: '10000000-0000-4000-8000-000000000001', organization_id: '20000000-0000-4000-8000-000000000001', organization_kind: 'buyer', membership_role: 'buyer_operator' };
+    harness.setAccessResponse({ data: [context, { ...context, organization_id: '20000000-0000-4000-8000-000000000002' }], error: null });
+
+    await expect(client.getAccessContexts()).resolves.toEqual({ data: [], error: true });
   });
 });

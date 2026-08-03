@@ -23,7 +23,7 @@
 - The state machine immediately clears contexts on sign-out, ignores stale RPC results, distinguishes zero-context denial from transient errors, and preserves multiple active memberships.
 - Missing browser configuration fails closed. The browser client is never partially configured and accepts only the URL and publishable key.
 - The loopback-only integration harness isolates elevated local access to fixture preparation and cleanup; its sign-in and RPC checks use the publishable client.
-- This frontend boundary is UX/state coordination, not the enforcement layer for future bid or quote data. Those operations still require RLS or server-side functions.
+- The frontend creates separate access and bidding adapters from the same publishable client and never exposes the raw client to components. It selects only server-returned memberships, validates every RPC response before rendering, and clears protected data before an authorization-failure recheck. This is UX/state coordination, not the enforcement layer; bid and quote data still require RLS or server-side functions.
 - No remote Supabase project is linked and no real operational data is committed.
 - The bid API accepts a caller-selected membership ID but verifies it against `auth.uid()` and current active account, membership, organization, BUYER kind, and BUYER role rows. JWT metadata, responsibility, and creator identity never authorize access.
 - Bid creation identity is trigger-protected. Private bid/audit tables have RLS enabled with direct `anon`/`authenticated` privileges revoked; privileged public RPCs use fixed search paths and minimal authenticated-only execute grants.
@@ -47,4 +47,4 @@
 - Active BUYERs may perform cross-BUYER changes through the server RPCs; those changes never rewrite `created_by` and audit the actual actor. Responsibility is a visibility filter, not authority.
 - Privilege tests may use elevated fixture setup, but allowed and denied behavior must run under the target caller role.
 
-Frontend bid/quote workflows, Realtime, invitations, provisioning, password reset, and administration are not implemented. No remote Supabase project is linked.
+The integrated frontend workspace does not grant authority and does not request competitor data from a TRADER context. It uses manual refresh and post-mutation reload; Realtime, invitations, provisioning, password reset, and administration are not implemented. No remote Supabase project is linked, deployed, or populated with real data.

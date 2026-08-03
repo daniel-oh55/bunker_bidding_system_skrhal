@@ -269,10 +269,18 @@ export function useAuthAccess(
     }
   }, [signOut, verifyAccess]);
 
+  const recheckAccess = useCallback(() => {
+    const currentState = stateRef.current;
+    if (currentState.status === 'authorized') {
+      void verifyAccess(currentState.session);
+    }
+  }, [verifyAccess]);
+
   return {
     state,
     signIn,
     signOut,
     retry,
+    recheckAccess,
   };
 }
