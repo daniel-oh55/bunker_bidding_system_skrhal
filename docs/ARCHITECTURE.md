@@ -21,11 +21,11 @@
 - Bid/TRADER scope is a private current access relation. Quotes and quote items are private, RLS-enabled organization-owned records; public RPCs authenticate the selected membership from `auth.uid()` and database state before every access.
 - Quote mutation and award lock the bid first, use database server time for closure, calculate totals from stored bid quantities and quote prices, and append server-generated audit snapshots. The composite award foreign key proves the award quote belongs to its bid.
 
-## Planned direction
+## Enforced architectural boundaries
 
 - browser code uses only the Supabase publishable key
 - secret and service-role credentials never enter browser code, Vite variables, or the repository
-- elevated authorization decisions move to PostgreSQL policies and server-side functions without trusting `user_metadata` or unverified client claims
+- elevated authorization decisions are made by PostgreSQL policies and server-side functions without trusting `user_metadata` or unverified client claims
 - access checks immediately reject suspended or inactive users
 - deadlines use server time, and quote creation or modification after close is rejected server-side
 - close, reopen, award, and cancel are server-side transactional operations
@@ -35,7 +35,7 @@
 - Application validation mirrors server rules only for UX.
 - Realtime is not implemented and is not an authorization mechanism.
 
-## Planned access contracts
+## Enforced access contracts
 
 - Approved BUYER accounts may number three or more.
 - Every approved BUYER can see all bids and all quotes.
