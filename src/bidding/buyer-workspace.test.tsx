@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BuyerWorkspace } from './buyer-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
@@ -44,14 +44,11 @@ describe('BUYER workspace', () => {
     expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
   });
 
-  it('fails closed on a BUYER 42501 response, revalidates authorization, and ignores stale detail results', async () => {
+  it('fails closed on a BUYER 42501 response and revalidates authorization', async () => {
     const { client, listBids } = fakeClient(); const onAuthorizationFailure = vi.fn();
     const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
-    const detailQuotes = deferred<BiddingResult<Quote[]>>(); const detailAudit = deferred<BiddingResult<BidAuditEvent[]>>();
     client.listBidTraderAccess = listBidTraderAccess;
     client.listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok([{ organization_id: '20000000-0000-4000-8000-000000000001', organization_label: 'Trader A' }])));
-    client.listQuotesForBuyers = vi.fn(() => detailQuotes.promise);
-    client.listBidAudit = vi.fn(() => detailAudit.promise);
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
     await screen.findByRole('button', { name: /MV Buyer/ });
     fireEvent.click(screen.getByRole('button', { name: /MV Buyer/ }));
@@ -67,28 +64,49 @@ describe('BUYER workspace', () => {
     expect(screen.queryByRole('option', { name: 'Trader A' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Assign responsible BUYER')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Grant TRADER organization')).not.toBeInTheDocument();
-    detailQuotes.resolve(ok([])); detailAudit.resolve(ok([]));
-    await Promise.resolve();
-    expect(screen.queryByText('MV Buyer')).not.toBeInTheDocument();
-    expect(screen.queryAllByRole('option', { name: 'Target buyer' })).toHaveLength(0);
-    expect(screen.queryByRole('option', { name: 'Trader A' })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Assign responsible BUYER')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Grant TRADER organization')).not.toBeInTheDocument();
+  });
+
+  it('keeps the current detail when a prior bid detail request resolves late', async () => {
+    const bidA = bid({ id: '10000000-0000-4000-8000-000000000004', vessel_voyage: 'MV Bid A' });
+    const bidB = bid({ id: '10000000-0000-4000-8000-000000000005', vessel_voyage: 'MV Bid B' });
+    const staleAccess = deferred<BiddingResult<BidTraderAccess[]>>(); const staleQuotes = deferred<BiddingResult<Quote[]>>(); const staleAudit = deferred<BiddingResult<BidAuditEvent[]>>();
+    const currentQuote: Quote = { id: '10000000-0000-4000-8000-000000000006', bid_id: bidB.id, trader_organization_id: '20000000-0000-4000-8000-000000000007', trader_organization_label: 'Current Trader B', revision: 1, created_by: id, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 100 }], barge_fee: 0, total_amount: 1000, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false };
+    const staleQuote: Quote = { ...currentQuote, id: '10000000-0000-4000-8000-000000000008', bid_id: bidA.id, trader_organization_id: '20000000-0000-4000-8000-000000000009', trader_organization_label: 'Stale Trader A' };
+    const { client } = fakeClient([bidA, bidB]);
+    client.listBidTraderAccess = vi.fn((_membershipId, requestedBidId) => requestedBidId === bidA.id ? staleAccess.promise : Promise.resolve(ok<BidTraderAccess[]>([])));
+    client.listQuotesForBuyers = vi.fn((_membershipId, requestedBidId) => requestedBidId === bidA.id ? staleQuotes.promise : Promise.resolve(ok([currentQuote])));
+    client.listBidAudit = vi.fn((_membershipId, requestedBidId) => requestedBidId === bidA.id ? staleAudit.promise : Promise.resolve(ok<BidAuditEvent[]>([])));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByRole('button', { name: /MV Bid A/ });
+    fireEvent.click(screen.getByRole('button', { name: /MV Bid A/ }));
+    await screen.findByText('Loading bid detail');
+    fireEvent.click(screen.getByRole('button', { name: /MV Bid B/ }));
+    await screen.findByText('Current Trader B');
+    expect(screen.getByRole('heading', { name: 'MV Bid B' })).toBeInTheDocument();
+    await act(async () => {
+      staleAccess.resolve(ok([])); staleQuotes.resolve(ok([staleQuote])); staleAudit.resolve(ok([]));
+      await Promise.all([staleAccess.promise, staleQuotes.promise, staleAudit.promise]);
+    });
+    expect(screen.getByRole('heading', { name: 'MV Bid B' })).toBeInTheDocument();
+    expect(screen.getByText('Current Trader B')).toBeInTheDocument();
+    expect(screen.queryByText('Stale Trader A')).not.toBeInTheDocument();
   });
 
   it('invalidates award confirmation when any quote revision changes before confirmation', async () => {
     const closedBid = bid({ raw_status: 'closed', effective_status: 'closed', revision: 4, closed_at: now });
-    const initialQuote: Quote = { id: '10000000-0000-4000-8000-000000000004', bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000003', trader_organization_label: 'Trader A', revision: 1, created_by: id, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 100 }], barge_fee: 0, total_amount: 1000, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false };
+    const quoteA: Quote = { id: '10000000-0000-4000-8000-000000000004', bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000003', trader_organization_label: 'Trader A', revision: 1, created_by: id, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 100 }], barge_fee: 0, total_amount: 1000, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false };
+    const quoteB: Quote = { ...quoteA, id: '10000000-0000-4000-8000-000000000005', trader_organization_id: '20000000-0000-4000-8000-000000000006', trader_organization_label: 'Trader B', total_amount: 2000 };
     const { client } = fakeClient([closedBid]); const awardBid = vi.fn<BiddingClient['awardBid']>();
     client.listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
     client.listBidAudit = vi.fn(() => Promise.resolve(ok<BidAuditEvent[]>([])));
-    client.listQuotesForBuyers = vi.fn().mockResolvedValueOnce(ok([initialQuote])).mockResolvedValueOnce(ok([{ ...initialQuote, revision: 2, updated_at: '2026-08-03T04:00:00.000Z' }]));
+    client.listQuotesForBuyers = vi.fn().mockResolvedValueOnce(ok([quoteA, quoteB])).mockResolvedValueOnce(ok([quoteA, { ...quoteB, revision: 2, updated_at: '2026-08-03T04:00:00.000Z' }]));
     client.awardBid = awardBid;
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     await screen.findByRole('button', { name: /MV Buyer/ });
     fireEvent.click(screen.getByRole('button', { name: /MV Buyer/ }));
-    await screen.findByRole('button', { name: 'Award' });
-    fireEvent.click(screen.getByRole('button', { name: 'Award' }));
+    const quoteAItem = (await screen.findByText('Trader A')).closest('li');
+    expect(quoteAItem).not.toBeNull();
+    fireEvent.click(within(quoteAItem!).getByRole('button', { name: 'Award' }));
     expect(screen.getByRole('button', { name: 'Confirm award' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh detail' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirm award' })).not.toBeInTheDocument());
