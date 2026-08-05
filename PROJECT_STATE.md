@@ -29,7 +29,7 @@
 - `created_by` is immutable. Cross-BUYER updates and responsibility changes record the actual actor and before/after state in append-only audit history.
 - Reassignment is allowed for raw open/closed bids, not cancelled or awarded bids. Reopen requires a null or future deadline and preserves quotes; cancellation and award are irreversible in V1.
 - TRADER organizations receive explicit current per-bid scope. Each organization owns one quote, active members collaborate, and scope revocation immediately removes TRADER visibility/write access without deleting retained quotes.
-- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated BUYER/TRADER frontend workspace is implemented; it uses server RPCs, manual refresh, and post-mutation reload. Realtime remains unimplemented. The remote Supabase project remains unlinked.
+- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated BUYER/TRADER frontend workspace is implemented; it uses server RPCs, manual refresh, and post-mutation reload. Realtime remains unimplemented.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
 
@@ -40,12 +40,18 @@
 - `app_private` contains private account, organization, and membership authorization data. The authenticated public RPC returns only active, server-verified membership context.
 - A sign-in-only frontend Auth boundary hydrates browser sessions, rechecks the RPC on Auth changes, preserves all returned contexts, and fails closed for missing configuration, zero context, stale requests, and transient errors.
 - Unit tests cover the frontend state machine. A loopback-only integration harness uses elevated local access only for fixture setup and cleanup while normal sign-in and RPC calls use the publishable key.
-- No remote Supabase project is linked, and no actual user, organization, or bidding data is committed.
+- Reviewed migrations are applied to the approved remote Supabase project. Remote public signup and anonymous access are disabled.
+- Controlled initial provisioning is complete with three active BUYER users, two active TRADER users, one active BUYER organization, two active TRADER organizations, and five active compatible memberships.
+- All five provisioned identities successfully authenticated and returned only their expected server-verified `current_access_context`; each passed an account- or membership-disable fail-closed check and was restored.
+- There are currently no bids, quotes, or TRADER bid-scope rows in the approved remote Supabase project.
 
 ## Not yet implemented
 
-- Public signup, invitations, password reset, and administration/provisioning flows.
-- Realtime, invitations, password reset, and administration/provisioning UI.
+- No Vercel Production deployment exists. Production Site URL and redirect configuration remain unresolved.
+- No remote auth configuration push is authorized.
+- Remote bid, quote, scope, deadline, and award smoke testing remains pending.
+- Realtime remains unimplemented.
+- Invitations, password reset, and administration/provisioning flows and UI.
 
 ## Notes
 
