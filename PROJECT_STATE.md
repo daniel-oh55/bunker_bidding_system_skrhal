@@ -53,7 +53,12 @@
 - No remote auth configuration push is authorized.
 - Realtime remains unimplemented.
 - Invitations, password reset, and administration/provisioning flows and UI.
-- Production UI/UX refinement remains follow-up work. The long detail layout and identifier presentation need refinement.
+- Membership-context organization label presentation remains follow-up work because the current server-verified context does not expose a trusted organization label.
+
+## Completed refinements
+
+- The BUYER bid detail uses a compact always-visible overview with accessible disclosure sections for bid terms and deadline, responsibility and lifecycle, TRADER access and quotes, and audit history.
+- Audit responsibility transitions show active BUYER display labels when available and a shortened neutral identifier when the BUYER is inactive or unavailable.
 
 ## Notes
 
