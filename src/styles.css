@@ -75,6 +75,9 @@ body {
 .operational-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px 16px; margin: 14px 0; }
 .operational-data div { min-width: 0; }
 .operational-data dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+.terminal-result { margin: 16px 0 0; font-weight: 700; }
+.read-only-quote { margin-top: 16px; padding-top: 16px; border-top: 1px solid #dce3ed; }
+.read-only-quote h3 { margin: 0; font-size: 1rem; }
 
 .hero {
   margin-bottom: 28px;

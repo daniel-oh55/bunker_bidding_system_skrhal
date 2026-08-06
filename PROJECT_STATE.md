@@ -53,7 +53,7 @@
 - No remote auth configuration push is authorized.
 - Realtime remains unimplemented.
 - Invitations, password reset, and administration/provisioning flows and UI.
-- Production UI/UX refinement remains follow-up work. Non-blocking findings: awarded bids are still counted as “available”; the awarded quote update form remains visible but disabled; and the long detail layout and identifier presentation need refinement.
+- Production UI/UX refinement remains follow-up work. The long detail layout and identifier presentation need refinement.
 
 ## Notes
 

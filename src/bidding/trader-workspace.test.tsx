@@ -112,4 +112,36 @@ describe('TRADER workspace', () => {
     expect(screen.getByText('LSMGO 20, VLSFO 10')).toBeInTheDocument();
     expect(screen.queryByText('Competitor')).not.toBeInTheDocument();
   });
+
+  it('renders a closed own quote as read-only with its authoritative values', async () => {
+    const { client } = clientWith([traderBid({ raw_status: 'closed', effective_status: 'closed', closed_at: now })], [quote()]);
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByText('Quote submission is closed.');
+    expect(screen.getByRole('region', { name: 'Your quote summary' })).toHaveTextContent('LSMGO unit price');
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /quote/i })).not.toBeInTheDocument();
+  });
+
+  it.each([[true, 'Selected. Your organization’s quote was selected.'], [false, 'Not selected. The award process is complete.']])('renders an awarded own quote as %s read-only', async (isAwarded, message) => {
+    const { client } = clientWith([traderBid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now })], [quote({ is_awarded: isAwarded })]);
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByText(message);
+    expect(screen.getByRole('region', { name: 'Your quote summary' })).toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+  });
+
+  it('keeps a terminal bid without an own quote neutral and free of competitor data', async () => {
+    const { client } = clientWith([traderBid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now })]);
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByText('The award process is complete.');
+    expect(screen.queryByRole('region', { name: 'Your quote summary' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/selected organization|competitor/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes bids open for quoting from total accessible bids', async () => {
+    const { client } = clientWith([traderBid(), traderBid({ id: '10000000-0000-4000-8000-000000000004', raw_status: 'awarded', effective_status: 'awarded', closed_at: now })]);
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+    expect(await screen.findByText('1 open for quoting · 2 accessible bids')).toBeInTheDocument();
+  });
 });
