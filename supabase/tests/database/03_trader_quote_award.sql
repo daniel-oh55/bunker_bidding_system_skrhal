@@ -1,5 +1,5 @@
 begin;
-select plan(84);
+select plan(86);
 
 insert into auth.users (id,email,raw_user_meta_data,raw_app_meta_data) values
   ('10000000-0000-0000-0000-000000000001','buyer-a@quote.test','{"role":"trader"}','{"role":"trader"}'),
@@ -69,6 +69,7 @@ select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003'
 select is((select count(*) from public.list_trader_bids('30000000-0000-0000-0000-000000000003') where id=(select bid_id from quote_test_ids)),1::bigint,'scoped TRADER lists bid'); -- 24
 update quote_test_ids set quote_id = (select (public.create_quote('30000000-0000-0000-0000-000000000003',bid_id,array['vlsfo','lsmgo'],array[100,200]::numeric[],5)).id from quote_test_ids);
 select is((select total_amount from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),1405::numeric,'quote total is server calculated'); -- 25
+select is((select is_awarded from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),false,'unawarded quote returns false rather than null');
 reset role;
 select is((select count(*) from app_private.quote_audit_events where quote_id=(select quote_id from quote_test_ids)),1::bigint,'create produces one quote audit event'); -- 26
 set local role authenticated;
@@ -114,7 +115,8 @@ select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003'
 select throws_ok($$select public.update_quote('30000000-0000-0000-0000-000000000003',(select quote_id from quote_test_ids),2,array['vlsfo','lsmgo'],array[102,202]::numeric[],6)$$,'55000','Quotes are editable only while effective-open','close blocks quote update'); -- 43
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select (public.award_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),5,(select quote_id from quote_test_ids),2)).raw_status),'awarded','effective-closed bid award succeeds'); -- 44
-select ok((select is_awarded and not eligible_for_award from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),'awarded quote remains selected but is no longer eligible');
+select is((select is_awarded from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),true,'awarded quote returns true');
+select is((select eligible_for_award from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),false,'awarded quote is no longer eligible for award');
 reset role;
 select is((select awarded_quote_id from app_private.bids where id=(select bid_id from quote_test_ids)),(select quote_id from quote_test_ids),'award stores selected quote'); -- 45
 select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='awarded'),1::bigint,'award creates one bid audit event'); -- 46

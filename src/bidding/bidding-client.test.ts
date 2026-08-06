@@ -49,6 +49,13 @@ describe('BiddingClient RPC adapter', () => {
     const rpc: Rpc = vi.fn(() => { throw new Error('network'); }); const client = createSupabaseBiddingClient({ rpc }); expect((await client.listActiveBuyers(id)).error?.kind).toBe('unknown');
   });
 
+  it('accepts false is_awarded but rejects null as a quote protocol error', async () => {
+    const falseResult = await harness([quote]).client.listMyQuotes(id);
+    expect(falseResult).toMatchObject({ data: [quote], error: null });
+    const nullResult = await harness([{ ...quote, is_awarded: null }]).client.listMyQuotes(id);
+    expect(nullResult).toMatchObject({ data: null, error: { kind: 'protocol' } });
+  });
+
   it.each([
     ['42501', 'authorization'], ['40001', 'conflict'], ['55000', 'lifecycle'], ['22023', 'validation'], ['23514', 'validation'], ['P0002', 'not_found'], ['23505', 'duplicate'], ['unexpected', 'unknown'],
   ])('maps SQLSTATE %s to %s without data', async (code, kind) => {

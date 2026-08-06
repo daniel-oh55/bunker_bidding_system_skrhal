@@ -44,15 +44,15 @@ async function run() {
     const listedBids = await rpc(traderOneCaller, 'list_trader_bids', { p_actor_membership_id: traderOne.membershipId }, 'allowed trader lists bids');
     assert(!listedBids.error && listedBids.data.some((bid) => bid.id === state.bidId), 'Allowed TRADER cannot list explicitly scoped bid.');
     const quote = await rpc(traderOneCaller, 'create_quote', { p_actor_membership_id: traderOne.membershipId, p_bid_id: state.bidId, p_fuel_grades: ['vlsfo'], p_unit_prices: [100], p_barge_fee: 5 }, 'allowed trader creates quote');
-    assert(!quote.error && quote.data?.total_amount === 1005, 'TRADER quote was not created with a server-calculated total.'); state.quoteId = quote.data.id;
+    assert(!quote.error && quote.data?.total_amount === 1005 && quote.data?.is_awarded === false, 'TRADER quote create response must include server-calculated total and boolean false is_awarded.'); state.quoteId = quote.data.id;
     const updated = await rpc(traderTwoCaller, 'update_quote', { p_actor_membership_id: traderTwo.membershipId, p_quote_id: state.quoteId, p_expected_revision: 1, p_fuel_grades: ['vlsfo'], p_unit_prices: [101], p_barge_fee: 5 }, 'same organization update');
-    assert(!updated.error && updated.data.revision === 2 && updated.data.created_by === traderOneUser.id, 'Same-organization TRADER update did not preserve creator or increment revision.');
+    assert(!updated.error && updated.data.revision === 2 && updated.data.created_by === traderOneUser.id && updated.data.is_awarded === false, 'Same-organization TRADER update must preserve creator, increment revision, and return boolean false is_awarded.');
     const otherQuotes = await rpc(otherCaller, 'list_my_quotes', { p_actor_membership_id: traderOther.membershipId }, 'other trader quote list');
     assert(!otherQuotes.error && !otherQuotes.data.some((value) => value.id === state.quoteId), 'Another TRADER organization can see a competing quote.');
     const otherUpdate = await rpc(otherCaller, 'update_quote', { p_actor_membership_id: traderOther.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'other trader quote update');
     assert(otherUpdate.error?.code === '42501', 'Another TRADER organization update must return 42501.');
     const buyerQuotes = await rpc(buyerCaller, 'list_quotes_for_buyers', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId }, 'buyer quote list');
-    assert(!buyerQuotes.error && buyerQuotes.data.length === 1 && buyerQuotes.data[0].total_amount === 1015, 'BUYER cannot see the authoritative quote total.');
+    assert(!buyerQuotes.error && buyerQuotes.data.length === 1 && buyerQuotes.data[0].total_amount === 1015 && buyerQuotes.data[0].is_awarded === false, 'BUYER quote list must include the authoritative total and boolean false is_awarded before award.');
     const revoked = await rpc(buyerCaller, 'revoke_bid_trader_access', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 2, p_trader_organization_id: traderOne.organizationId }, 'buyer revokes scope');
     assert(!revoked.error && revoked.data.revision === 3, 'BUYER could not revoke current TRADER scope.');
     const revokedQuotes = await rpc(traderOneCaller, 'list_my_quotes', { p_actor_membership_id: traderOne.membershipId }, 'revoked trader quote list');
@@ -67,6 +67,8 @@ async function run() {
     assert(afterClose.error?.code === '55000', 'Closed bid quote update must return 55000.');
     const awarded = await rpc(buyerCaller, 'award_bid', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 5, p_quote_id: state.quoteId, p_expected_quote_revision: 2 }, 'buyer awards quote');
     assert(!awarded.error && awarded.data.raw_status === 'awarded' && awarded.data.awarded_quote_id === state.quoteId && awarded.data.awarded_total_amount === 1015, 'BUYER did not receive authoritative final award result.');
+    const awardedQuotes = await rpc(buyerCaller, 'list_quotes_for_buyers', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId }, 'buyer lists awarded quote');
+    assert(!awardedQuotes.error && awardedQuotes.data.length === 1 && awardedQuotes.data[0].is_awarded === true, 'BUYER quote list must return boolean true is_awarded after award.');
     console.log('Trader quote REST integration tests passed: 9 boundary scenarios.');
   } catch (error) { failure = error; }
   finally {
