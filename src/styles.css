@@ -75,6 +75,10 @@ body {
 .detail-section li { margin: 8px 0; }
 .detail-refresh { margin-top: 16px; }
 .quote-list li, .audit-list li { padding: 10px 0; border-bottom: 1px solid #e4e9f0; line-height: 1.5; }
+.revoke-confirmation { margin-top: 8px; padding: 12px; border: 1px solid #d79a9a; border-radius: 10px; background: #fff3f3; color: #6f1820; }
+.revoke-confirmation p { margin: 8px 0; }
+.revoke-award-warning { font-weight: 700; }
+.revoke-confirmation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .trader-bids { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
 .trader-card { margin-top: 0; }
 .trader-card h2 { font-size: 1.35rem; }

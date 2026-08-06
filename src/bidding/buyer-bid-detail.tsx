@@ -7,6 +7,7 @@ import { fuelGrades, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTra
 type Detail = { access: BidTraderAccess[]; quotes: Quote[]; audit: BidAuditEvent[] };
 type Row = { grade: typeof fuelGrades[number]; quantity: string };
 type AwardConfirmation = { quoteId: string; quoteRevision: number; signature: string };
+type RevokeConfirmation = { bidId: string; bidRevision: number; traderOrganizationId: string; accessSignature: string };
 
 const number = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 const date = (value: string | null) => value ? new Date(value).toLocaleString() : 'No deadline';
@@ -18,6 +19,7 @@ const updateInput = (draft: { vessel: string; port: string; window: string; dead
   fuelGrades: draft.rows.map((row) => row.grade),
   quantities: draft.rows.map((row) => Number(row.quantity)),
 });
+const accessSignature = (access: BidTraderAccess[] | undefined) => access?.map((entry) => `${entry.trader_organization_id}:${entry.granted_at}`).sort().join('|') ?? '';
 
 function buyerLabel(id: string | null, buyers: ActiveBuyer[]) {
   if (id === null) return 'None';
@@ -46,16 +48,33 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
   const [scope, setScope] = useState('');
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [awardConfirm, setAwardConfirm] = useState<AwardConfirmation | null>(null);
+  const [revokeConfirm, setRevokeConfirm] = useState<RevokeConfirmation | null>(null);
   const quoteSignature = detail?.quotes.map((quote) => `${quote.id}:${quote.revision}`).sort().join('|') ?? '';
+  const currentAccessSignature = accessSignature(detail?.access);
 
   useEffect(() => {
     setAwardConfirm(null);
   }, [quoteSignature]);
 
+  useEffect(() => {
+    setRevokeConfirm(null);
+  }, [bid.id, bid.revision, currentAccessSignature]);
+
   const commercialOpen = detail !== null && detail.quotes.length === 0 && bid.effective_status === 'open';
   const deadlineOpen = bid.effective_status === 'open';
   const validRows = draft.rows.length > 0 && draft.rows.every((row) => Number.isFinite(Number(row.quantity)) && Number(row.quantity) > 0);
   const termsOpen = bid.effective_status === 'open';
+  const revokeIsCurrent = (confirmation: RevokeConfirmation | null) => confirmation !== null
+    && confirmation.bidId === bid.id
+    && confirmation.bidRevision === bid.revision
+    && confirmation.accessSignature === currentAccessSignature
+    && detail?.access.some((access) => access.trader_organization_id === confirmation.traderOrganizationId) === true;
+  const confirmRevoke = () => {
+    if (revokeConfirm === null || !revokeIsCurrent(revokeConfirm) || pending) return;
+    const confirmation = revokeConfirm;
+    setRevokeConfirm(null);
+    void mutate(() => client.revokeBidTraderAccess(membershipId, bid.id, bid.revision, confirmation.traderOrganizationId));
+  };
   const traderOpen = bid.effective_status === 'closed' || bid.effective_status === 'awarded';
   const saveBid = () => {
     const commercialFieldsUnchanged = draft.vessel === bid.vessel_voyage
@@ -127,7 +146,23 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
         </select>
         <button type="button" disabled={!scope || pending || detail === null} onClick={() => void mutate(() => client.grantBidTraderAccess(membershipId, bid.id, bid.revision, scope))}>Grant scope</button>
       </> : null}
-      <ul>{detail?.access.map((access) => <li key={access.trader_organization_id}>{access.trader_organization_label} <button type="button" className="secondary" disabled={pending} onClick={() => void mutate(() => client.revokeBidTraderAccess(membershipId, bid.id, bid.revision, access.trader_organization_id))}>Revoke</button></li>)}</ul>
+      <ul>{detail?.access.map((access) => {
+        const confirmed = revokeIsCurrent(revokeConfirm) && revokeConfirm?.traderOrganizationId === access.trader_organization_id;
+        const confirmationId = `revoke-confirmation-${access.trader_organization_id}`;
+        const selectedAwardee = bid.effective_status === 'awarded' && bid.awarded_trader_organization_id === access.trader_organization_id;
+        return <li key={access.trader_organization_id}>
+          {access.trader_organization_label} <button type="button" className="secondary" disabled={pending} aria-describedby={confirmed ? confirmationId : undefined} onClick={() => setRevokeConfirm({ bidId: bid.id, bidRevision: bid.revision, traderOrganizationId: access.trader_organization_id, accessSignature: currentAccessSignature })}>Revoke</button>
+          {confirmed ? <div id={confirmationId} className="revoke-confirmation" role="alert">
+            <strong>Revoke access for {access.trader_organization_label}?</strong>
+            <p>Revoking access immediately removes this TRADER organization’s bid and quote visibility. BUYER records remain retained.</p>
+            {selectedAwardee ? <p className="revoke-award-warning">This is the selected TRADER organization. Revoking access will remove its award-result visibility.</p> : null}
+            <div className="revoke-confirmation-actions">
+              <button type="button" disabled={pending} onClick={confirmRevoke}>Confirm revoke</button>
+              <button type="button" className="secondary" disabled={pending} onClick={() => setRevokeConfirm(null)}>Keep access</button>
+            </div>
+          </div> : null}
+        </li>;
+      })}</ul>
       <h3>Buyer-visible quotes</h3>
       <ul className="quote-list">{detail?.quotes.map((quote) => {
         const confirmed = awardConfirm?.quoteId === quote.id && awardConfirm.quoteRevision === quote.revision && awardConfirm.signature === quoteSignature;
@@ -155,7 +190,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
       <summary>Audit history</summary>
       <ol className="audit-list">{detail?.audit.map((event) => <AuditEvent key={event.id} event={event} buyers={buyers} />)}</ol>
     </details>
-    <button type="button" className="secondary detail-refresh" onClick={refresh}>Refresh detail</button>
+    <button type="button" className="secondary detail-refresh" onClick={() => { setRevokeConfirm(null); refresh(); }}>Refresh detail</button>
   </div>;
 }
 
