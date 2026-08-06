@@ -122,12 +122,37 @@ describe('TRADER workspace', () => {
     expect(screen.queryByRole('button', { name: /quote/i })).not.toBeInTheDocument();
   });
 
+  it('renders a cancelled own quote as a read-only authoritative summary', async () => {
+    const { client } = clientWith(
+      [traderBid({ raw_status: 'cancelled', effective_status: 'cancelled', cancelled_at: now })],
+      [quote()],
+    );
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByText('This bid has been cancelled.');
+    const summary = screen.getByRole('region', { name: 'Your quote summary' });
+    expect(summary).toHaveTextContent('LSMGO unit price');
+    expect(summary).toHaveTextContent('3');
+    expect(summary).toHaveTextContent('VLSFO unit price');
+    expect(summary).toHaveTextContent('2');
+    expect(summary).toHaveTextContent('Barge fee');
+    expect(summary).toHaveTextContent('5');
+    expect(summary).toHaveTextContent('Authoritative server total');
+    expect(summary).toHaveTextContent('85');
+    expect(summary).toHaveTextContent('Own quote revision');
+    expect(summary).toHaveTextContent('7');
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save quote' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Update quote' })).not.toBeInTheDocument();
+  });
+
   it.each([[true, 'Selected. Your organization’s quote was selected.'], [false, 'Not selected. The award process is complete.']])('renders an awarded own quote as %s read-only', async (isAwarded, message) => {
     const { client } = clientWith([traderBid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now })], [quote({ is_awarded: isAwarded })]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText(message);
     expect(screen.getByRole('region', { name: 'Your quote summary' })).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save quote' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Update quote' })).not.toBeInTheDocument();
   });
 
   it('keeps a terminal bid without an own quote neutral and free of competitor data', async () => {
