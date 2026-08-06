@@ -40,18 +40,20 @@
 - `app_private` contains private account, organization, and membership authorization data. The authenticated public RPC returns only active, server-verified membership context.
 - A sign-in-only frontend Auth boundary hydrates browser sessions, rechecks the RPC on Auth changes, preserves all returned contexts, and fails closed for missing configuration, zero context, stale requests, and transient errors.
 - Unit tests cover the frontend state machine. A loopback-only integration harness uses elevated local access only for fixture setup and cleanup while normal sign-in and RPC calls use the publishable key.
-- Reviewed migrations are applied to the approved remote Supabase project. Remote public signup and anonymous access are disabled.
-- Controlled initial provisioning is complete with three active BUYER users, two active TRADER users, one active BUYER organization, two active TRADER organizations, and five active compatible memberships.
+- Five reviewed migrations are applied to the approved Supabase Production project. Remote public signup and anonymous access are disabled.
+- Controlled initial provisioning is complete with three active BUYER identities, two active TRADER identities, one active BUYER organization, two active TRADER organizations, and five active compatible memberships.
 - All five provisioned identities successfully authenticated and returned only their expected server-verified `current_access_context`; each passed an account- or membership-disable fail-closed check and was restored.
-- There are currently no bids, quotes, or TRADER bid-scope rows in the approved remote Supabase project.
+- The canonical Vercel Production project and Production domain are deployed from `main`; the duplicate Vercel project was removed.
+- Supabase Site URL and the single exact Production redirect URL are configured.
+- Sanitized Production lifecycle smoke testing is complete: synthetic bid creation and deadline update; cross-BUYER visibility and filters; explicit single-TRADER scope and second-organization isolation; one synthetic quote with a server-authoritative total; effective close by server deadline; quote response boolean correction; terminal award; award audit and revision transition; selected TRADER visibility and non-scoped TRADER isolation.
+- The synthetic smoke fixture remains in Production as an awarded test record.
 
 ## Not yet implemented
 
-- No Vercel Production deployment exists. Production Site URL and redirect configuration remain unresolved.
 - No remote auth configuration push is authorized.
-- Remote bid, quote, scope, deadline, and award smoke testing remains pending.
 - Realtime remains unimplemented.
 - Invitations, password reset, and administration/provisioning flows and UI.
+- Production UI/UX refinement remains follow-up work. Non-blocking findings: awarded bids are still counted as “available”; the awarded quote update form remains visible but disabled; and the long detail layout and identifier presentation need refinement.
 
 ## Notes
 
