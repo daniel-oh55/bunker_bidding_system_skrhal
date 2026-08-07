@@ -3,9 +3,10 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: local CLI migrations, pgTAP tests, and an unlinked local configuration
+- Supabase access: local CLI migrations and pgTAP tests, with approved migrations applied to Production
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in-only state machine backed by `public.current_access_context()` and an integrated RPC-only BUYER/TRADER workspace
+- Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, and sanitized synthetic lifecycle smoke testing are complete
 - Legacy reference: static Firebase prototype under `legacy/firebase-prototype/`
 
 ## Implemented authorization baseline
@@ -42,11 +43,11 @@
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope.
 
-The browser creates separate access and bidding adapters from the same publishable client; React never receives the raw client. Membership selection is constrained to active server-returned contexts and uses a keyed workspace boundary, which clears data on a context switch. Each RPC result is runtime-validated, mutations use server revisions, authorization failures clear protected data before context revalidation, and stale operations are ignored. TRADER screens call only their own bid and quote RPCs, so competitor data is not requested. Realtime, signup, invitation, provisioning, password-reset, and admin workflows remain unimplemented. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
+The browser creates separate access and bidding adapters from the same publishable client; React never receives the raw client. Membership selection is constrained to active server-returned contexts and uses a keyed workspace boundary, which clears data on a context switch. Each RPC result is runtime-validated, mutations use server revisions, authorization failures clear protected data before context revalidation, and stale operations are ignored. TRADER screens call only their own bid and quote RPCs, so competitor data is not requested. Realtime, signup, invitation, provisioning, password-reset, and admin workflows remain unimplemented. Trusted organization display labels in membership context remain follow-up work. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
 
 ## Foundation boundaries
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- no linked Supabase project yet
-- no production deployment or committed operational data
+- approved Supabase Production migrations are applied and the canonical Vercel Production deployment exists
+- no real operational bidding data has been migrated or is in use; the retained Production record is only a synthetic smoke fixture

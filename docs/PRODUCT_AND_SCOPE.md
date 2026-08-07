@@ -11,6 +11,8 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 - Private accounts, organizations, memberships, and server-verified current-access context are implemented.
 - A sign-in-only frontend boundary exposes a minimal shell only after the server returns active membership context.
 - The integrated RPC-only BUYER/TRADER workspace is implemented, including BUYER bid lifecycle and responsibility reassignment, explicit TRADER organization scope, organization-owned quotes, revision locking, terminal award, and append-only audit history.
+- The approved Supabase Production migrations and controlled BUYER/TRADER provisioning are complete.
+- The canonical Vercel Production deployment exists, and sanitized lifecycle smoke testing is complete using a retained synthetic smoke fixture.
 
 ## Excluded from this phase
 
@@ -18,7 +20,7 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 - Realtime, quote withdrawal, unaward, or award replacement
 - `.msg` or `.eml` migration
 - approval and submission business rules
-- remote Supabase linking, deployment, or committed user, organization, or bidding data
+- migration or use of real operational bidding data
 
 ## Implemented business contracts
 
@@ -38,4 +40,4 @@ These contracts are implemented in the private database/RPC backend and surfaced
 - The frontend gate mirrors server access for UX but does not replace RLS or server-side authorization.
 - An approved BUYER may take over or modify another BUYER's bid only through server-authorized policy. `created_by` remains immutable, and the actual actor plus any responsible-BUYER reassignment are retained in audit history.
 
-The frontend selects only server-returned memberships, never grants authority, clears protected data on context switch, sign-out, or authorization failure, and uses manual refresh plus post-mutation server reload. Realtime, deployment, remote Supabase linking, and real data remain out of scope.
+The frontend selects only server-returned memberships, never grants authority, clears protected data on context switch, sign-out, or authorization failure, and uses manual refresh plus post-mutation server reload. Realtime remains unimplemented. Invitations, password reset, and administration/provisioning flows and UI remain unimplemented. Trusted organization display labels in membership context remain follow-up work. No real operational bidding data has been migrated or is in use; the retained Production record is only a synthetic smoke fixture.
