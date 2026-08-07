@@ -247,8 +247,10 @@ describe('frontend Auth access gate', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
 
     await waitForSignIn();
+    act(() => { client.emit('SIGNED_OUT', null); });
     expect(client.signOut).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument();
   });
 
   it('preserves every active context returned by the RPC', async () => {
@@ -419,6 +421,74 @@ describe('frontend Auth access gate', () => {
     expect(client.signOut).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
     expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+  });
+
+  it('does not verify access when USER_UPDATED arrives while recovery sign-out is pending', async () => {
+    const pendingSignOut = deferred<AccessClientResult<null>>();
+    const client = new FakeAccessClient();
+    client.signOut = vi.fn(() => pendingSignOut.promise);
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    await waitFor(() => expect(client.signOut).toHaveBeenCalledTimes(1));
+
+    act(() => { client.emit('USER_UPDATED', session); });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+
+    act(() => { pendingSignOut.resolve(success(null)); });
+    await waitForSignIn();
+    expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+
+    act(() => {
+      client.emit('USER_UPDATED', session);
+      client.emit('TOKEN_REFRESHED', session);
+      client.emit('PASSWORD_RECOVERY', session);
+    });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /^sign in$/i })).toBeInTheDocument();
+  });
+
+  it('does not verify access when TOKEN_REFRESHED arrives while recovery sign-out is pending', async () => {
+    const pendingSignOut = deferred<AccessClientResult<null>>();
+    const client = new FakeAccessClient();
+    client.signOut = vi.fn(() => pendingSignOut.promise);
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    await waitFor(() => expect(client.signOut).toHaveBeenCalledTimes(1));
+
+    act(() => { client.emit('TOKEN_REFRESHED', session); });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+
+    act(() => { pendingSignOut.resolve(success(null)); });
+    await waitForSignIn();
+    expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
+  });
+
+  it('does not let delayed recovery events re-authorize after recovery termination', async () => {
+    const client = new FakeAccessClient();
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.click(screen.getByRole('button', { name: /cancel and sign out/i }));
+    await waitForSignIn();
+    act(() => { client.emit('SIGNED_OUT', null); });
+
+    act(() => { client.emit('USER_UPDATED', session); client.emit('TOKEN_REFRESHED', session); });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument();
   });
 
   it('invalidates a pending password update when recovery is cancelled', async () => {

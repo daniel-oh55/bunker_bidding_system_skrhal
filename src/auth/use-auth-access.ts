@@ -3,6 +3,7 @@ import type { AccessClient, AccessContext, AccessSession } from './access-client
 
 type RecoverableReason = 'initial_session' | 'access_context' | 'sign_out';
 type SignedOutMessageKind = 'error' | 'success';
+type RecoveryPhase = 'inactive' | 'recovering' | 'finalizing_sign_out' | 'terminated';
 
 export type AuthAccessState =
   | { status: 'configuration_error' }
@@ -26,7 +27,7 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
   );
   const operationRef = useRef(0);
   const mountedRef = useRef(false);
-  const recoveryModeRef = useRef(false);
+  const recoveryPhaseRef = useRef<RecoveryPhase>('inactive');
   const passwordUpdateSucceededRef = useRef(false);
   const stateRef = useRef(state);
 
@@ -34,7 +35,6 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
   const invalidatePendingWork = useCallback(() => { operationRef.current += 1; }, []);
 
   const setSignedOut = useCallback((message?: string, messageKind?: SignedOutMessageKind) => {
-    recoveryModeRef.current = false;
     invalidatePendingWork();
     if (mountedRef.current) {
       setState(message ? { status: 'signed_out', message, messageKind } : { status: 'signed_out' });
@@ -46,18 +46,19 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
       setSignedOut();
       return;
     }
-    recoveryModeRef.current = true;
+    if (recoveryPhaseRef.current === 'terminated') return;
+    recoveryPhaseRef.current = 'recovering';
     invalidatePendingWork();
     if (mountedRef.current) setState({ status: 'password_recovery', session });
   }, [invalidatePendingWork, setSignedOut]);
 
   const verifyAccess = useCallback(async (session: AccessSession) => {
-    if (!client || recoveryModeRef.current) return;
+    if (!client || recoveryPhaseRef.current !== 'inactive') return;
     const operation = ++operationRef.current;
     if (mountedRef.current) setState({ status: 'checking_server_access' });
     let result;
     try { result = await client.getAccessContexts(); } catch { result = { data: [], error: true }; }
-    if (!mountedRef.current || recoveryModeRef.current || operation !== operationRef.current) return;
+    if (!mountedRef.current || recoveryPhaseRef.current !== 'inactive' || operation !== operationRef.current) return;
     if (result.error) {
       setState({ status: 'recoverable_error', reason: 'access_context', session });
     } else if (result.data.length === 0) {
@@ -74,15 +75,22 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
       return;
     }
     if (event === 'SIGNED_OUT' || !session) {
-      if (passwordUpdateSucceededRef.current) {
+      if (
+        passwordUpdateSucceededRef.current
+        && recoveryPhaseRef.current === 'finalizing_sign_out'
+      ) {
         passwordUpdateSucceededRef.current = false;
+        recoveryPhaseRef.current = 'terminated';
         setSignedOut(passwordUpdatedMessage, 'success');
         return;
+      }
+      if (recoveryPhaseRef.current !== 'inactive') {
+        recoveryPhaseRef.current = 'terminated';
       }
       setSignedOut();
       return;
     }
-    if (recoveryModeRef.current) return;
+    if (recoveryPhaseRef.current !== 'inactive') return;
     void verifyAccess(session);
   }, [enterPasswordRecovery, setSignedOut, verifyAccess]);
 
@@ -93,8 +101,8 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
       setState({ status: 'configuration_error' });
       return () => { mountedRef.current = false; invalidatePendingWork(); };
     }
-    passwordUpdateSucceededRef.current = true;
-    recoveryModeRef.current = false;
+    passwordUpdateSucceededRef.current = false;
+    recoveryPhaseRef.current = 'inactive';
     setState({ status: 'loading_initial_session' });
     const initialOperation = ++operationRef.current;
     let initialSessionResolved = false;
@@ -120,7 +128,7 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
       let result;
       try { result = await client.getSession(); } catch { result = { data: null, error: true }; }
       initialSessionResolved = true;
-      if (!mountedRef.current || recoveryModeRef.current || initialOperation !== operationRef.current) return;
+      if (!mountedRef.current || recoveryPhaseRef.current !== 'inactive' || initialOperation !== operationRef.current) return;
       if (result.error) setState({ status: 'recoverable_error', reason: 'initial_session', session: null });
       else if (!result.data) setSignedOut();
       else void verifyAccess(result.data);
@@ -135,15 +143,18 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!client) return;
+    const recoveryPhase = recoveryPhaseRef.current;
     const operation = ++operationRef.current;
     setState({ status: 'signing_in' });
     let result;
     try { result = await client.signInWithPassword(email, password); } catch { result = { data: null, error: true }; }
-    if (!mountedRef.current || recoveryModeRef.current || operation !== operationRef.current) return;
+    if (!mountedRef.current || recoveryPhaseRef.current !== recoveryPhase || operation !== operationRef.current) return;
     if (result.error || !result.data) {
       setState({ status: 'signed_out', message: genericSignInError, messageKind: 'error' });
       return;
     }
+    recoveryPhaseRef.current = 'inactive';
+    passwordUpdateSucceededRef.current = false;
     void verifyAccess(result.data);
   }, [client, verifyAccess]);
 
@@ -154,7 +165,11 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
 
   const signOut = useCallback(async () => {
     if (!client) return;
-    recoveryModeRef.current = false;
+    const endsRecovery = recoveryPhaseRef.current !== 'inactive';
+    if (endsRecovery) {
+      recoveryPhaseRef.current = 'terminated';
+      passwordUpdateSucceededRef.current = false;
+    }
     const operation = ++operationRef.current;
     setState({ status: 'signed_out' });
     let result;
@@ -165,28 +180,31 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
   }, [client]);
 
   const updatePassword = useCallback(async (password: string) => {
-    if (!client || !recoveryModeRef.current || stateRef.current.status !== 'password_recovery') return;
+    if (!client || recoveryPhaseRef.current !== 'recovering' || stateRef.current.status !== 'password_recovery') return;
     const operation = ++operationRef.current;
     const recoverySession = stateRef.current.session;
     setState({ status: 'updating_password', session: recoverySession });
     let result;
     try { result = await client.updatePassword(password); } catch { result = { data: null, error: true }; }
-    if (!mountedRef.current || operation !== operationRef.current || !recoveryModeRef.current) return;
+    if (!mountedRef.current || operation !== operationRef.current || recoveryPhaseRef.current !== 'recovering') return;
     if (result.error) {
       setState({ status: 'password_recovery', session: recoverySession, message: genericPasswordUpdateError });
       return;
     }
-    recoveryModeRef.current = false;
+    passwordUpdateSucceededRef.current = true;
+    recoveryPhaseRef.current = 'finalizing_sign_out';
     const signOutOperation = ++operationRef.current;
     let signOutResult;
     try { signOutResult = await client.signOut(); } catch { signOutResult = { data: null, error: true }; }
     if (!mountedRef.current || signOutOperation !== operationRef.current) return;
     if (signOutResult.error) {
       passwordUpdateSucceededRef.current = false;
+      recoveryPhaseRef.current = 'terminated';
       setState({ status: 'recoverable_error', reason: 'sign_out', session: null });
       return;
     }
     passwordUpdateSucceededRef.current = false;
+    recoveryPhaseRef.current = 'terminated';
     setSignedOut(passwordUpdatedMessage, 'success');
   }, [client, setSignedOut]);
 
