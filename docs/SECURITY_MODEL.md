@@ -24,7 +24,7 @@
 - Missing browser configuration fails closed. The browser client is never partially configured and accepts only the URL and publishable key.
 - The loopback-only integration harness isolates elevated local access to fixture preparation and cleanup; its sign-in and RPC checks use the publishable client.
 - The frontend creates separate access and bidding adapters from the same publishable client and never exposes the raw client to components. It selects only server-returned memberships, validates every RPC response before rendering, and clears protected data before an authorization-failure recheck. This is UX/state coordination, not the enforcement layer; bid and quote data still require RLS or server-side functions.
-- No remote Supabase project is linked and no real operational data is committed.
+- Approved Supabase Production migrations and controlled BUYER/TRADER provisioning are complete. No real operational bidding data has been migrated or is in use; the retained Production record is only a synthetic smoke fixture.
 - The bid API accepts a caller-selected membership ID but verifies it against `auth.uid()` and current active account, membership, organization, BUYER kind, and BUYER role rows. JWT metadata, responsibility, and creator identity never authorize access.
 - Bid creation identity is trigger-protected. Private bid/audit tables have RLS enabled with direct `anon`/`authenticated` privileges revoked; privileged public RPCs use fixed search paths and minimal authenticated-only execute grants.
 - Every successful bid mutation locks the row, compares its expected revision, increments it once, and creates exactly one server-generated append-only audit event.
@@ -47,4 +47,4 @@
 - Active BUYERs may perform cross-BUYER changes through the server RPCs; those changes never rewrite `created_by` and audit the actual actor. Responsibility is a visibility filter, not authority.
 - Privilege tests may use elevated fixture setup, but allowed and denied behavior run under the target caller role.
 
-The integrated frontend workspace does not grant authority and does not request competitor data from a TRADER context. It uses manual refresh and post-mutation reload; Realtime, invitations, provisioning, password reset, and administration are not implemented. No remote Supabase project is linked, deployed, or populated with real data.
+The integrated frontend workspace does not grant authority and does not request competitor data from a TRADER context. It uses manual refresh and post-mutation reload; Realtime, invitations, password reset, and administration/provisioning flows and UI remain unimplemented. Trusted organization display labels in membership context remain follow-up work. The canonical Vercel Production deployment exists; no real operational bidding data has been migrated or is in use.
