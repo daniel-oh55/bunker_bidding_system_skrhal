@@ -2,7 +2,7 @@
 
 ## Rolling state
 
-- Active branch purpose: maintain the local Supabase V2 authorization and bidding baseline
+- Active branch purpose: add trusted organization labels to the server access context and frontend presentation
 - Active frontend baseline: React + Vite + TypeScript sign-in-only access gate and integrated BUYER/TRADER workspace
 - Active backend baseline: local migrations, pgTAP database tests, and server-authorized bid, quote, award, scope, and audit RPCs
 - Legacy reference location: `legacy/firebase-prototype/`
@@ -16,7 +16,7 @@
 - Every approved BUYER will be able to see all bids and all quotes, with views for all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access will require verified membership in an approved organization and will be limited to explicitly allowed bid and quote scope.
 - Authorization will never trust `user_metadata` or other unverified client claims.
-- Accounts, organizations, memberships, and the fail-closed current-access-context RPC are implemented in PostgreSQL.
+- Accounts, organizations, memberships, and the fail-closed current-access-context RPC are implemented in PostgreSQL. The RPC includes a trimmed, server-sourced organization label as presentation data only.
 - Suspended or inactive users will immediately lose access.
 - `created_by` will be immutable and kept separate from the actor performing update, close, reopen, award, or cancel operations.
 - Deadlines will use server time, and quote creation or modification after close will be rejected server-side.
@@ -37,10 +37,10 @@
 
 - The PR #1 application foundation is complete.
 - Local Supabase migration replay and pgTAP database tests run locally when Docker is available and in GitHub CI.
-- `app_private` contains private account, organization, and membership authorization data. The authenticated public RPC returns only active, server-verified membership context.
-- A sign-in-only frontend Auth boundary hydrates browser sessions, rechecks the RPC on Auth changes, preserves all returned contexts, and fails closed for missing configuration, zero context, stale requests, and transient errors.
+- `app_private` contains private account, organization, and membership authorization data. The authenticated public RPC returns only active, server-verified membership context plus a trusted organization label that does not authorize access.
+- A sign-in-only frontend Auth boundary hydrates browser sessions, rechecks the RPC on Auth changes, preserves all returned contexts, and fails closed for missing configuration, zero context, stale requests, transient errors, and malformed present labels. It accepts the old four-field access-context shape only as a safe deployment-order fallback.
 - Unit tests cover the frontend state machine. A loopback-only integration harness uses elevated local access only for fixture setup and cleanup while normal sign-in and RPC calls use the publishable key.
-- Five reviewed migrations are applied to the approved Supabase Production project. Remote public signup and anonymous access are disabled.
+- Five previously reviewed migrations are applied to the approved Supabase Production project. The repository organization-label migration requires separate owner approval before Production application; remote public signup and anonymous access are disabled.
 - Controlled initial provisioning is complete with three active BUYER identities, two active TRADER identities, one active BUYER organization, two active TRADER organizations, and five active compatible memberships.
 - All five provisioned identities successfully authenticated and returned only their expected server-verified `current_access_context`; each passed an account- or membership-disable fail-closed check and was restored.
 - The canonical Vercel Production project and Production domain are deployed from `main`; the duplicate Vercel project was removed.
@@ -53,13 +53,14 @@
 - No remote auth configuration push is authorized.
 - Realtime remains unimplemented.
 - Invitations, password reset, and administration/provisioning flows and UI.
-- Membership-context organization label presentation remains follow-up work because the current server-verified context does not expose a trusted organization label.
+- Production application of the repository organization-label migration remains pending separate owner approval.
 
 ## Completed refinements
 
 - The BUYER bid detail uses a compact always-visible overview with accessible disclosure sections for bid terms and deadline, responsibility and lifecycle, TRADER access and quotes, and audit history.
 - Audit responsibility transitions show active BUYER display labels when available and a shortened neutral identifier when the BUYER is inactive or unavailable.
 - Destructive TRADER scope revocation requires a target-bound, two-step BUYER confirmation. Selected awarded organizations receive an explicit award-result visibility warning; the server terminal-revocation contract remains unchanged.
+- Membership selectors and context chips present the trusted server organization label when available, while membership IDs remain the identity and authorization input.
 
 ## Notes
 

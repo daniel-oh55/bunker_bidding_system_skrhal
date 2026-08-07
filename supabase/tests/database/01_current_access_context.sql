@@ -1,5 +1,5 @@
 begin;
-select plan(30);
+select plan(35);
 
 insert into auth.users (id, email)
 values
@@ -30,9 +30,9 @@ where id = '00000000-0000-0000-0000-000000000003';
 
 insert into app_private.organizations (id, kind, name, status)
 values
-  ('00000000-0000-0000-0000-000000000101', 'buyer', 'Buyer One', 'active'),
-  ('00000000-0000-0000-0000-000000000102', 'trader', 'Trader One', 'active'),
-  ('00000000-0000-0000-0000-000000000103', 'buyer', 'Buyer Two', 'active'),
+  ('00000000-0000-0000-0000-000000000101', 'buyer', '  Buyer One  ', 'active'),
+  ('00000000-0000-0000-0000-000000000102', 'trader', ' Trader One ', 'active'),
+  ('00000000-0000-0000-0000-000000000103', 'buyer', 'Buyer Two  ', 'active'),
   ('00000000-0000-0000-0000-000000000104', 'buyer', 'Empty Organization', 'inactive');
 
 update app_private.user_accounts set status = 'active';
@@ -54,14 +54,30 @@ select is((select organization_kind from public.current_access_context() where m
 select is((select membership_role from public.current_access_context() where membership_id = '00000000-0000-0000-0000-000000000201'), 'buyer_admin', 'active buyer membership returns its role');
 select is((select organization_id from public.current_access_context() where membership_id = '00000000-0000-0000-0000-000000000201'), '00000000-0000-0000-0000-000000000101'::uuid, 'buyer context returns its organization ID');
 select is((select membership_id from public.current_access_context() where membership_id = '00000000-0000-0000-0000-000000000201'), '00000000-0000-0000-0000-000000000201'::uuid, 'buyer context returns its membership ID');
+select is((select organization_label from public.current_access_context() where membership_id = '00000000-0000-0000-0000-000000000201'), 'Buyer One', 'active buyer context returns the exact trimmed organization label');
 select is((select count(*) from public.current_access_context()), 2::bigint, 'multiple active memberships return multiple rows');
+select is(
+  (select array_agg(organization_label order by membership_id) from public.current_access_context()),
+  array['Buyer One', 'Buyer Two']::text[],
+  'multiple active memberships retain their own trimmed labels'
+);
 select is((select count(*) from public.current_access_context() where organization_id = '00000000-0000-0000-0000-000000000102'), 0::bigint, 'a user cannot request another users context');
+select is((select count(*) from public.current_access_context() where organization_label = 'Trader One'), 0::bigint, 'another users organization label is not exposed');
+reset role;
+
+update auth.users
+set raw_user_meta_data = '{"organization_label":"Spoofed Label"}'::jsonb
+where id = '00000000-0000-0000-0000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001', true);
+select is((select organization_label from public.current_access_context() where membership_id = '00000000-0000-0000-0000-000000000201'), 'Buyer One', 'spoofed user metadata cannot change the server organization label');
 reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000002', true);
 select is((select organization_kind from public.current_access_context()), 'trader', 'active trader membership returns trader context');
 select is((select membership_role from public.current_access_context()), 'trader', 'active trader membership returns its role');
+select is((select organization_label from public.current_access_context()), 'Trader One', 'active trader context returns the exact trimmed organization label');
 reset role;
 
 update app_private.user_accounts set status = 'inactive' where user_id = '00000000-0000-0000-0000-000000000001';
