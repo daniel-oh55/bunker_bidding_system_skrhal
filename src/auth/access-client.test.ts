@@ -163,10 +163,69 @@ describe('Supabase access client Auth adapter', () => {
     expect(harness.unsubscribe).toHaveBeenCalledOnce();
   });
 
+  it('accepts the old four-field server shape during rollout', async () => {
+    const harness = createSupabaseHarness();
+    const client = createSupabaseAccessClient(harness.client);
+    const context = {
+      membership_id: '10000000-0000-4000-8000-000000000001',
+      organization_id: '20000000-0000-4000-8000-000000000001',
+      organization_kind: 'buyer',
+      membership_role: 'buyer_operator',
+    };
+    harness.setAccessResponse({ data: [context], error: null });
+
+    await expect(client.getAccessContexts()).resolves.toEqual({
+      data: [context],
+      error: false,
+    });
+  });
+
+  it('retains a valid trusted organization label from the server', async () => {
+    const harness = createSupabaseHarness();
+    const client = createSupabaseAccessClient(harness.client);
+    const context = {
+      membership_id: '10000000-0000-4000-8000-000000000001',
+      organization_id: '20000000-0000-4000-8000-000000000001',
+      organization_kind: 'buyer',
+      membership_role: 'buyer_admin',
+      organization_label: 'Buyer Alpha',
+    };
+    harness.setAccessResponse({ data: [context], error: null });
+
+    await expect(client.getAccessContexts()).resolves.toEqual({
+      data: [context],
+      error: false,
+    });
+  });
+
+  it.each([
+    ['blank', ''],
+    ['whitespace-only', '   '],
+    ['leading whitespace', ' Buyer Alpha'],
+    ['trailing whitespace', 'Buyer Alpha '],
+    ['null value', null],
+    ['non-string', 42],
+  ])('rejects a %s present organization label as a complete protocol failure', async (_case, organizationLabel) => {
+    const harness = createSupabaseHarness();
+    const client = createSupabaseAccessClient(harness.client);
+    harness.setAccessResponse({
+      data: [{
+        membership_id: '10000000-0000-4000-8000-000000000001',
+        organization_id: '20000000-0000-4000-8000-000000000001',
+        organization_kind: 'buyer',
+        membership_role: 'buyer_operator',
+        organization_label: organizationLabel,
+      }],
+      error: null,
+    });
+
+    await expect(client.getAccessContexts()).resolves.toEqual({ data: [], error: true });
+  });
+
   it('rejects duplicate server membership IDs as a complete access protocol failure', async () => {
     const harness = createSupabaseHarness();
     const client = createSupabaseAccessClient(harness.client);
-    const context = { membership_id: '10000000-0000-4000-8000-000000000001', organization_id: '20000000-0000-4000-8000-000000000001', organization_kind: 'buyer', membership_role: 'buyer_operator' };
+    const context = { membership_id: '10000000-0000-4000-8000-000000000001', organization_id: '20000000-0000-4000-8000-000000000001', organization_kind: 'buyer', membership_role: 'buyer_operator', organization_label: 'Buyer Alpha' };
     harness.setAccessResponse({ data: [context, { ...context, organization_id: '20000000-0000-4000-8000-000000000002' }], error: null });
 
     await expect(client.getAccessContexts()).resolves.toEqual({ data: [], error: true });

@@ -11,6 +11,7 @@ export type AccessContext = {
   organization_id: string;
   organization_kind: 'buyer' | 'trader';
   membership_role: 'buyer_admin' | 'buyer_operator' | 'trader';
+  organization_label?: string;
 };
 
 export type AccessSession = {
@@ -79,6 +80,11 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
     const organizationId = record.organization_id;
     const organizationKind = record.organization_kind;
     const membershipRole = record.membership_role;
+    const hasOrganizationLabel = Object.prototype.hasOwnProperty.call(
+      record,
+      'organization_label',
+    );
+    const organizationLabel = record.organization_label;
 
     if (
       typeof membershipId !== 'string'
@@ -91,6 +97,11 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
       || !membershipRoles.has(membershipRole)
       || (organizationKind === 'buyer' && membershipRole === 'trader')
       || (organizationKind === 'trader' && membershipRole !== 'trader')
+      || (hasOrganizationLabel && (
+        typeof organizationLabel !== 'string'
+        || organizationLabel.length === 0
+        || organizationLabel !== organizationLabel.trim()
+      ))
       || membershipIds.has(membershipId)
     ) {
       return null;
@@ -103,6 +114,9 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
       organization_id: organizationId,
       organization_kind: organizationKind as AccessContext['organization_kind'],
       membership_role: membershipRole as AccessContext['membership_role'],
+      ...(hasOrganizationLabel
+        ? { organization_label: organizationLabel as string }
+        : {}),
     });
   }
 

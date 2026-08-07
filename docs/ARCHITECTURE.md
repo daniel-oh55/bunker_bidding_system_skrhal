@@ -3,7 +3,7 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: local CLI migrations and pgTAP tests, with approved migrations applied to Production
+- Supabase access: local CLI migrations and pgTAP tests, with previously approved baseline migrations applied to Production and the repository organization-label migration pending separate owner approval
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in-only state machine backed by `public.current_access_context()` and an integrated RPC-only BUYER/TRADER workspace
 - Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, and sanitized synthetic lifecycle smoke testing are complete
@@ -12,7 +12,7 @@
 ## Implemented authorization baseline
 
 - Auth user creation provisions an inactive private account only; it never grants membership or active access.
-- `public.current_access_context()` derives all context from current database rows and fails closed unless account, organization, and membership are active.
+- `public.current_access_context()` derives all context from current database rows and fails closed unless account, organization, and membership are active. Its fifth output is a trimmed organization label from that active organization row.
 - The browser uses a publishable key only, hydrates the session, and renders the minimal authorized shell only when the RPC returns at least one context.
 - Auth changes trigger context revalidation, all returned memberships are preserved, and obsolete async results cannot restore access after sign-out.
 - The browser does not receive direct access to private authorization tables.
@@ -43,11 +43,11 @@
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope.
 
-The browser creates separate access and bidding adapters from the same publishable client; React never receives the raw client. Membership selection is constrained to active server-returned contexts and uses a keyed workspace boundary, which clears data on a context switch. Each RPC result is runtime-validated, mutations use server revisions, authorization failures clear protected data before context revalidation, and stale operations are ignored. TRADER screens call only their own bid and quote RPCs, so competitor data is not requested. Realtime, signup, invitation, provisioning, password-reset, and admin workflows remain unimplemented. Trusted organization display labels in membership context remain follow-up work. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
+The browser creates separate access and bidding adapters from the same publishable client; React never receives the raw client. Membership selection is constrained to active server-returned contexts and uses a keyed workspace boundary, which clears data on a context switch. Membership selectors and chips present the trusted server label but continue to key and select by membership ID. The parser accepts an absent label only for frontend-first deployment ordering and then uses a shortened neutral organization ID; a malformed present label fails closed. Each RPC result is runtime-validated, mutations use server revisions, authorization failures clear protected data before context revalidation, and stale operations are ignored. TRADER screens call only their own bid and quote RPCs, so competitor data is not requested. Realtime, signup, invitation, provisioning, password-reset, and admin workflows remain unimplemented. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
 
 ## Foundation boundaries
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- approved Supabase Production migrations are applied and the canonical Vercel Production deployment exists
+- previously approved Supabase Production baseline migrations are applied and the canonical Vercel Production deployment exists; the repository organization-label migration still requires separate owner approval
 - no real operational bidding data has been migrated or is in use; the retained Production record is only a synthetic smoke fixture

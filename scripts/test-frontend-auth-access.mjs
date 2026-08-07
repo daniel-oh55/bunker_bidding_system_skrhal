@@ -200,6 +200,7 @@ async function run() {
     userId,
     kind,
     role,
+    label,
   }) {
     const organizationId = randomUUID();
     const membershipId = randomUUID();
@@ -208,7 +209,7 @@ async function run() {
     await query(
       `insert into app_private.organizations (id, kind, name, status)
        values ($1, $2, $3, 'active')`,
-      [organizationId, kind, `auth-access-${organizationId}`],
+      [organizationId, kind, `  ${label}  `],
       'create fixture organization',
     );
     await query(
@@ -219,7 +220,7 @@ async function run() {
       'create fixture membership',
     );
 
-    return { organizationId, membershipId };
+    return { organizationId, membershipId, label };
   }
 
   try {
@@ -277,6 +278,7 @@ async function run() {
       userId: activeUser.id,
       kind: 'buyer',
       role: 'buyer_admin',
+      label: 'Auth Access Buyer',
     });
     const activeCaller = newCaller();
     await signIn(activeCaller, activeUser, 'active user');
@@ -287,7 +289,8 @@ async function run() {
         && activeContexts[0].membership_id === firstMembership.membershipId
         && activeContexts[0].organization_id === firstMembership.organizationId
         && activeContexts[0].organization_kind === 'buyer'
-        && activeContexts[0].membership_role === 'buyer_admin',
+        && activeContexts[0].membership_role === 'buyer_admin'
+        && activeContexts[0].organization_label === firstMembership.label,
       'The active caller did not receive the expected server context.',
     );
 
@@ -316,15 +319,19 @@ async function run() {
       userId: activeUser.id,
       kind: 'trader',
       role: 'trader',
+      label: 'Auth Access Trader',
     });
     const multipleContexts = await contextsFor(activeCaller, 'multiple memberships');
-    const returnedMembershipIds = new Set(
-      multipleContexts.map((context) => context.membership_id),
+    const labelsByMembershipId = new Map(
+      multipleContexts.map((context) => [
+        context.membership_id,
+        context.organization_label,
+      ]),
     );
     assert(
       multipleContexts.length === 2
-        && returnedMembershipIds.has(firstMembership.membershipId)
-        && returnedMembershipIds.has(secondMembership.membershipId),
+        && labelsByMembershipId.get(firstMembership.membershipId) === firstMembership.label
+        && labelsByMembershipId.get(secondMembership.membershipId) === secondMembership.label,
       'Multiple active memberships were collapsed or changed.',
     );
 

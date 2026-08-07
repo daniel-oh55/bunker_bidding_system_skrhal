@@ -1,5 +1,5 @@
 begin;
-select plan(55);
+select plan(69);
 
 select has_schema('app_private', 'app_private schema exists');
 
@@ -74,6 +74,37 @@ select ok(not has_table_privilege('authenticated', 'app_private.organization_mem
 
 select ok(has_function_privilege('authenticated', 'public.current_access_context()', 'execute'), 'authenticated can execute the public access-context RPC');
 select ok(not has_function_privilege('anon', 'public.current_access_context()', 'execute'), 'anon cannot execute the public access-context RPC');
+select ok(not has_function_privilege('public', 'public.current_access_context()', 'execute'), 'PUBLIC cannot execute the public access-context RPC');
+select is(
+  (select proargnames from pg_proc where oid = 'public.current_access_context()'::regprocedure),
+  array['membership_id', 'organization_id', 'organization_kind', 'membership_role', 'organization_label']::text[],
+  'the public access-context RPC exposes the expected five output columns'
+);
+select is(
+  (select proallargtypes from pg_proc where oid = 'public.current_access_context()'::regprocedure),
+  array['uuid'::regtype::oid, 'uuid'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid]::oid[],
+  'the public access-context RPC exposes the expected five output types'
+);
+select is(
+  (select language.lanname from pg_proc join pg_language as language on language.oid = pg_proc.prolang where pg_proc.oid = 'public.current_access_context()'::regprocedure),
+  'sql',
+  'the public access-context RPC uses SQL'
+);
+select is((select provolatile::text from pg_proc where oid = 'public.current_access_context()'::regprocedure), 's', 'the public access-context RPC is STABLE');
+select ok((select prosecdef from pg_proc where oid = 'public.current_access_context()'::regprocedure), 'the public access-context RPC is security definer');
+select is((select proconfig from pg_proc where oid = 'public.current_access_context()'::regprocedure), array['search_path=""']::text[], 'the public access-context RPC uses an empty search path');
+
+select ok(not has_function_privilege('public', 'app_private.current_access_context_impl()', 'execute'), 'PUBLIC cannot execute the private access-context implementation');
+select ok(not has_function_privilege('anon', 'app_private.current_access_context_impl()', 'execute'), 'anon cannot execute the private access-context implementation');
+select ok(not has_function_privilege('authenticated', 'app_private.current_access_context_impl()', 'execute'), 'authenticated cannot execute the private access-context implementation');
+select is(
+  (select language.lanname from pg_proc join pg_language as language on language.oid = pg_proc.prolang where pg_proc.oid = 'app_private.current_access_context_impl()'::regprocedure),
+  'sql',
+  'the private access-context implementation uses SQL'
+);
+select is((select provolatile::text from pg_proc where oid = 'app_private.current_access_context_impl()'::regprocedure), 's', 'the private access-context implementation is STABLE');
+select ok((select prosecdef from pg_proc where oid = 'app_private.current_access_context_impl()'::regprocedure), 'the private access-context implementation is security definer');
+select is((select proconfig from pg_proc where oid = 'app_private.current_access_context_impl()'::regprocedure), array['search_path=""']::text[], 'the private access-context implementation uses an empty search path');
 
 select ok(to_regprocedure('app_private.enforce_organization_kind_membership_compatibility()') is not null, 'organization kind compatibility function exists');
 select is(
