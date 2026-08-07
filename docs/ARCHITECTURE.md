@@ -3,10 +3,10 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: local CLI migrations and pgTAP tests, with previously approved baseline migrations applied to Production and the repository organization-label migration pending separate owner approval
+- Supabase access: local CLI migrations and pgTAP tests, with six reviewed migrations including the organization-label access-context migration applied to Production
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in-only state machine backed by `public.current_access_context()` and an integrated RPC-only BUYER/TRADER workspace
-- Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, and sanitized synthetic lifecycle smoke testing are complete
+- Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, sanitized synthetic lifecycle smoke testing, and BUYER/TRADER trusted-label UI smoke are complete
 - Legacy reference: static Firebase prototype under `legacy/firebase-prototype/`
 
 ## Implemented authorization baseline
@@ -49,5 +49,5 @@ The browser creates separate access and bidding adapters from the same publishab
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- previously approved Supabase Production baseline migrations are applied and the canonical Vercel Production deployment exists; the repository organization-label migration still requires separate owner approval
+- six reviewed Supabase migrations, including the organization-label access-context migration, are applied and the canonical Vercel Production deployment exists
 - no real operational bidding data has been migrated or is in use; the retained Production record is only a synthetic smoke fixture

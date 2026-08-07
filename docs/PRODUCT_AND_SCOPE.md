@@ -11,7 +11,7 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 - Private accounts, organizations, memberships, and server-verified current-access context are implemented. The repository RPC exposes a trimmed organization label sourced from the active organization row.
 - A sign-in-only frontend boundary exposes a minimal shell only after the server returns active membership context.
 - The integrated RPC-only BUYER/TRADER workspace is implemented, including BUYER bid lifecycle and responsibility reassignment, explicit TRADER organization scope, organization-owned quotes, revision locking, terminal award, and append-only audit history.
-- The previously approved Supabase Production baseline migrations and controlled BUYER/TRADER provisioning are complete. Applying the repository organization-label migration to Production remains a separate owner approval.
+- Six reviewed Supabase migrations, including the trusted organization-label access-context migration, are applied in Production. Controlled BUYER/TRADER provisioning is complete, and a Production UI smoke confirmed each role displays its trusted server organization label and enters its authorized workspace.
 - The canonical Vercel Production deployment exists, and sanitized lifecycle smoke testing is complete using a retained synthetic smoke fixture.
 
 ## Excluded from this phase

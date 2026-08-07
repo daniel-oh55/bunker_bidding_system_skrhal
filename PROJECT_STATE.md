@@ -2,7 +2,7 @@
 
 ## Rolling state
 
-- Active branch purpose: add trusted organization labels to the server access context and frontend presentation
+- Current baseline: trusted organization labels are server-sourced presentation data in the access context and frontend workspace
 - Active frontend baseline: React + Vite + TypeScript sign-in-only access gate and integrated BUYER/TRADER workspace
 - Active backend baseline: local migrations, pgTAP database tests, and server-authorized bid, quote, award, scope, and audit RPCs
 - Legacy reference location: `legacy/firebase-prototype/`
@@ -40,20 +40,20 @@
 - `app_private` contains private account, organization, and membership authorization data. The authenticated public RPC returns only active, server-verified membership context plus a trusted organization label that does not authorize access.
 - A sign-in-only frontend Auth boundary hydrates browser sessions, rechecks the RPC on Auth changes, preserves all returned contexts, and fails closed for missing configuration, zero context, stale requests, transient errors, and malformed present labels. It accepts the old four-field access-context shape only as a safe deployment-order fallback.
 - Unit tests cover the frontend state machine. A loopback-only integration harness uses elevated local access only for fixture setup and cleanup while normal sign-in and RPC calls use the publishable key.
-- Five previously reviewed migrations are applied to the approved Supabase Production project. The repository organization-label migration requires separate owner approval before Production application; remote public signup and anonymous access are disabled.
+- Six reviewed migrations, including `20260807010000_current_access_context_organization_label`, are applied to the approved Supabase Production project. The reviewed five-field `current_access_context()` contract, its fixed search-path `SECURITY DEFINER` boundary, and authenticated execute privilege were verified after application; remote public signup and anonymous access are disabled.
 - Controlled initial provisioning is complete with three active BUYER identities, two active TRADER identities, one active BUYER organization, two active TRADER organizations, and five active compatible memberships.
 - All five provisioned identities successfully authenticated and returned only their expected server-verified `current_access_context`; each passed an account- or membership-disable fail-closed check and was restored.
 - The canonical Vercel Production project and Production domain are deployed from `main`; the duplicate Vercel project was removed.
 - Supabase Site URL and the single exact Production redirect URL are configured.
 - Sanitized Production lifecycle smoke testing is complete: synthetic bid creation and deadline update; cross-BUYER visibility and filters; explicit single-TRADER scope and second-organization isolation; one synthetic quote with a server-authoritative total; effective close by server deadline; quote response boolean correction; terminal award; award audit and revision transition; selected TRADER visibility and non-scoped TRADER isolation.
 - The synthetic smoke fixture remains in Production as an awarded test record.
+- Controlled Production UI smoke is complete for BUYER and TRADER: each displayed its trusted server organization label and entered its authorized workspace without using the UUID/neutral short-ID fallback.
 
 ## Not yet implemented
 
 - No remote auth configuration push is authorized.
 - Realtime remains unimplemented.
 - Invitations, password reset, and administration/provisioning flows and UI.
-- Production application of the repository organization-label migration remains pending separate owner approval.
 
 ## Completed refinements
 
