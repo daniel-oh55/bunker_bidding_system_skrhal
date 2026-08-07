@@ -5,6 +5,7 @@ import {
 } from '@supabase/supabase-js';
 import {
   createSupabaseAccessClient,
+  createOwnOriginPasswordRecoveryRedirect,
   type AccessClientResult,
   type AccessContext,
   type AccessSession,
@@ -33,6 +34,11 @@ function createSupabaseHarness() {
   let accessResponse: { data: unknown; error: unknown } = { data: [], error: null };
   const rpcCallStates: boolean[] = [];
   const unsubscribe = vi.fn();
+  const getSession = vi.fn(() => Promise.resolve({ data: { session: null }, error: null }));
+  const signInWithPassword = vi.fn();
+  const signOut = vi.fn(() => Promise.resolve({ error: null }));
+  const resetPasswordForEmail = vi.fn(() => Promise.resolve({ error: null }));
+  const updateUser = vi.fn(() => Promise.resolve({ error: null }));
   const overrideTypes = vi.fn(() => Promise.resolve(accessResponse));
   const rpc = vi.fn(() => {
     rpcCallStates.push(authCallbackActive);
@@ -47,7 +53,7 @@ function createSupabaseHarness() {
     };
   });
   const client = {
-    auth: { onAuthStateChange },
+    auth: { getSession, signInWithPassword, signOut, resetPasswordForEmail, updateUser, onAuthStateChange },
     rpc,
   } as unknown as SupabaseClient;
 
@@ -68,6 +74,8 @@ function createSupabaseHarness() {
     onAuthStateChange,
     rpc,
     rpcCallStates,
+    resetPasswordForEmail,
+    updateUser,
     setAccessResponse(response: { data: unknown; error: unknown }) {
       accessResponse = response;
     },
@@ -161,6 +169,36 @@ describe('Supabase access client Auth adapter', () => {
     await vi.runAllTimersAsync();
     expect(consumer).not.toHaveBeenCalled();
     expect(harness.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('uses only an http(s) application origin root for password recovery redirects', () => {
+    expect(createOwnOriginPasswordRecoveryRedirect('https://app.example.test')).toBe(
+      'https://app.example.test/',
+    );
+    expect(createOwnOriginPasswordRecoveryRedirect('http://localhost:5173')).toBe(
+      'http://localhost:5173/',
+    );
+    expect(createOwnOriginPasswordRecoveryRedirect('javascript:alert(1)')).toBeNull();
+  });
+
+  it('wraps password recovery operations without exposing session tokens', async () => {
+    const harness = createSupabaseHarness();
+    const client = createSupabaseAccessClient(harness.client, 'https://app.example.test/');
+
+    await expect(client.requestPasswordReset('operator@example.test')).resolves.toEqual({ data: null, error: false });
+    await expect(client.updatePassword('new-password')).resolves.toEqual({ data: null, error: false });
+
+    expect(harness.resetPasswordForEmail).toHaveBeenCalledWith('operator@example.test', {
+      redirectTo: 'https://app.example.test/',
+    });
+    expect(harness.updateUser).toHaveBeenCalledWith({ password: 'new-password' });
+  });
+
+  it('fails closed when a reset redirect is unavailable', async () => {
+    const harness = createSupabaseHarness();
+    const client = createSupabaseAccessClient(harness.client);
+    await expect(client.requestPasswordReset('operator@example.test')).resolves.toEqual({ data: null, error: true });
+    expect(harness.resetPasswordForEmail).not.toHaveBeenCalled();
   });
 
   it('accepts the old four-field server shape during rollout', async () => {

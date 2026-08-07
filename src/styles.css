@@ -206,6 +206,25 @@ button.secondary {
   background: #fff0f0;
 }
 
+.notice.success {
+  color: #115c41;
+  background: #e5f7ed;
+}
+
+.link-button {
+  padding: 0;
+  color: #152033;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-decoration: underline;
+}
+
+.link-button:hover:not(:disabled) {
+  color: #293a58;
+  background: transparent;
+}
+
 .button-row,
 .shell-actions {
   display: flex;

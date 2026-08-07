@@ -30,6 +30,8 @@ export interface AccessClient {
     password: string,
   ): Promise<AccessClientResult<AccessSession | null>>;
   signOut(): Promise<AccessClientResult<null>>;
+  requestPasswordReset(email: string): Promise<AccessClientResult<null>>;
+  updatePassword(password: string): Promise<AccessClientResult<null>>;
   getAccessContexts(): Promise<AccessClientResult<AccessContext[]>>;
   onAuthStateChange(
     callback: (event: AuthChangeEvent, session: AccessSession | null) => void,
@@ -44,6 +46,18 @@ type BrowserEnvironment = {
 export type BrowserAccessConfiguration =
   | { status: 'configured'; client: AccessClient; biddingClient: BiddingClient }
   | { status: 'configuration_error'; client: null; biddingClient: null };
+
+export function createOwnOriginPasswordRecoveryRedirect(origin: string): string | null {
+  try {
+    const parsedOrigin = new URL(origin);
+    if (parsedOrigin.protocol !== 'http:' && parsedOrigin.protocol !== 'https:') {
+      return null;
+    }
+    return new URL('/', parsedOrigin).toString();
+  } catch {
+    return null;
+  }
+}
 
 const organizationKinds = new Set(['buyer', 'trader']);
 const membershipRoles = new Set(['buyer_admin', 'buyer_operator', 'trader']);
@@ -123,7 +137,10 @@ function parseAccessContexts(value: unknown): AccessContext[] | null {
   return contexts;
 }
 
-export function createSupabaseAccessClient(client: SupabaseClient): AccessClient {
+export function createSupabaseAccessClient(
+  client: SupabaseClient,
+  passwordRecoveryRedirectTo?: string,
+): AccessClient {
   return {
     async getSession() {
       const { data, error } = await client.auth.getSession();
@@ -150,6 +167,22 @@ export function createSupabaseAccessClient(client: SupabaseClient): AccessClient
         data: null,
         error: Boolean(error),
       };
+    },
+
+    async requestPasswordReset(email) {
+      if (!passwordRecoveryRedirectTo) {
+        return { data: null, error: true };
+      }
+
+      const { error } = await client.auth.resetPasswordForEmail(email, {
+        redirectTo: passwordRecoveryRedirectTo,
+      });
+      return { data: null, error: Boolean(error) };
+    },
+
+    async updatePassword(password) {
+      const { error } = await client.auth.updateUser({ password });
+      return { data: null, error: Boolean(error) };
     },
 
     async getAccessContexts() {
@@ -216,17 +249,24 @@ export function createBrowserAccessConfiguration(
       return { status: 'configuration_error', client: null, biddingClient: null };
     }
 
+    const passwordRecoveryRedirectTo = createOwnOriginPasswordRecoveryRedirect(
+      window.location.origin,
+    );
+    if (!passwordRecoveryRedirectTo) {
+      return { status: 'configuration_error', client: null, biddingClient: null };
+    }
+
     const client = createClient(url, publishableKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: false,
+        detectSessionInUrl: true,
       },
     });
 
     return {
       status: 'configured',
-      client: createSupabaseAccessClient(client),
+      client: createSupabaseAccessClient(client, passwordRecoveryRedirectTo),
       biddingClient: createSupabaseBiddingClient(client),
     };
   } catch {
