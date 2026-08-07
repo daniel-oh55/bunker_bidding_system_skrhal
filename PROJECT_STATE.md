@@ -53,7 +53,7 @@
 
 - No remote auth configuration push is authorized.
 - Realtime remains unimplemented.
-- Invitations, password reset, and administration/provisioning flows and UI.
+- Invitations and administration/provisioning flows and UI.
 
 ## Completed refinements
 
@@ -61,6 +61,7 @@
 - Audit responsibility transitions show active BUYER display labels when available and a shortened neutral identifier when the BUYER is inactive or unavailable.
 - Destructive TRADER scope revocation requires a target-bound, two-step BUYER confirmation. Selected awarded organizations receive an explicit award-result visibility warning; the server terminal-revocation contract remains unchanged.
 - Membership selectors and context chips present the trusted server organization label when available, while membership IDs remain the identity and authorization input.
+- Existing Auth users can request password recovery. A `PASSWORD_RECOVERY` session is recovery-only, preempts access verification, never opens a workspace, and is locally signed out after a successful password update; normal sign-in still requires server-verified membership.
 
 ## Notes
 

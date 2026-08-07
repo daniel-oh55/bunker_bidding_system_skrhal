@@ -63,6 +63,8 @@ class FakeAccessClient implements AccessClient {
   sessionResult: AccessClientResult<AccessSession | null> = success(null);
   signInResult: AccessClientResult<AccessSession | null> = success(session);
   signOutResult: AccessClientResult<null> = success(null);
+  passwordResetResult: AccessClientResult<null> = success(null);
+  passwordUpdateResult: AccessClientResult<null> = success(null);
   accessResults: Array<
     AccessClientResult<AccessContext[]> | Promise<AccessClientResult<AccessContext[]>>
   > = [success([buyerContext])];
@@ -76,6 +78,10 @@ class FakeAccessClient implements AccessClient {
   signInWithPassword = vi.fn(() => Promise.resolve(this.signInResult));
 
   signOut = vi.fn(() => Promise.resolve(this.signOutResult));
+
+  requestPasswordReset = vi.fn(() => Promise.resolve(this.passwordResetResult));
+
+  updatePassword = vi.fn(() => Promise.resolve(this.passwordUpdateResult));
 
   getAccessContexts = vi.fn(async () => {
     const next = this.accessResults.shift();
@@ -241,8 +247,10 @@ describe('frontend Auth access gate', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
 
     await waitForSignIn();
+    act(() => { client.emit('SIGNED_OUT', null); });
     expect(client.signOut).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument();
   });
 
   it('preserves every active context returned by the RPC', async () => {
@@ -346,5 +354,157 @@ describe('frontend Auth access gate', () => {
 
     pendingContext.resolve(success([buyerContext]));
     await waitForAuthorized();
+  });
+
+  it('requests a password reset with generic non-enumerating feedback and no access check', async () => {
+    const client = new FakeAccessClient();
+    renderWithClient(client);
+    await waitForSignIn();
+    fireEvent.click(screen.getByRole('button', { name: /forgot password/i }));
+    fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'operator@example.test' } });
+    fireEvent.click(screen.getByRole('button', { name: /send reset instructions/i }));
+    expect(await screen.findByRole('status')).toHaveTextContent(/if an account exists/i);
+    expect(client.requestPasswordReset).toHaveBeenCalledWith('operator@example.test');
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+  });
+
+  it('preempts initial access verification for a password recovery session', async () => {
+    const initial = deferred<AccessClientResult<AccessSession | null>>();
+    const client = new FakeAccessClient();
+    client.getSession = vi.fn(() => initial.promise);
+    renderWithClient(client);
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    expect(await screen.findByRole('heading', { name: /choose a new password/i })).toBeInTheDocument();
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    act(() => { initial.resolve(success(session)); });
+    await waitFor(() => expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument());
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+  });
+
+  it('does not let other Auth events escape password recovery mode', async () => {
+    const client = new FakeAccessClient();
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    act(() => { client.emit('USER_UPDATED', session); client.emit('TOKEN_REFRESHED', session); });
+    await waitFor(() => expect(screen.getByRole('heading', { name: /choose a new password/i })).toBeInTheDocument());
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed password update in recovery with a generic error', async () => {
+    const client = new FakeAccessClient();
+    client.passwordUpdateResult = failure(null);
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/password could not be updated/i);
+    expect(screen.getByRole('heading', { name: /choose a new password/i })).toBeInTheDocument();
+  });
+
+  it('signs out after a successful password update before returning to sign in', async () => {
+    const client = new FakeAccessClient();
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    expect(await screen.findByRole('heading', { name: /^sign in$/i })).toBeInTheDocument();
+    expect(client.updatePassword).toHaveBeenCalledWith('new-password');
+    expect(client.signOut).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+  });
+
+  it('does not verify access when USER_UPDATED arrives while recovery sign-out is pending', async () => {
+    const pendingSignOut = deferred<AccessClientResult<null>>();
+    const client = new FakeAccessClient();
+    client.signOut = vi.fn(() => pendingSignOut.promise);
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    await waitFor(() => expect(client.signOut).toHaveBeenCalledTimes(1));
+
+    act(() => { client.emit('USER_UPDATED', session); });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+
+    act(() => { pendingSignOut.resolve(success(null)); });
+    await waitForSignIn();
+    expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+
+    act(() => {
+      client.emit('USER_UPDATED', session);
+      client.emit('TOKEN_REFRESHED', session);
+      client.emit('PASSWORD_RECOVERY', session);
+    });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /^sign in$/i })).toBeInTheDocument();
+  });
+
+  it('does not verify access when TOKEN_REFRESHED arrives while recovery sign-out is pending', async () => {
+    const pendingSignOut = deferred<AccessClientResult<null>>();
+    const client = new FakeAccessClient();
+    client.signOut = vi.fn(() => pendingSignOut.promise);
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    await waitFor(() => expect(client.signOut).toHaveBeenCalledTimes(1));
+
+    act(() => { client.emit('TOKEN_REFRESHED', session); });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+
+    act(() => { pendingSignOut.resolve(success(null)); });
+    await waitForSignIn();
+    expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
+  });
+
+  it('does not let delayed recovery events re-authorize after recovery termination', async () => {
+    const client = new FakeAccessClient();
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.click(screen.getByRole('button', { name: /cancel and sign out/i }));
+    await waitForSignIn();
+    act(() => { client.emit('SIGNED_OUT', null); });
+
+    act(() => { client.emit('USER_UPDATED', session); client.emit('TOKEN_REFRESHED', session); });
+    expect(client.getAccessContexts).not.toHaveBeenCalled();
+    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument();
+  });
+
+  it('invalidates a pending password update when recovery is cancelled', async () => {
+    const pendingUpdate = deferred<AccessClientResult<null>>();
+    const client = new FakeAccessClient();
+    client.updatePassword = vi.fn(() => pendingUpdate.promise);
+    renderWithClient(client);
+    await waitForSignIn();
+    act(() => { client.emit('PASSWORD_RECOVERY', session); });
+    await screen.findByRole('heading', { name: /choose a new password/i });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /cancel and sign out/i }));
+    await waitForSignIn();
+    act(() => { pendingUpdate.resolve(success(null)); });
+    await waitFor(() => expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument());
   });
 });
