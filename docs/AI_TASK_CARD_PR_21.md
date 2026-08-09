@@ -45,9 +45,6 @@ Realtime messages contain only the approved minimal invalidation markers and nev
 
 ## Allowed files
 
-- `supabase/migrations/20260808090000_realtime_workspace_notifications.sql`
-- `supabase/tests/database/04_realtime_workspace_notifications.sql`
-- `scripts/test-realtime-workspace-notifications.mjs`
 - `PROJECT_STATE.md`
 - `README.md`
 - `docs/PRODUCT_AND_SCOPE.md`
@@ -56,6 +53,7 @@ Realtime messages contain only the approved minimal invalidation markers and nev
 - `docs/AI_TASK_CARD_PR_21.md`
 - `.github/workflows/ci.yml`
 - `package.json`
+- `package-lock.json`
 - `scripts/test-realtime-workspace-notifications.mjs`
 - `supabase/migrations/20260808090000_realtime_workspace_notifications.sql`
 - `supabase/tests/database/04_realtime_workspace_notifications.sql`
@@ -84,7 +82,7 @@ Run the repository-required audit, static, unit, build, foundation, local databa
 
 ## Stop conditions
 
-Stop for a dirty tree beyond the two reported drafts, HEAD/base mismatch, migration-history mismatch, unexpected fixture data, a Realtime policy behavior incompatible with the contract, or a need for remote mutation.
+Stop if the working tree contains changes outside the approved allowlist, or for a base/HEAD/migration-history mismatch, unexpected fixture data, a Realtime policy behavior incompatible with the contract, or a need for remote mutation.
 
 ## Git and PR rules
 

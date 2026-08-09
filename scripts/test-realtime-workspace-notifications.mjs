@@ -233,8 +233,8 @@ async function run() {
     const traderACollaborator = await addMembership(traderACollaboratorUser, traderA.organizationId, 'trader-a-collaborator');
     const traderB = await createMembership(traderBUser, 'trader', 'trader', 'trader-b');
     await createMembership(suspendedAccountUser, 'buyer', 'buyer_admin', 'suspended-account');
-    await createMembership(suspendedMembershipUser, 'trader', 'trader', 'suspended-membership', { membershipStatus: 'suspended' });
-    await createMembership(suspendedOrganizationUser, 'trader', 'trader', 'suspended-organization', { organizationStatus: 'suspended' });
+    const suspendedMembership = await createMembership(suspendedMembershipUser, 'trader', 'trader', 'suspended-membership', { membershipStatus: 'suspended' });
+    const suspendedOrganization = await createMembership(suspendedOrganizationUser, 'trader', 'trader', 'suspended-organization', { organizationStatus: 'suspended' });
 
     const buyerCaller = await signIn(buyerUser, 'BUYER');
     const traderACaller = await signIn(traderAUser, 'TRADER A');
@@ -270,8 +270,8 @@ async function run() {
     await expectDeniedSubscription(anonymousCaller, 'workspace:buyer', 'anonymous private application topic');
     await expectDeniedSubscription(noContextCaller, 'workspace:buyer', 'no-context buyer topic');
     await expectDeniedSubscription(suspendedAccountCaller, 'workspace:buyer', 'suspended account buyer topic');
-    await expectDeniedSubscription(suspendedMembershipCaller, `workspace:trader:${traderA.organizationId}`, 'suspended membership trader topic');
-    await expectDeniedSubscription(suspendedOrganizationCaller, `workspace:trader:${traderA.organizationId}`, 'suspended organization trader topic');
+    await expectDeniedSubscription(suspendedMembershipCaller, `workspace:trader:${suspendedMembership.organizationId}`, 'suspended membership own organization topic');
+    await expectDeniedSubscription(suspendedOrganizationCaller, `workspace:trader:${suspendedOrganization.organizationId}`, 'suspended organization own organization topic');
 
     const beforePublish = collaboratorMessages.length;
     const publishResult = await within(traderAChannel.send({ type: 'broadcast', event: 'workspace_changed', payload: { kind: 'workspace_changed' } }), 'browser Broadcast publish attempt');
@@ -344,7 +344,7 @@ async function run() {
       rejoinedMessages.every((message) => message.payload?.kind === 'workspace_changed' && Object.keys(message.payload).every((key) => key === 'id' || key === 'kind')),
       'TRADER received data beyond the Realtime transport identity and workspace_changed marker.',
     );
-    console.log('Realtime workspace notification integration tests passed: authorization matrix and corrected bid-revoke lifecycle.');
+    console.log('Realtime workspace notification integration tests passed: suspended membership own organization topic DENIED; suspended organization own suspended organization topic DENIED; authorization matrix and corrected bid-revoke lifecycle.');
   } catch (error) {
     primaryError = error;
   } finally {
