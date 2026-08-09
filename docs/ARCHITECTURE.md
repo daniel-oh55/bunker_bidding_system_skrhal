@@ -3,7 +3,7 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: local CLI migrations and pgTAP tests, with six reviewed migrations including the organization-label access-context migration applied to Production
+- Supabase access: local CLI migrations and pgTAP tests, with six reviewed migrations including the organization-label access-context migration applied to Production plus one un-applied local Realtime foundation migration
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()` and an integrated RPC-only BUYER/TRADER workspace
 - Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, sanitized synthetic lifecycle smoke testing, and BUYER/TRADER trusted-label UI smoke are complete
@@ -35,7 +35,9 @@
 - PostgreSQL constraints or transactional functions are authoritative for data invariants.
 - RLS or server-side RPC/functions are authoritative for row and operation authorization.
 - Application validation mirrors server rules only for UX.
-- Realtime is not implemented and is not an authorization mechanism.
+- Private Realtime Broadcast is an authorization-checked invalidation foundation, not an authorization mechanism. Active BUYER contexts may join `workspace:buyer`; active TRADER members may join only their organization-wide `workspace:trader:<organization_uuid>` topic; authenticated users may join only their own `workspace:access:<auth_user_uuid>` topic. Browser clients have no application Broadcast send policy.
+- The Broadcast application payload is only `{"kind":"workspace_changed"}` or `{"kind":"access_changed"}`; Realtime adds its own opaque delivery ID. No bid, quote, organization, or identity data is placed in the application payload.
+- Bid-specific visibility and mutation authority remain in the existing RPC/server functions. A bid-scope revoke sends one final invalidation to the removed organization, then later changes to that bid no longer fan out there. The active member can still join its organization topic and receive notifications for other current bid scopes.
 
 ## Enforced access contracts
 
@@ -44,7 +46,7 @@
 - BUYER views support all bids, bids created by the current BUYER, and filtering by BUYER.
 - TRADER access requires verified membership in an approved organization and is limited to explicitly allowed bid and quote scope.
 
-The browser creates separate access and bidding adapters from the same publishable client; React never receives the raw client. Membership selection is constrained to active server-returned contexts and uses a keyed workspace boundary, which clears data on a context switch. Membership selectors and chips present the trusted server label but continue to key and select by membership ID. The parser accepts an absent label only for frontend-first deployment ordering and then uses a shortened neutral organization ID; a malformed present label fails closed. Each RPC result is runtime-validated, mutations use server revisions, authorization failures clear protected data before context revalidation, and stale operations are ignored. Recovery routing uses only the application's origin/root and a recovery session is never workspace authorization. TRADER screens call only their own bid and quote RPCs, so competitor data is not requested. Realtime, signup, invitation, provisioning, and admin workflows remain unimplemented. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
+The browser creates separate access and bidding adapters from the same publishable client; React never receives the raw client. Membership selection is constrained to active server-returned contexts and uses a keyed workspace boundary, which clears data on a context switch. Membership selectors and chips present the trusted server label but continue to key and select by membership ID. The parser accepts an absent label only for frontend-first deployment ordering and then uses a shortened neutral organization ID; a malformed present label fails closed. Each RPC result is runtime-validated, mutations use server revisions, authorization failures clear protected data before context revalidation, and stale operations are ignored. Recovery routing uses only the application's origin/root and a recovery session is never workspace authorization. TRADER screens call only their own bid and quote RPCs, so competitor data is not requested. Realtime UI delivery, signup, invitation, provisioning, and admin workflows remain unimplemented. The frontend gate is UX/state coordination and is not a substitute for RLS or server functions.
 
 ## Foundation boundaries
 

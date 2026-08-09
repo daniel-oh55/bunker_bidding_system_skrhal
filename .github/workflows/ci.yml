@@ -174,6 +174,9 @@ jobs:
       - name: Run trader quote REST integration tests
         run: npm run quote:test:integration -- "$LOCAL_API_URL" "$LOCAL_PUBLISHABLE_KEY" "$LOCAL_FIXTURE_KEY" "$LOCAL_DB_URL"
 
+      - name: Run private Realtime workspace notification integration tests
+        run: npm run realtime:test:integration -- "$LOCAL_API_URL" "$LOCAL_PUBLISHABLE_KEY" "$LOCAL_FIXTURE_KEY" "$LOCAL_DB_URL"
+
       - name: Stop and clean local Supabase stack
         if: always()
         run: npm run db:stop

@@ -29,7 +29,7 @@
 - `created_by` is immutable. Cross-BUYER updates and responsibility changes record the actual actor and before/after state in append-only audit history.
 - Reassignment is allowed for raw open/closed bids, not cancelled or awarded bids. Reopen requires a null or future deadline and preserves quotes; cancellation and award are irreversible in V1.
 - TRADER organizations receive explicit current per-bid scope. Each organization owns one quote, active members collaborate, and scope revocation immediately removes TRADER visibility/write access without deleting retained quotes.
-- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated BUYER/TRADER frontend workspace is implemented; it uses server RPCs, manual refresh, and post-mutation reload. Realtime remains unimplemented.
+- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated BUYER/TRADER frontend workspace is implemented; it uses server RPCs, manual refresh, and post-mutation reload. Private Realtime Broadcast invalidation is implemented as a foundation; Realtime UI delivery remains unimplemented.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
 
@@ -52,7 +52,7 @@
 ## Not yet implemented
 
 - No remote auth configuration push is authorized.
-- Realtime remains unimplemented.
+- Private Realtime Broadcast invalidation is implemented locally only: active BUYER, organization-wide active TRADER, and self-only access topics are database-authorized, and no remote configuration has been changed. Bid-scope revocation emits one final invalidation without revoking an active organization topic; existing RPCs remain bid authority.
 - Invitations and administration/provisioning flows and UI.
 
 ## Completed refinements
