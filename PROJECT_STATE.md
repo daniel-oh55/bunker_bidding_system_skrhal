@@ -40,7 +40,8 @@
 - `app_private` contains private account, organization, and membership authorization data. The authenticated public RPC returns only active, server-verified membership context plus a trusted organization label that does not authorize access.
 - A sign-in-only frontend Auth boundary hydrates browser sessions, rechecks the RPC on Auth changes, preserves all returned contexts, and fails closed for missing configuration, zero context, stale requests, transient errors, and malformed present labels. It accepts the old four-field access-context shape only as a safe deployment-order fallback.
 - Unit tests cover the frontend state machine. A loopback-only integration harness uses elevated local access only for fixture setup and cleanup while normal sign-in and RPC calls use the publishable key.
-- Six reviewed migrations, including `20260807010000_current_access_context_organization_label`, are applied to the approved Supabase Production project. The reviewed five-field `current_access_context()` contract, its fixed search-path `SECURITY DEFINER` boundary, and authenticated execute privilege were verified after application; remote public signup and anonymous access are disabled.
+- Seven reviewed migrations, including `20260807010000_current_access_context_organization_label` and `20260808090000_realtime_workspace_notifications`, are applied to the approved Supabase Production project. The reviewed five-field `current_access_context()` contract, its fixed search-path `SECURITY DEFINER` boundary, and authenticated execute privilege were verified after application; remote public signup and anonymous access are disabled.
+- The reviewed backend private Realtime Broadcast authorization foundation is applied in Production. Realtime service is enabled, public channel access is disabled, and private channels are enforced.
 - Controlled initial provisioning is complete with three active BUYER identities, two active TRADER identities, one active BUYER organization, two active TRADER organizations, and five active compatible memberships.
 - All five provisioned identities successfully authenticated and returned only their expected server-verified `current_access_context`; each passed an account- or membership-disable fail-closed check and was restored.
 - The canonical Vercel Production project and Production domain are deployed from `main`; the duplicate Vercel project was removed.
@@ -52,7 +53,7 @@
 ## Not yet implemented
 
 - No remote auth configuration push is authorized.
-- Private Realtime Broadcast invalidation is implemented locally only: active BUYER, organization-wide active TRADER, and self-only access topics are database-authorized, and no remote configuration has been changed. Bid-scope revocation emits one final invalidation without revoking an active organization topic; existing RPCs remain bid authority.
+- Private Realtime Broadcast invalidation is applied as a backend foundation: active BUYER, organization-wide active TRADER, and self-only access topics are database-authorized. Bid-scope revocation emits one final invalidation without revoking an active organization topic; existing RPCs remain the authoritative source for bid and quote data and authorization. Frontend Realtime subscription, automatic refresh, and UI delivery remain unimplemented; the frontend continues to use manual refresh and post-mutation server reload.
 - Invitations and administration/provisioning flows and UI.
 
 ## Completed refinements
