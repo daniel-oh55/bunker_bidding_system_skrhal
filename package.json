@@ -18,6 +18,7 @@
     "auth:test:integration": "node scripts/test-frontend-auth-access.mjs",
     "db:test:quote-concurrency": "node scripts/test-quote-concurrency.mjs",
     "quote:test:integration": "node scripts/test-trader-quote-integration.mjs",
+    "realtime:test:integration": "node scripts/test-realtime-workspace-notifications.mjs",
     "db:stop": "supabase stop --no-backup",
     "preview": "vite preview"
   },

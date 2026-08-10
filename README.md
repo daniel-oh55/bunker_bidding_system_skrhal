@@ -17,7 +17,7 @@ The current scope is intentionally limited to:
 Still out of scope:
 
 - public signup, invitations, account provisioning, password reset, or administration
-- Realtime delivery, invitations, and administration UI
+- Realtime UI delivery, invitations, and administration UI
 - secret registration, Supabase project linking, or deployment
 
 ## Local commands
@@ -40,6 +40,7 @@ npm run db:test:bid-concurrency -- "<local-db-url>"
 npm run db:test:quote-concurrency -- "<local-db-url>"
 npm run auth:test:integration -- "<local-api-url>" "<local-publishable-key>" "<local-elevated-fixture-key>" "<local-db-url>"
 npm run quote:test:integration -- "<local-api-url>" "<local-publishable-key>" "<local-elevated-fixture-key>" "<local-db-url>"
+npm run realtime:test:integration -- "<local-api-url>" "<local-publishable-key>" "<local-elevated-fixture-key>" "<local-db-url>"
 npm run db:stop
 ```
 
@@ -50,6 +51,7 @@ npm run db:stop
 - `supabase/`: local Supabase configuration, migrations, and pgTAP database tests
 - `scripts/check-foundation-boundaries.mjs`: fail-closed boundary checker
 - `scripts/test-frontend-auth-access.mjs`: loopback-only Auth and access-context integration harness
+- `scripts/test-realtime-workspace-notifications.mjs`: loopback-only private Broadcast authorization and bid-revoke integration harness
 - `docs/`: product, architecture, security, and review guidance
 
 ## Security notes
@@ -65,7 +67,9 @@ npm run db:stop
 - Raw bid states are `open`, `closed`, `awarded`, and `cancelled`. An open bid with a passed deadline is effectively closed by server time without a cron job. Details are editable only while effective-open; after the first quote only a real deadline change is allowed.
 - Quotes are owned by a TRADER organization, not an individual. Selected active TRADER members of that organization may collaborate on its one quote; other TRADER organizations cannot see competing quotes. A BUYER explicitly grants and can immediately revoke per-bid scope.
 - Award is a server-side terminal V1 transition of an eligible quote. Reopen preserves quotes; revocation preserves quotes and BUYER visibility while immediately removing TRADER access.
-- The integrated BUYER/TRADER workspace uses only server RPCs, server-returned membership contexts, manual refresh, and post-mutation reload. It clears protected data on context switch, sign-out, and authorization failure. Realtime and remote Supabase linking are not implemented.
+- Private Realtime Broadcast supplies only invalidation hints: `workspace:buyer` is for active BUYER contexts, `workspace:trader:<organization_uuid>` is organization-wide for active TRADER members, and `workspace:access:<auth_user_uuid>` is self-only. Broadcast payloads contain only the approved kind marker (with Realtime's opaque transport message ID) and never bidding data; browser clients cannot publish application messages.
+- A per-bid TRADER scope revoke sends one final invalidation to the removed organization so it can refetch. It does not revoke the active organization's Realtime subscription: existing RPCs still hide and reject the revoked bid, later changes to that bid no longer notify that organization, and its other currently scoped bids continue to notify it.
+- The integrated BUYER/TRADER workspace uses only server RPCs, server-returned membership contexts, manual refresh, and post-mutation reload. It clears protected data on context switch, sign-out, and authorization failure. Realtime UI delivery and remote Supabase linking are not implemented.
 - No remote Supabase project is linked, and no real user, organization, or bidding data is committed.
 
 ## Dependency audit policy
