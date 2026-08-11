@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AccessContext } from '../auth/access-client';
 import type { BiddingClient } from './bidding-client';
 import { ContextWorkspace } from './context-workspace';
+import type { RealtimeInvalidationClient } from '../realtime/realtime-client';
 
 const buyer: AccessContext = { membership_id: '10000000-0000-4000-8000-000000000001', organization_id: '20000000-0000-4000-8000-000000000001', organization_kind: 'buyer', membership_role: 'buyer_operator', organization_label: 'Buyer Alpha' };
 const trader: AccessContext = { membership_id: '10000000-0000-4000-8000-000000000002', organization_id: '20000000-0000-4000-8000-000000000002', organization_kind: 'trader', membership_role: 'trader', organization_label: 'Trader Bravo' };
@@ -12,6 +13,21 @@ function clientWithPendingBuyerLoad(pending?: Promise<typeof result>) {
   return {
     listActiveBuyers: vi.fn(() => pending ?? Promise.resolve(result)), listBids: vi.fn(() => pending ?? Promise.resolve(result)), listActiveTraderOrganizations: vi.fn(() => pending ?? Promise.resolve(result)), listTraderBids: vi.fn(() => Promise.resolve(result)), listMyQuotes: vi.fn(() => Promise.resolve(result)),
   } as unknown as BiddingClient;
+}
+function fakeRealtime() {
+  const workspaceCallbacks = new Map<string, () => void>();
+  const cleanups = new Map<string, ReturnType<typeof vi.fn>>();
+  const subscribeToWorkspaceInvalidations = vi.fn<(context: AccessContext, callback: () => void) => () => void>((context, callback) => {
+    workspaceCallbacks.set(context.membership_id, callback);
+    const cleanup = vi.fn();
+    cleanups.set(context.membership_id, cleanup);
+    return cleanup;
+  });
+  const realtimeClient: RealtimeInvalidationClient = {
+    subscribeToAccessInvalidations: vi.fn(() => vi.fn()),
+    subscribeToWorkspaceInvalidations,
+  };
+  return { realtimeClient, subscribeToWorkspaceInvalidations, workspaceCallbacks, cleanups };
 }
 
 describe('workspace context routing', () => {
@@ -67,5 +83,29 @@ describe('workspace context routing', () => {
     expect(await screen.findByText('TRADER operations')).toBeInTheDocument();
     expect(screen.queryByText('BUYER operations')).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /membership context/i })).not.toBeInTheDocument();
+  });
+
+  it('subscribes once to only the selected BUYER workspace and reloads from RPC on invalidation', async () => {
+    const extraBuyer = { ...buyer, membership_id: '10000000-0000-4000-8000-000000000003' };
+    const listBids = vi.fn(() => Promise.resolve(result));
+    const client = { ...clientWithPendingBuyerLoad(), listBids } as BiddingClient;
+    const realtime = fakeRealtime();
+    render(<ContextWorkspace contexts={[buyer, extraBuyer]} client={client} recheck={vi.fn()} realtimeClient={realtime.realtimeClient} />);
+    await screen.findByText('BUYER operations');
+    expect(realtime.subscribeToWorkspaceInvalidations).toHaveBeenCalledOnce();
+    expect(listBids).toHaveBeenCalledOnce();
+    act(() => { realtime.workspaceCallbacks.get(buyer.membership_id)!(); });
+    await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
+  });
+
+  it('replaces the selected TRADER subscription on a context switch', async () => {
+    const alternateTrader = { ...trader, membership_id: '10000000-0000-4000-8000-000000000003', organization_id: '20000000-0000-4000-8000-000000000003' };
+    const realtime = fakeRealtime();
+    render(<ContextWorkspace contexts={[trader, alternateTrader]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} realtimeClient={realtime.realtimeClient} />);
+    const selector = await screen.findByRole('combobox', { name: /membership context/i });
+    expect(realtime.subscribeToWorkspaceInvalidations).toHaveBeenCalledWith(trader, expect.any(Function));
+    fireEvent.change(selector, { target: { value: alternateTrader.membership_id } });
+    await waitFor(() => expect(realtime.cleanups.get(trader.membership_id)).toHaveBeenCalledOnce());
+    expect(realtime.subscribeToWorkspaceInvalidations).toHaveBeenLastCalledWith(alternateTrader, expect.any(Function));
   });
 });

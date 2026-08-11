@@ -18,7 +18,7 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 ## Excluded from this phase
 
 - public signup, invitation, and admin-provisioning flows
-- frontend Realtime delivery, subscription, and automatic refresh; quote withdrawal, unaward, or award replacement
+- quote withdrawal, unaward, or award replacement
 - `.msg` or `.eml` migration
 - approval and submission business rules
 - migration or use of real operational bidding data
@@ -41,4 +41,4 @@ These contracts are implemented in the private database/RPC backend and surfaced
 - The frontend gate mirrors server access for UX but does not replace RLS or server-side authorization.
 - An approved BUYER may take over or modify another BUYER's bid only through server-authorized policy. `created_by` remains immutable, and the actual actor plus any responsible-BUYER reassignment are retained in audit history.
 
-The frontend selects only server-returned memberships, never grants authority, clears protected data on context switch, sign-out, or authorization failure, and uses manual refresh plus post-mutation server reload. Membership selectors and chips present the server label as display data only; the old four-field RPC shape uses a shortened neutral organization ID solely for safe frontend-first rollout ordering. Password recovery is limited to existing Auth users and does not grant workspace access; a recovery session must complete its password update and then sign in normally for server-verified membership access. Frontend Realtime delivery, subscription, and automatic refresh, plus invitations and administration/provisioning flows and UI, remain unimplemented. No real operational bidding data has been migrated or is in use; the retained Production record is only a synthetic smoke fixture.
+The frontend selects only server-returned memberships, never grants authority, clears protected data on context switch, sign-out, password recovery, or authorization failure, and uses manual refresh plus post-mutation server reload. It consumes private Realtime Broadcast only as best-effort invalidation: one self access topic and one selected-context business topic cause server access revalidation or an authoritative BUYER/TRADER RPC reload, never payload rendering. Membership selectors and chips present the server label as display data only; the old four-field RPC shape uses a shortened neutral organization ID solely for safe frontend-first rollout ordering. Password recovery is limited to existing Auth users and does not grant workspace access; a recovery session must complete its password update and then sign in normally for server-verified membership access. Invitations and administration/provisioning flows and UI remain unimplemented. No real operational bidding data has been migrated or is in use; the retained Production record is only a synthetic smoke fixture.

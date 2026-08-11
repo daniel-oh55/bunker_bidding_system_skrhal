@@ -15,10 +15,12 @@ export function TraderWorkspace({
   client,
   membershipId,
   onAuthorizationFailure,
+  reloadVersion = 0,
 }: {
   client: BiddingClient;
   membershipId: string;
   onAuthorizationFailure: () => void;
+  reloadVersion?: number;
 }) {
   const operationRef = useRef(0);
   const [bids, setBids] = useState<TraderBid[]>([]);
@@ -92,6 +94,9 @@ export function TraderWorkspace({
     void load();
     return invalidateOperations;
   }, [invalidateOperations, load]);
+  const reloadRef = useRef<() => void>(() => {});
+  reloadRef.current = () => { void load(); };
+  useEffect(() => { if (reloadVersion > 0) reloadRef.current(); }, [reloadVersion]);
 
   const save = async (bid: TraderBid, quote: Quote | undefined, input: QuoteInput) => {
     const operation = ++operationRef.current;
