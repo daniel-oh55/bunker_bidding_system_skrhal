@@ -19,8 +19,9 @@ import {
   type AccessSession,
 } from './auth/access-client';
 import type { BiddingClient } from './bidding/bidding-client';
+import type { RealtimeInvalidationClient } from './realtime/realtime-client';
 
-const session: AccessSession = { email: 'operator@example.test' };
+const session: AccessSession = { email: 'operator@example.test', userId: '90000000-0000-4000-8000-000000000001' };
 const buyerContext: AccessContext = {
   membership_id: '10000000-0000-4000-8000-000000000001',
   organization_id: '20000000-0000-4000-8000-000000000001',
@@ -105,12 +106,26 @@ class FakeAccessClient implements AccessClient {
   }
 }
 
-function renderWithClient(client: FakeAccessClient, wrapper?: (children: ReactNode) => ReactNode) {
+function renderWithClient(client: FakeAccessClient, wrapper?: (children: ReactNode) => ReactNode, realtimeClient?: RealtimeInvalidationClient) {
   return render(
     wrapper
-      ? wrapper(<App accessClient={client} biddingClient={fakeBiddingClient} />)
-      : <App accessClient={client} biddingClient={fakeBiddingClient} />,
+      ? wrapper(<App accessClient={client} biddingClient={fakeBiddingClient} realtimeClient={realtimeClient} />)
+      : <App accessClient={client} biddingClient={fakeBiddingClient} realtimeClient={realtimeClient} />,
   );
+}
+
+function fakeRealtime() {
+  let accessCallback: (() => void) | undefined;
+  const accessCleanup = vi.fn();
+  const subscribeToAccessInvalidations = vi.fn<(userId: string, callback: () => void) => () => void>((_userId, callback) => {
+    accessCallback = callback;
+    return accessCleanup;
+  });
+  const realtimeClient: RealtimeInvalidationClient = {
+    subscribeToAccessInvalidations,
+    subscribeToWorkspaceInvalidations: vi.fn(() => vi.fn()),
+  };
+  return { realtimeClient, subscribeToAccessInvalidations, triggerAccess: () => accessCallback?.(), accessCleanup };
 }
 
 async function waitForSignIn() {
@@ -129,6 +144,7 @@ describe('frontend Auth access gate', () => {
       status: 'configuration_error',
       client: null,
       biddingClient: null,
+      realtimeClient: null,
     });
 
     render(<App configurationError />);
@@ -157,6 +173,18 @@ describe('frontend Auth access gate', () => {
     expect(client.getSession).toHaveBeenCalledTimes(1);
     expect(client.getAccessContexts).toHaveBeenCalledTimes(1);
     expect(screen.getByText('operator@example.test')).toBeInTheDocument();
+  });
+
+  it('revalidates server access on an access invalidation and removes the protected workspace when access is gone', async () => {
+    const client = new FakeAccessClient(); const realtime = fakeRealtime();
+    client.sessionResult = success(session);
+    client.accessResults = [success([buyerContext]), success([])];
+    renderWithClient(client, undefined, realtime.realtimeClient);
+    await waitForAuthorized();
+    expect(realtime.subscribeToAccessInvalidations).toHaveBeenCalledWith(session.userId, expect.any(Function));
+    act(() => { realtime.triggerAccess(); });
+    expect(await screen.findByRole('heading', { name: /no active authorized membership/i })).toBeInTheDocument();
+    expect(realtime.accessCleanup).toHaveBeenCalledOnce();
   });
 
   it('denies a valid session with zero active contexts', async () => {

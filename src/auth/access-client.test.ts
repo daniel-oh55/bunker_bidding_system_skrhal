@@ -22,6 +22,7 @@ const fullSession = {
   expires_in: 3_600,
   token_type: 'bearer',
   user: {
+    id: '90000000-0000-4000-8000-000000000001',
     email: 'operator@example.test',
     app_metadata: { role: 'server-only-role' },
     user_metadata: { organization_id: 'server-only-organization' },
@@ -121,16 +122,18 @@ describe('Supabase access client Auth adapter', () => {
     expect(consumer).toHaveBeenCalledOnce();
     expect(consumer).toHaveBeenCalledWith(
       'SIGNED_IN',
-      { email: 'operator@example.test' },
+      { email: 'operator@example.test', userId: '90000000-0000-4000-8000-000000000001' },
     );
     expect(deliveredEvent).toBe('SIGNED_IN');
     expect(harness.rpc).toHaveBeenCalledWith('current_access_context');
     expect(harness.rpcCallStates).toEqual([false]);
 
-    expect(deliveredSession).toEqual({ email: 'operator@example.test' });
+    expect(deliveredSession).toEqual({ email: 'operator@example.test', userId: '90000000-0000-4000-8000-000000000001' });
     expect(deliveredSession).not.toHaveProperty('access_token');
     expect(deliveredSession).not.toHaveProperty('refresh_token');
     expect(deliveredSession).not.toHaveProperty('user');
+    expect(deliveredSession).not.toHaveProperty('user_metadata');
+    expect(deliveredSession).not.toHaveProperty('claims');
   });
 
   it('cancels a queued callback and unsubscribes the Supabase listener exactly once', async () => {

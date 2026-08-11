@@ -5,6 +5,7 @@ import {
   type SupabaseClient,
 } from '@supabase/supabase-js';
 import { createSupabaseBiddingClient, type BiddingClient } from '../bidding/bidding-client';
+import { createRealtimeInvalidationClient, type RealtimeInvalidationClient } from '../realtime/realtime-client';
 
 export type AccessContext = {
   membership_id: string;
@@ -16,6 +17,7 @@ export type AccessContext = {
 
 export type AccessSession = {
   email: string | null;
+  userId: string;
 };
 
 export type AccessClientResult<T> = {
@@ -44,8 +46,8 @@ type BrowserEnvironment = {
 };
 
 export type BrowserAccessConfiguration =
-  | { status: 'configured'; client: AccessClient; biddingClient: BiddingClient }
-  | { status: 'configuration_error'; client: null; biddingClient: null };
+  | { status: 'configured'; client: AccessClient; biddingClient: BiddingClient; realtimeClient: RealtimeInvalidationClient }
+  | { status: 'configuration_error'; client: null; biddingClient: null; realtimeClient: null };
 
 export function createOwnOriginPasswordRecoveryRedirect(origin: string): string | null {
   try {
@@ -64,12 +66,13 @@ const membershipRoles = new Set(['buyer_admin', 'buyer_operator', 'trader']);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function toAccessSession(session: Session | null): AccessSession | null {
-  if (!session) {
+  if (!session || !uuid.test(session.user.id)) {
     return null;
   }
 
   return {
     email: session.user.email ?? null,
+    userId: session.user.id,
   };
 }
 
@@ -240,20 +243,20 @@ export function createBrowserAccessConfiguration(
   const publishableKey = environment.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
 
   if (!url || !publishableKey) {
-    return { status: 'configuration_error', client: null, biddingClient: null };
+    return { status: 'configuration_error', client: null, biddingClient: null, realtimeClient: null };
   }
 
   try {
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      return { status: 'configuration_error', client: null, biddingClient: null };
+      return { status: 'configuration_error', client: null, biddingClient: null, realtimeClient: null };
     }
 
     const passwordRecoveryRedirectTo = createOwnOriginPasswordRecoveryRedirect(
       window.location.origin,
     );
     if (!passwordRecoveryRedirectTo) {
-      return { status: 'configuration_error', client: null, biddingClient: null };
+      return { status: 'configuration_error', client: null, biddingClient: null, realtimeClient: null };
     }
 
     const client = createClient(url, publishableKey, {
@@ -268,9 +271,10 @@ export function createBrowserAccessConfiguration(
       status: 'configured',
       client: createSupabaseAccessClient(client, passwordRecoveryRedirectTo),
       biddingClient: createSupabaseBiddingClient(client),
+      realtimeClient: createRealtimeInvalidationClient(client),
     };
   } catch {
-    return { status: 'configuration_error', client: null, biddingClient: null };
+    return { status: 'configuration_error', client: null, biddingClient: null, realtimeClient: null };
   }
 }
 

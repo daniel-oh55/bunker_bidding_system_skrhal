@@ -10,7 +10,7 @@ const quoteSort = (a: Quote, b: Quote) => Number(b.is_awarded) - Number(a.is_awa
 const unknownError: WorkflowError = { kind: 'unknown', code: null, message: 'The request could not be completed. Please try again.' };
 const displayDate = (value: string | null) => value ? new Date(value).toLocaleString() : 'No deadline';
 
-export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure }: { client: BiddingClient; membershipId: string; onAuthorizationFailure: () => void }) {
+export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; onAuthorizationFailure: () => void; reloadVersion?: number }) {
   const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null);
   const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
   const clearVisible = useCallback(() => { selectedRef.current = null; setBids([]); setSelected(null); setDetail(null); }, []);
@@ -76,6 +76,9 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure }:
   }, [clearVisible, client, handleError, loadDetail, membershipId]);
   useEffect(() => { void loadList('all'); return invalidateOperations; }, [invalidateOperations, loadList]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  const reloadRef = useRef<() => void>(() => {});
+  reloadRef.current = () => { void loadList(view, responsible || undefined, selectedRef.current?.id); };
+  useEffect(() => { if (reloadVersion > 0) reloadRef.current(); }, [reloadVersion]);
   const refresh = () => void loadList(view, responsible || undefined, selectedRef.current?.id);
   const mutate = async (operation: () => Promise<BiddingResult<Bid>>) => {
     const mutation = ++mutationOperation.current;

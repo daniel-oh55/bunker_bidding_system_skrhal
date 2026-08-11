@@ -29,7 +29,7 @@
 - `created_by` is immutable. Cross-BUYER updates and responsibility changes record the actual actor and before/after state in append-only audit history.
 - Reassignment is allowed for raw open/closed bids, not cancelled or awarded bids. Reopen requires a null or future deadline and preserves quotes; cancellation and award are irreversible in V1.
 - TRADER organizations receive explicit current per-bid scope. Each organization owns one quote, active members collaborate, and scope revocation immediately removes TRADER visibility/write access without deleting retained quotes.
-- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated BUYER/TRADER frontend workspace is implemented; it uses server RPCs, manual refresh, and post-mutation reload. Private Realtime Broadcast invalidation is implemented as a foundation; Realtime UI delivery remains unimplemented.
+- BUYERs see all quotes. TRADERs do not receive competitor scope or quote data. Award is server-side and terminal in V1. The integrated BUYER/TRADER frontend workspace uses server RPCs, manual refresh, and post-mutation reload. It also consumes private Realtime Broadcast only as a best-effort invalidation: one self access topic revalidates server access and one selected-context topic triggers the existing authoritative workspace reload.
 - Humans approve merges and deployments.
 - Codex is intended for implementation support and Claude Code for parallel review.
 
@@ -53,7 +53,7 @@
 ## Not yet implemented
 
 - No remote auth configuration push is authorized.
-- Private Realtime Broadcast invalidation is applied as a backend foundation: active BUYER, organization-wide active TRADER, and self-only access topics are database-authorized. Bid-scope revocation emits one final invalidation without revoking an active organization topic; existing RPCs remain the authoritative source for bid and quote data and authorization. Frontend Realtime subscription, automatic refresh, and UI delivery remain unimplemented; the frontend continues to use manual refresh and post-mutation server reload.
+- Private Realtime Broadcast invalidation is applied as a backend foundation and consumed by the frontend through the same browser Supabase client used by the access and bidding adapters. Active BUYER, organization-wide active TRADER, and self-only access topics are database-authorized; the consumer joins only the self topic and currently selected context topic as private channels. Bid-scope revocation emits one final invalidation without revoking an active organization topic; existing RPCs remain the authoritative source for bid and quote data and authorization. Exact marker callbacks cause server access revalidation or authoritative reload only; manual refresh and post-mutation reload remain fallback paths. Realtime delivery is not authorization and this record makes no Production frontend deployment or smoke-completion claim for the consumer.
 - Invitations and administration/provisioning flows and UI.
 
 ## Completed refinements
