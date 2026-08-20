@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { BiddingClient, QuoteInput } from './bidding-client';
 import type { Quote, TraderBid, WorkflowError } from './types';
+import { StatusBadge, WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
 
 const amount = (value: number) =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
@@ -141,24 +142,24 @@ export function TraderWorkspace({
 
   return (
     <div className="workspace">
-      <section className="panel workspace-summary">
-        <div>
-          <p className="eyebrow">TRADER operations</p>
-          <h2>Quote workspace</h2>
-          <p>
+      <WorkspaceSummary
+        eyebrow="TRADER operations"
+        title="Quote workspace"
+        summary={
+          <>
             {openBidCount} open for quoting · {bids.length} accessible{' '}
             {bids.length === 1 ? 'bid' : 'bids'}
-          </p>
-        </div>
-        <button
+          </>
+        }
+        action={<button
           type="button"
           className="secondary"
           disabled={loading || pending}
           onClick={() => void load()}
         >
           Refresh
-        </button>
-      </section>
+        </button>}
+      />
       {error ? (
         <p className="notice error" role="alert">
           {error.message}
@@ -166,7 +167,9 @@ export function TraderWorkspace({
       ) : null}
       <section className="trader-bids" aria-label="Trader bids">
         {loading ? (
-          <p className="panel">Loading available bids</p>
+          <WorkspaceEmptyState title="Loading available bids" description="Retrieving bids your organization can access." />
+        ) : bids.length === 0 ? (
+          <WorkspaceEmptyState title="No accessible bids" description="No bids are currently available to your organization. Use Refresh to check again." />
         ) : (
           bids.map((bid) => {
             const quote = quotes.find((candidate) => candidate.bid_id === bid.id);
@@ -260,7 +263,7 @@ function TraderBidCard({
         </div>
         <div>
           <dt>Effective status</dt>
-          <dd>{bid.effective_status}</dd>
+          <dd><StatusBadge status={bid.effective_status} /></dd>
         </div>
         <div>
           <dt>Deadline</dt>

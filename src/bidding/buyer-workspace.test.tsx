@@ -17,6 +17,14 @@ function fakeClient(bids: Bid[] = [bid()]) {
 }
 
 describe('BUYER workspace', () => {
+  it('shows a clear empty state after a loaded bid view has no results', async () => {
+    const { client } = fakeClient([]);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    expect(await screen.findByText('No bids in this view')).toBeInTheDocument();
+    expect(screen.getByText('Try another view or refresh the current bid list.')).toBeInTheDocument();
+  });
+
   it('clears the prior list and gates responsible-BUYER requests until a server-returned target is selected', async () => {
     const { client, listBids } = fakeClient(); render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText('MV Buyer');
@@ -117,7 +125,7 @@ describe('BUYER workspace', () => {
     const { client } = fakeClient([bid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now, awarded_quote_id: '10000000-0000-4000-8000-000000000004', awarded_trader_organization_id: '20000000-0000-4000-8000-000000000001', awarded_trader_organization_label: 'Awarded Trader', awarded_total_amount: 100, awarded_at: now })]);
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText(/Raw status: awarded/);
-    expect(screen.getByText(/effective status: awarded/)).toBeInTheDocument();
+    expect(screen.getByText('Effective status: awarded')).toBeInTheDocument();
     expect(screen.getByText(/Creator: Creator; responsible BUYER: Target buyer/)).toBeInTheDocument();
     expect(screen.getByText(/Fuel: VLSFO 10/)).toBeInTheDocument();
     expect(screen.getByText(/awarded to Awarded Trader; total 100/)).toBeInTheDocument();
