@@ -44,16 +44,16 @@
 - The reviewed backend private Realtime Broadcast authorization foundation is applied in Production. Realtime service is enabled, public channel access is disabled, and private channels are enforced.
 - Controlled initial provisioning is complete with three active BUYER identities, two active TRADER identities, one active BUYER organization, two active TRADER organizations, and five active compatible memberships.
 - All five provisioned identities successfully authenticated and returned only their expected server-verified `current_access_context`; each passed an account- or membership-disable fail-closed check and was restored.
-- The canonical Vercel Production project and Production domain are deployed from `main`; the duplicate Vercel project was removed.
+- The canonical Vercel Production deployment from `main` is live; the duplicate Vercel project was removed.
 - Supabase Site URL and the single exact Production redirect URL are configured.
 - Sanitized Production lifecycle smoke testing is complete: synthetic bid creation and deadline update; cross-BUYER visibility and filters; explicit single-TRADER scope and second-organization isolation; one synthetic quote with a server-authoritative total; effective close by server deadline; quote response boolean correction; terminal award; award audit and revision transition; selected TRADER visibility and non-scoped TRADER isolation.
-- The synthetic smoke fixture remains in Production as an awarded test record.
+- Controlled Production frontend Realtime smoke is complete. A BUYER automatically reloaded after `workspace_changed` from synthetic-bid creation; a selected TRADER automatically reloaded from zero to one accessible bid after an authorized scope grant; the non-scoped TRADER and other TRADER organization remained isolated. A controlled membership active-to-inactive transition delivered `access_changed`, removed protected workspace without manual refresh, and failed closed with no active authorized membership. Controlled access state was restored and normal sign-in reverified.
+- Manual Refresh and the existing post-mutation authoritative reload remain fallback paths. The temporary Realtime synthetic bid was cancelled at revision 4 with zero retained TRADER scope; retained Production records are synthetic smoke records only.
 - Controlled Production UI smoke is complete for BUYER and TRADER: each displayed its trusted server organization label and entered its authorized workspace without using the UUID/neutral short-ID fallback.
 
 ## Not yet implemented
 
 - No remote auth configuration push is authorized.
-- Private Realtime Broadcast invalidation is applied as a backend foundation and consumed by the frontend through the same browser Supabase client used by the access and bidding adapters. Active BUYER, organization-wide active TRADER, and self-only access topics are database-authorized; the consumer joins only the self topic and currently selected context topic as private channels. Bid-scope revocation emits one final invalidation without revoking an active organization topic; existing RPCs remain the authoritative source for bid and quote data and authorization. Exact marker callbacks cause server access revalidation or authoritative reload only; manual refresh and post-mutation reload remain fallback paths. Realtime delivery is not authorization and this record makes no Production frontend deployment or smoke-completion claim for the consumer.
 - Invitations and administration/provisioning flows and UI.
 
 ## Completed refinements

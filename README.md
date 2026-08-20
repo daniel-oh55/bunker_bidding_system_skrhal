@@ -12,13 +12,13 @@ The current scope is intentionally limited to:
 - granting the minimal frontend shell only after that RPC returns active membership context
 - testing frontend state behavior with deterministic fakes and the Auth/RPC boundary against the local stack
 - operating the server-authorized BUYER bid lifecycle, responsibility reassignment, TRADER bid scope, organization-owned quotes, terminal award, optimistic revisions, and append-only audit history
+- consuming private Realtime marker-only invalidations as a best-effort prompt for authoritative access or workspace RPC reloads
 - adding CI, test, lint, typecheck, and boundary guardrails
 
 Still out of scope:
 
-- public signup, invitations, account provisioning, password reset, or administration
-- Realtime UI delivery, invitations, and administration UI
-- secret registration, Supabase project linking, or deployment
+- public signup, invitations, account provisioning, or administration UI
+- secret registration, remote Supabase project linking, or remote deployment configuration changes
 
 ## Local commands
 
@@ -69,7 +69,7 @@ npm run db:stop
 - Award is a server-side terminal V1 transition of an eligible quote. Reopen preserves quotes; revocation preserves quotes and BUYER visibility while immediately removing TRADER access.
 - Private Realtime Broadcast supplies only invalidation hints: `workspace:buyer` is for active BUYER contexts, `workspace:trader:<organization_uuid>` is organization-wide for active TRADER members, and `workspace:access:<auth_user_uuid>` is self-only. Broadcast payloads contain only the approved kind marker (with Realtime's opaque transport message ID) and never bidding data; browser clients cannot publish application messages.
 - A per-bid TRADER scope revoke sends one final invalidation to the removed organization so it can refetch. It does not revoke the active organization's Realtime subscription: existing RPCs still hide and reject the revoked bid, later changes to that bid no longer notify that organization, and its other currently scoped bids continue to notify it.
-- The integrated BUYER/TRADER workspace uses only server RPCs, server-returned membership contexts, manual refresh, and post-mutation reload. It clears protected data on context switch, sign-out, and authorization failure. Realtime UI delivery and remote Supabase linking are not implemented.
+- The integrated BUYER/TRADER workspace uses only server RPCs and server-returned membership contexts. Its private Realtime consumer accepts exact marker-only invalidations and prompts authoritative access revalidation or selected-workspace reload; it never renders Broadcast payloads or grants authority. Manual Refresh and post-mutation reload remain fallbacks, and protected data clears on context switch, sign-out, and authorization failure. Production delivery of this consumer was verified at `https://skrhal-bunker-bidding.vercel.app`.
 - No remote Supabase project is linked, and no real user, organization, or bidding data is committed.
 
 ## Dependency audit policy
