@@ -92,7 +92,7 @@ Record the starting and final HEAD, exact changed files, per-document summary, v
 
 ## Recommended model and reasoning
 
-GPT-5.6 Luna / Low. This is a bounded documentation reconciliation after independently verified rollout facts.
+GPT-5.6 Terra / Medium. This is a bounded documentation reconciliation after independently verified rollout facts.
 
 ## Owner approval point
 
