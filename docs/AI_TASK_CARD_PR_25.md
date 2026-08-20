@@ -86,7 +86,7 @@ Record final HEAD, changed files, shared primitives, presentation-only workspace
 
 ## Recommended model and reasoning
 
-Medium reasoning: small UI and documentation change. No security-sensitive authority logic is modified.
+GPT-5.6 Terra / Medium. This is a bounded shared UI and documentation change with no security-sensitive authority logic modification.
 
 ## Owner approval point
 
