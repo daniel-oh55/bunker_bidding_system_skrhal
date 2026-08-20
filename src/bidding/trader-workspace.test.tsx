@@ -24,6 +24,14 @@ function clientWith(bids: TraderBid[] = [traderBid()], quotes: Quote[] = []) {
 }
 
 describe('TRADER workspace', () => {
+  it('shows a clear empty state after the accessible bid feed loads empty', async () => {
+    const { client } = clientWith([]);
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+
+    expect(await screen.findByText('No accessible bids')).toBeInTheDocument();
+    expect(screen.getByText(/No bids are currently available to your organization/)).toBeInTheDocument();
+  });
+
   it('initially loads only the two TRADER feeds', async () => {
     const { client, listTraderBids, listMyQuotes, unused } = clientWith();
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);

@@ -58,6 +58,7 @@
 
 ## Completed refinements
 
+- BUYER and TRADER workspaces share presentational summary, status-badge, and empty-state primitives with a restrained responsive operational UI foundation. These components do not own membership authority, data access, mutations, or Realtime behavior.
 - The BUYER bid detail uses a compact always-visible overview with accessible disclosure sections for bid terms and deadline, responsibility and lifecycle, TRADER access and quotes, and audit history.
 - Audit responsibility transitions show active BUYER display labels when available and a shortened neutral identifier when the BUYER is inactive or unavailable.
 - Destructive TRADER scope revocation requires a target-bound, two-step BUYER confirmation. Selected awarded organizations receive an explicit award-result visibility warning; the server terminal-revocation contract remains unchanged.
