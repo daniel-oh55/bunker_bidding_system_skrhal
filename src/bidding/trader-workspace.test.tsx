@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TraderWorkspace } from './trader-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
@@ -50,7 +50,44 @@ describe('TRADER workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save quote' }));
     await waitFor(() => expect(createQuote).toHaveBeenCalledOnce());
     expect(createQuote).toHaveBeenCalledWith(membership, bidId, { fuelGrades: ['lsmgo', 'vlsfo'], unitPrices: [3, 2], bargeFee: 5 });
-    expect(createQuote.mock.calls[0]![2]).not.toHaveProperty('totalAmount');
+    expect(Object.keys(createQuote.mock.calls[0]![2])).toEqual(['fuelGrades', 'unitPrices', 'bargeFee']);
+  });
+
+  it('makes an open bid without an own quote explicit while retaining quote entry', async () => {
+    const { client } = clientWith();
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+
+    const ownQuoteState = await screen.findByRole('region', { name: 'Own quote state' });
+    expect(ownQuoteState).toHaveTextContent('No own quote submitted');
+    expect(ownQuoteState).toHaveTextContent('Your organization has not submitted a quote for this bid.');
+    expect(screen.getByRole('heading', { name: 'Create quote' })).toBeInTheDocument();
+  });
+
+  it('shows requested fuel quantities beside their matching unit-price inputs', async () => {
+    const { client } = clientWith();
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByRole('heading', { name: 'Create quote' });
+    const lsmgoRow = screen.getByLabelText('lsmgo unit price').closest('.trader-fuel-price-row');
+    const vlsfoRow = screen.getByLabelText('vlsfo unit price').closest('.trader-fuel-price-row');
+    expect(lsmgoRow).toHaveTextContent('LSMGO20 MT requested');
+    expect(vlsfoRow).toHaveTextContent('VLSFO10 MT requested');
+  });
+
+  it('presents the client estimate as non-authoritative and distinct from the existing server total', async () => {
+    const { client } = clientWith([traderBid()], [quote()]);
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByDisplayValue('3');
+    fireEvent.change(screen.getByLabelText('lsmgo unit price'), { target: { value: '4' } });
+    const totals = await screen.findByLabelText('Quote totals');
+    const estimate = within(totals).getByText('Client estimate').closest('div');
+    const authoritative = within(totals).getByText('Authoritative server total').closest('div');
+    expect(estimate).toHaveTextContent('105');
+    expect(estimate).toHaveTextContent('Preview only. The server calculates the authoritative total after submission.');
+    expect(authoritative).toHaveTextContent('85');
+    expect(authoritative).toHaveTextContent('Current total returned by the server.');
+    expect(estimate).not.toBe(authoritative);
   });
 
   it('resets collaborative quote drafts to the authoritative quote identity and revision', async () => {
@@ -68,6 +105,8 @@ describe('TRADER workspace', () => {
     expect(screen.queryByDisplayValue('3')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Update quote' }));
     await waitFor(() => expect(updateQuote).toHaveBeenCalledWith(membership, quoteId, 8, { fuelGrades: ['lsmgo', 'vlsfo'], unitPrices: [9, 8], bargeFee: 7 }));
+    expect(updateQuote.mock.calls[0]).toEqual([membership, quoteId, 8, { fuelGrades: ['lsmgo', 'vlsfo'], unitPrices: [9, 8], bargeFee: 7 }]);
+    expect(Object.keys(updateQuote.mock.calls[0]![3])).toEqual(['fuelGrades', 'unitPrices', 'bargeFee']);
   });
 
   it.each(['40001', '55000', 'P0002'])('does not retry a %s quote-state error and reloads both authoritative feeds once', async (code) => {
@@ -114,10 +153,15 @@ describe('TRADER workspace', () => {
   it('renders required TRADER operational data without competitor data', async () => {
     const { client } = clientWith([traderBid()], [quote()]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
-    await screen.findByText('Fuel requested');
+    const requirements = await screen.findByRole('region', { name: 'Bid requirements for MV Trader' });
     expect(screen.getByText('Effective status')).toBeInTheDocument();
     expect(screen.getByText('Own quote revision')).toBeInTheDocument();
-    expect(screen.getByText('LSMGO 20, VLSFO 10')).toBeInTheDocument();
+    expect(within(requirements).getByText('Deadline')).toBeInTheDocument();
+    expect(within(requirements).getByText('Delivery window')).toBeInTheDocument();
+    expect(within(requirements).getByText('LSMGO')).toBeInTheDocument();
+    expect(within(requirements).getByText('20 MT requested')).toBeInTheDocument();
+    expect(within(requirements).getByText('VLSFO')).toBeInTheDocument();
+    expect(within(requirements).getByText('10 MT requested')).toBeInTheDocument();
     expect(screen.queryByText('Competitor')).not.toBeInTheDocument();
   });
 
@@ -125,6 +169,7 @@ describe('TRADER workspace', () => {
     const { client } = clientWith([traderBid({ raw_status: 'closed', effective_status: 'closed', closed_at: now })], [quote()]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText('Quote submission is closed.');
+    expect(screen.getByRole('status')).toHaveTextContent('Quote submission is closed.');
     expect(screen.getByRole('region', { name: 'Your quote summary' })).toHaveTextContent('LSMGO unit price');
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /quote/i })).not.toBeInTheDocument();
@@ -137,6 +182,7 @@ describe('TRADER workspace', () => {
     );
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText('This bid has been cancelled.');
+    expect(screen.getByRole('status')).toHaveTextContent('This bid has been cancelled.');
     const summary = screen.getByRole('region', { name: 'Your quote summary' });
     expect(summary).toHaveTextContent('LSMGO unit price');
     expect(summary).toHaveTextContent('3');
@@ -157,6 +203,7 @@ describe('TRADER workspace', () => {
     const { client } = clientWith([traderBid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now })], [quote({ is_awarded: isAwarded })]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText(message);
+    expect(screen.getByRole('status')).toHaveTextContent(message);
     expect(screen.getByRole('region', { name: 'Your quote summary' })).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save quote' })).not.toBeInTheDocument();
@@ -167,14 +214,23 @@ describe('TRADER workspace', () => {
     const { client } = clientWith([traderBid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now })]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText('The award process is complete.');
+    expect(screen.getByRole('status')).toHaveTextContent('The award process is complete.');
+    expect(screen.getByRole('region', { name: 'Own quote state' })).toHaveTextContent('No own quote submitted');
     expect(screen.queryByRole('region', { name: 'Your quote summary' })).not.toBeInTheDocument();
     expect(screen.queryByText(/selected organization|competitor/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
   });
 
-  it('distinguishes bids open for quoting from total accessible bids', async () => {
-    const { client } = clientWith([traderBid(), traderBid({ id: '10000000-0000-4000-8000-000000000004', raw_status: 'awarded', effective_status: 'awarded', closed_at: now })]);
+  it('distinguishes open, own-quoted, and accessible counts from the authoritative feeds', async () => {
+    const { client } = clientWith([
+      traderBid(),
+      traderBid({ id: '10000000-0000-4000-8000-000000000004', vessel_voyage: 'MV Terminal', raw_status: 'awarded', effective_status: 'awarded', closed_at: now }),
+      traderBid({ id: '10000000-0000-4000-8000-000000000005', vessel_voyage: 'MV Open' }),
+    ], [quote()]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
-    expect(await screen.findByText('1 open for quoting · 2 accessible bids')).toBeInTheDocument();
+    const summary = (await screen.findByRole('heading', { name: 'Quote workspace' })).closest('section');
+    expect(summary).toHaveTextContent('2 open for quoting');
+    expect(summary).toHaveTextContent('1 own-organization quote');
+    expect(summary).toHaveTextContent('3 accessible bids');
   });
 });

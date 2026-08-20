@@ -139,17 +139,19 @@ export function TraderWorkspace({
   };
 
   const openBidCount = bids.filter((bid) => bid.effective_status === 'open').length;
+  const ownQuoteCount = quotes.length;
 
   return (
-    <div className="workspace">
+    <div className="workspace trader-workspace">
       <WorkspaceSummary
         eyebrow="TRADER operations"
         title="Quote workspace"
         summary={
-          <>
-            {openBidCount} open for quoting · {bids.length} accessible{' '}
-            {bids.length === 1 ? 'bid' : 'bids'}
-          </>
+          <span className="trader-summary-metrics">
+            <span><strong>{openBidCount}</strong> open for quoting</span>
+            <span><strong>{ownQuoteCount}</strong> own-organization {ownQuoteCount === 1 ? 'quote' : 'quotes'}</span>
+            <span><strong>{bids.length}</strong> accessible {bids.length === 1 ? 'bid' : 'bids'}</span>
+          </span>
         }
         action={<button
           type="button"
@@ -251,34 +253,58 @@ function TraderBidCard({
 
   return (
     <article className="panel trader-card">
-      <h2>{bid.vessel_voyage}</h2>
-      <dl className="operational-data">
+      <header className="trader-card-heading">
         <div>
-          <dt>Port</dt>
-          <dd>{bid.port_name}</dd>
+          <p className="eyebrow">Accessible bid</p>
+          <h2>{bid.vessel_voyage}</h2>
+          <p className="trader-card-port">Port: {bid.port_name}</p>
         </div>
-        <div>
-          <dt>Delivery window</dt>
-          <dd>{bid.delivery_window}</dd>
+        <div className="trader-card-status">
+          <span>Effective status</span>
+          <StatusBadge status={bid.effective_status} />
         </div>
-        <div>
-          <dt>Effective status</dt>
-          <dd><StatusBadge status={bid.effective_status} /></dd>
+      </header>
+
+      <section className="trader-bid-requirements" aria-label={`Bid requirements for ${bid.vessel_voyage}`}>
+        <h3>Bid requirements</h3>
+        <dl className="operational-data trader-bid-timing">
+          <div>
+            <dt>Deadline</dt>
+            <dd>{bid.deadline_at ? new Date(bid.deadline_at).toLocaleString() : 'No deadline'}</dd>
+          </div>
+          <div>
+            <dt>Delivery window</dt>
+            <dd>{bid.delivery_window}</dd>
+          </div>
+        </dl>
+        <div className="trader-requested-fuels">
+          <h4>Fuel requested</h4>
+          <ul>
+            {bid.fuel_items.map((item) => (
+              <li key={item.fuel_grade}>
+                <strong>{item.fuel_grade.toUpperCase()}</strong>
+                <span>{amount(item.quantity_mt)} MT requested</span>
+              </li>
+            ))}
+          </ul>
         </div>
+      </section>
+
+      <section
+        className={`trader-quote-state ${quote ? 'has-own-quote' : 'no-own-quote'}`}
+        aria-label="Own quote state"
+      >
         <div>
-          <dt>Deadline</dt>
-          <dd>{bid.deadline_at ? new Date(bid.deadline_at).toLocaleString() : 'No deadline'}</dd>
-        </div>
-        <div>
-          <dt>Fuel requested</dt>
-          <dd>
-            {bid.fuel_items
-              .map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt}`)
-              .join(', ')}
-          </dd>
+          <p className="eyebrow">Own quote status</p>
+          <h3>{quote ? 'Own quote submitted' : 'No own quote submitted'}</h3>
+          <p>
+            {quote
+              ? 'Your organization has a quote on this bid.'
+              : 'Your organization has not submitted a quote for this bid.'}
+          </p>
         </div>
         {quote ? (
-          <>
+          <dl>
             <div>
               <dt>Own quote revision</dt>
               <dd>{quote.revision}</dd>
@@ -287,51 +313,83 @@ function TraderBidCard({
               <dt>Authoritative server total</dt>
               <dd>{amount(quote.total_amount)}</dd>
             </div>
-          </>
+          </dl>
         ) : null}
-      </dl>
+      </section>
+
       {editable ? (
-        <form className="operation-form" onSubmit={submit}>
-          <h3>{quote ? 'Update your quote' : 'Create quote'}</h3>
-          {bid.fuel_items.map((item) => (
-            <label key={item.fuel_grade}>
-              {item.fuel_grade.toUpperCase()} unit price
+        <form className="operation-form trader-quote-editor" onSubmit={submit}>
+          <header className="trader-quote-editor-heading">
+            <div>
+              <p className="eyebrow">Quote editor</p>
+              <h3>{quote ? 'Update your quote' : 'Create quote'}</h3>
+            </div>
+            <p>Enter a unit price for each requested fuel, then add the barge fee.</p>
+          </header>
+          <div className="trader-fuel-price-list">
+            {bid.fuel_items.map((item) => (
+              <div className="trader-fuel-price-row" key={item.fuel_grade}>
+                <div className="trader-fuel-context">
+                  <strong>{item.fuel_grade.toUpperCase()}</strong>
+                  <span>{amount(item.quantity_mt)} MT requested</span>
+                </div>
+                <label>
+                  Unit price
+                  <input
+                    aria-label={`${item.fuel_grade} unit price`}
+                    type="number"
+                    min="0.01"
+                    step="any"
+                    disabled={pending}
+                    value={prices[item.fuel_grade]}
+                    onChange={(event) =>
+                      setPrices({ ...prices, [item.fuel_grade]: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+          <div className="trader-barge-fee">
+            <label>
+              Barge fee
               <input
-                aria-label={`${item.fuel_grade} unit price`}
+                aria-label="Barge fee"
                 type="number"
-                min="0.01"
+                min="0"
                 step="any"
                 disabled={pending}
-                value={prices[item.fuel_grade]}
-                onChange={(event) =>
-                  setPrices({ ...prices, [item.fuel_grade]: event.target.value })
-                }
+                value={bargeFee}
+                onChange={(event) => setBargeFee(event.target.value)}
               />
             </label>
-          ))}
-          <label>
-            Barge fee
-            <input
-              aria-label="Barge fee"
-              type="number"
-              min="0"
-              step="any"
-              disabled={pending}
-              value={bargeFee}
-              onChange={(event) => setBargeFee(event.target.value)}
-            />
-          </label>
-          <p>Estimated preview: {amount(preview)}</p>
-          {quote ? <p>Authoritative server total: {amount(quote.total_amount)}</p> : null}
-          <button type="submit" disabled={!canSave || pending}>
-            {quote ? 'Update quote' : 'Save quote'}
-          </button>
+          </div>
+          <dl className="trader-quote-totals" aria-label="Quote totals">
+            <div className="trader-client-estimate">
+              <dt>Client estimate</dt>
+              <dd>{amount(preview)}</dd>
+              <p>Preview only. The server calculates the authoritative total after submission.</p>
+            </div>
+            {quote ? (
+              <div className="trader-authoritative-total">
+                <dt>Authoritative server total</dt>
+                <dd>{amount(quote.total_amount)}</dd>
+                <p>Current total returned by the server.</p>
+              </div>
+            ) : null}
+          </dl>
+          <div className="trader-quote-actions">
+            <button type="submit" disabled={!canSave || pending}>
+              {quote ? 'Update quote' : 'Save quote'}
+            </button>
+          </div>
         </form>
       ) : (
         <>
-          <p className="terminal-result" role="status">
-            {terminalMessage}
-          </p>
+          <div className="terminal-result trader-terminal-result" role="status">
+            <span>Bid result</span>
+            <strong>{terminalMessage}</strong>
+          </div>
           {quote ? <ReadOnlyQuoteSummary quote={quote} /> : null}
         </>
       )}
@@ -342,8 +400,12 @@ function TraderBidCard({
 function ReadOnlyQuoteSummary({ quote }: { quote: Quote }) {
   return (
     <section className="read-only-quote" aria-label="Your quote summary">
-      <h3>Your quote</h3>
-      <dl className="operational-data">
+      <header>
+        <p className="eyebrow">Read-only</p>
+        <h3>Your quote</h3>
+        <p>This is the final authoritative quote currently returned by the server.</p>
+      </header>
+      <dl className="operational-data trader-read-only-values">
         {quote.fuel_prices.map((price) => (
           <div key={price.fuel_grade}>
             <dt>{price.fuel_grade.toUpperCase()} unit price</dt>
