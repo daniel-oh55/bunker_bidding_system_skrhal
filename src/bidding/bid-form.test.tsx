@@ -17,7 +17,9 @@ function fillCreateForm() {
 
 describe('BUYER bid forms and detail editor', () => {
   it('preserves every create draft field after failure and clears all of them only after success', async () => {
-    const submit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true); render(<CreateBidForm buyers={buyers} disabled={false} onSubmit={submit} />); fillCreateForm();
+    const submit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true); render(<CreateBidForm buyers={buyers} disabled={false} onSubmit={submit} />);
+    expect(screen.getByText('Create new bid').closest('details')).not.toHaveAttribute('open');
+    fillCreateForm();
     fireEvent.click(screen.getByRole('button', { name: 'Create bid' })); await waitFor(() => expect(submit).toHaveBeenCalledOnce());
     expect(screen.getByLabelText('Vessel / voyage')).toHaveValue('MV New'); expect(screen.getByLabelText('Port')).toHaveValue('Ulsan'); expect(screen.getByLabelText('Delivery window')).toHaveValue('Next week'); expect(screen.getByLabelText('Create deadline')).toHaveValue('2026-08-04T12:30'); expect(screen.getByLabelText('Responsible BUYER')).toHaveValue(buyerId); expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(15);
     fireEvent.click(screen.getByRole('button', { name: 'Create bid' })); await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));

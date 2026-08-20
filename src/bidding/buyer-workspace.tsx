@@ -7,6 +7,11 @@ import { StatusBadge, WorkspaceEmptyState, WorkspaceSummary } from '../ui/worksp
 
 type View = 'all' | 'created_by_me' | 'responsible_buyer';
 type Detail = { access: BidTraderAccess[]; quotes: Quote[]; audit: BidAuditEvent[] };
+const views: { value: View; label: string }[] = [
+  { value: 'all', label: 'All bids' },
+  { value: 'created_by_me', label: 'Created by me' },
+  { value: 'responsible_buyer', label: 'By BUYER' },
+];
 const quoteSort = (a: Quote, b: Quote) => Number(b.is_awarded) - Number(a.is_awarded) || a.total_amount - b.total_amount || a.id.localeCompare(b.id);
 const unknownError: WorkflowError = { kind: 'unknown', code: null, message: 'The request could not be completed. Please try again.' };
 const displayDate = (value: string | null) => value ? new Date(value).toLocaleString() : 'No deadline';
@@ -101,5 +106,48 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
   };
   const create = async (input: BidInput) => mutate(() => client.createBid(membershipId, input));
   const changeView = (next: View) => { setView(next); setResponsible(''); void loadList(next); };
-  return <div className="workspace"><WorkspaceSummary eyebrow="BUYER operations" title="Bid management" summary={`${bids.length} current bids`} action={<button type="button" className="secondary" onClick={refresh} disabled={loading || pending}>Refresh</button>} />{error ? <p className="notice error" role="alert">{error.message}</p> : null}<section className="panel filters" aria-label="Bid filters"><fieldset><legend>Bid view</legend>{(['all', 'created_by_me', 'responsible_buyer'] as const).map((option) => <label key={option}><input type="radio" name="bid-view" checked={view === option} onChange={() => changeView(option)} /> {option.replaceAll('_', ' ')}</label>)}</fieldset>{view === 'responsible_buyer' ? <label>Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}</section><CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} /><section className="bid-layout"><section className="panel bid-list"><h2>Bids</h2>{loading ? <WorkspaceEmptyState title="Loading bids" description="Retrieving the current bid list." /> : view === 'responsible_buyer' && !responsible ? <WorkspaceEmptyState title="Select a BUYER to load responsible bids." description="Choose an active BUYER to view their responsible bids." /> : bids.length === 0 ? <WorkspaceEmptyState title="No bids in this view" description="Try another view or refresh the current bid list." /> : bids.map((bid) => <button type="button" className="bid-button" key={bid.id} onClick={() => void loadDetail(bid)}><strong>{bid.vessel_voyage}</strong><span>Raw status: {bid.raw_status}</span><StatusBadge status={bid.effective_status} label="Effective status" /><span>Deadline: {displayDate(bid.deadline_at)}</span><span>Creator: {bid.created_by_label}; responsible BUYER: {bid.responsible_buyer_label}</span><span>Fuel: {bid.fuel_items.map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt}`).join(', ')}</span><span>Revision {bid.revision}{bid.awarded_trader_organization_label ? `; awarded to ${bid.awarded_trader_organization_label}; total ${bid.awarded_total_amount}` : ''}</span></button>)}</section><section className="panel bid-detail" aria-live="polite">{selected ? <BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} /> : <WorkspaceEmptyState title="No bid selected" description="Select a bid to view operations, quotes, scope, and audit history." />}</section></section></div>;
+  const effectiveOpenCount = bids.filter((bid) => bid.effective_status === 'open').length;
+  const terminalCount = bids.length - effectiveOpenCount;
+  return <div className="workspace buyer-workspace">
+    <WorkspaceSummary
+      eyebrow="BUYER operations"
+      title="Bid management"
+      summary={<span className="buyer-summary-metrics"><span><strong>{bids.length}</strong> total bids</span><span><strong>{effectiveOpenCount}</strong> effective open</span><span><strong>{terminalCount}</strong> closed / terminal</span></span>}
+      action={<button type="button" className="secondary" onClick={refresh} disabled={loading || pending}>Refresh</button>}
+    />
+    {error ? <p className="notice error" role="alert">{error.message}</p> : null}
+    <section className="panel filters buyer-filters" aria-label="Bid filters">
+      <fieldset>
+        <legend>Bid view</legend>
+        <div className="buyer-filter-options">
+          {views.map((option) => <label key={option.value}><input type="radio" name="bid-view" checked={view === option.value} onChange={() => changeView(option.value)} /> <span>{option.label}</span></label>)}
+        </div>
+      </fieldset>
+      {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
+    </section>
+    <CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} />
+    <section className="bid-layout buyer-bid-layout">
+      <section className="panel bid-list buyer-bid-list">
+        <div className="buyer-list-heading"><div><p className="eyebrow">Current view</p><h2>Bids</h2></div><span>{bids.length} loaded</span></div>
+        {loading ? <WorkspaceEmptyState title="Loading bids" description="Retrieving the current bid list." /> : view === 'responsible_buyer' && !responsible ? <WorkspaceEmptyState title="Select a BUYER to load responsible bids." description="Choose an active BUYER to view their responsible bids." /> : bids.length === 0 ? <WorkspaceEmptyState title="No bids in this view" description="Try another view or refresh the current bid list." /> : <div className="buyer-bid-cards">{bids.map((bid) => {
+          const isSelected = selected?.id === bid.id;
+          return <button type="button" className={`bid-button buyer-bid-card${isSelected ? ' is-selected' : ''}`} aria-pressed={isSelected} key={bid.id} onClick={() => void loadDetail(bid)}>
+            <span className="buyer-bid-card-heading"><span><strong>{bid.vessel_voyage}</strong><span className="buyer-bid-port">{bid.port_name}</span></span><StatusBadge status={bid.effective_status} label="Effective status" /></span>
+            <span className="buyer-bid-card-secondary">
+              <span><span className="buyer-card-label">Deadline</span>{displayDate(bid.deadline_at)}</span>
+              <span><span className="buyer-card-label">Responsible BUYER</span>{bid.responsible_buyer_label}</span>
+              <span><span className="buyer-card-label">Fuel request</span>{bid.fuel_items.map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt}`).join(', ')}</span>
+            </span>
+            <span className="buyer-bid-card-metadata">
+              <span>Creator: {bid.created_by_label}</span>
+              <span>Raw status: {bid.raw_status}</span>
+              <span>Revision {bid.revision}</span>
+              {bid.awarded_trader_organization_label ? <span className="buyer-bid-award">Awarded to {bid.awarded_trader_organization_label}; total {bid.awarded_total_amount}</span> : null}
+            </span>
+          </button>;
+        })}</div>}
+      </section>
+      <section className="panel bid-detail buyer-bid-detail" aria-live="polite">{selected ? <BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} /> : <WorkspaceEmptyState title="No bid selected" description="Select a bid to view operations, quotes, scope, and audit history." />}</section>
+    </section>
+  </div>;
 }

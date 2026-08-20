@@ -17,6 +17,21 @@ function fakeClient(bids: Bid[] = [bid()]) {
 }
 
 describe('BUYER workspace', () => {
+  it('presents human-readable BUYER views while preserving the exact server view arguments', async () => {
+    const { client, listBids } = fakeClient();
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByRole('button', { name: /MV Buyer/ });
+    expect(screen.getByRole('radio', { name: 'All bids' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Created by me' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'By BUYER' })).not.toBeChecked();
+    expect(listBids).toHaveBeenLastCalledWith(id, 'all', undefined);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
+    await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
+    expect(listBids).toHaveBeenLastCalledWith(id, 'created_by_me', undefined);
+  });
+
   it('shows a clear empty state after a loaded bid view has no results', async () => {
     const { client } = fakeClient([]);
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
@@ -29,7 +44,7 @@ describe('BUYER workspace', () => {
     const { client, listBids } = fakeClient(); render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText('MV Buyer');
     expect(listBids).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByLabelText(/responsible buyer/i, { selector: 'input' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'By BUYER' }));
     await screen.findByText('Select a BUYER to load responsible bids.');
     expect(screen.queryByText('MV Buyer')).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /responsible buyer filter/i })).toHaveTextContent('Target buyer');
@@ -124,11 +139,32 @@ describe('BUYER workspace', () => {
   it('renders the required BUYER bid list information', async () => {
     const { client } = fakeClient([bid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now, awarded_quote_id: '10000000-0000-4000-8000-000000000004', awarded_trader_organization_id: '20000000-0000-4000-8000-000000000001', awarded_trader_organization_label: 'Awarded Trader', awarded_total_amount: 100, awarded_at: now })]);
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
-    await screen.findByText(/Raw status: awarded/);
-    expect(screen.getByText('Effective status: awarded')).toBeInTheDocument();
-    expect(screen.getByText(/Creator: Creator; responsible BUYER: Target buyer/)).toBeInTheDocument();
-    expect(screen.getByText(/Fuel: VLSFO 10/)).toBeInTheDocument();
-    expect(screen.getByText(/awarded to Awarded Trader; total 100/)).toBeInTheDocument();
+    const card = await screen.findByRole('button', { name: /MV Buyer/ });
+    expect(within(card).getByText('Busan')).toBeInTheDocument();
+    expect(within(card).getByText('Effective status: awarded')).toBeInTheDocument();
+    expect(within(card).getByText('Raw status: awarded')).toBeInTheDocument();
+    expect(within(card).getByText('Creator: Creator')).toBeInTheDocument();
+    expect(within(card).getByText('Target buyer')).toBeInTheDocument();
+    expect(within(card).getByText('VLSFO 10')).toBeInTheDocument();
+    expect(within(card).getByText('Revision 3')).toBeInTheDocument();
+    expect(within(card).getByText('Awarded to Awarded Trader; total 100')).toBeInTheDocument();
+  });
+
+  it('exposes the active bid as an accessible selected state', async () => {
+    const bidA = bid({ id: '10000000-0000-4000-8000-000000000004', vessel_voyage: 'MV Bid A' });
+    const bidB = bid({ id: '10000000-0000-4000-8000-000000000005', vessel_voyage: 'MV Bid B' });
+    const { client } = fakeClient([bidA, bidB]);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    const first = await screen.findByRole('button', { name: /MV Bid A/ });
+    const second = screen.getByRole('button', { name: /MV Bid B/ });
+    expect(first).toHaveAttribute('aria-pressed', 'false');
+    expect(second).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(second);
+    await waitFor(() => expect(screen.queryByText('Loading bid detail')).not.toBeInTheDocument());
+    expect(second).toHaveAttribute('aria-pressed', 'true');
+    expect(second).toHaveClass('is-selected');
+    expect(first).toHaveAttribute('aria-pressed', 'false');
   });
 
   it.each(['40001', '55000', 'P0002'])('does not retry a %s BUYER state error and retains it after the authoritative reload', async (code) => {
