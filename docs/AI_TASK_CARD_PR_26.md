@@ -121,7 +121,7 @@ Stop for a dirty tree at preflight, origin mismatch, exact-base mismatch, diverg
 
 ## Recommended model and reasoning
 
-GPT-5.6 Terra / Medium.
+GPT-5.6 Sol / Medium.
 
 ## Owner approval point
 
