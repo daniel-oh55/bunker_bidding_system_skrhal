@@ -79,6 +79,11 @@ Using controlled non-production-like identities in the target environment, verif
 - An eligible closed-bid quote can be awarded once, and the server audit shows the terminal award.
 - Revoking current TRADER scope immediately removes TRADER read/write access while retaining appropriate BUYER quote visibility.
 - Suspending an account or deactivating a membership immediately removes access after context revalidation.
+- A BUYER receives the expected best-effort private Realtime invalidation and automatically reloads authoritative workspace data after a controlled synthetic bid change, without manual browser refresh.
+- A selected TRADER automatically reloads authoritative workspace data after a controlled scope grant; a non-scoped TRADER and competitor organization remain unable to see that bid.
+- A controlled active-to-inactive membership transition emits `access_changed`, removes the protected workspace, and fails closed with no active authorized membership. Restore any temporarily disabled controlled identity, membership, account, or organization and reverify normal sign-in before closing the smoke.
+- Manual Refresh and the existing post-mutation authoritative reload continue to work as fallback paths.
+- Remove any temporary synthetic TRADER scope and terminally clean up or cancel any temporary synthetic bid where applicable; verify the retained scope is zero and record only approved non-secret evidence.
 
 Stop and investigate any result that differs from the server-authorized contract. Do not rely on frontend filtering as evidence of authorization.
 
