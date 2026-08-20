@@ -83,15 +83,70 @@ h2, h3 { color: var(--color-text); }
 .revoke-confirmation p { margin: var(--space-2) 0; }
 .revoke-award-warning, .terminal-result { font-weight: 700; }
 .revoke-confirmation-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.trader-bids { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
-.trader-card { margin-top: 0; }
-.trader-card h2 { font-size: 1.35rem; }
+.trader-workspace { min-width: 0; }
+.trader-summary-metrics { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.trader-summary-metrics > span { white-space: nowrap; }
+.trader-summary-metrics strong { color: var(--color-text); font-size: 1.05rem; }
+.trader-bids { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 18px; }
+.trader-card { min-width: 0; margin-top: 0; }
+.trader-card h2 { margin-bottom: 0; overflow-wrap: anywhere; color: var(--color-primary); font-size: 1.35rem; }
+.trader-card-heading { display: flex; align-items: start; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
+.trader-card-heading > div:first-child { min-width: 0; }
+.trader-card-port { margin: var(--space-1) 0 0; color: var(--color-muted); font-weight: 700; }
+.trader-card-status { display: grid; flex: 0 0 auto; justify-items: end; gap: var(--space-1); }
+.trader-card-status > span:first-child { color: var(--color-muted); font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.trader-bid-requirements { margin-top: var(--space-4); }
+.trader-bid-requirements > h3 { margin: 0; font-size: 1rem; }
+.trader-bid-timing { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: var(--space-3); }
+.trader-requested-fuels h4 { margin: 0 0 var(--space-2); color: var(--color-muted); font-size: .85rem; }
+.trader-requested-fuels ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.trader-requested-fuels li { display: grid; gap: 2px; min-width: 0; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); }
+.trader-requested-fuels li strong { overflow-wrap: anywhere; color: var(--color-primary); }
+.trader-requested-fuels li span { color: var(--color-muted); font-size: .84rem; }
+.trader-quote-state { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); margin-top: var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-left: 4px solid #aeb9ca; border-radius: var(--radius-md); background: var(--color-surface-subtle); }
+.trader-quote-state.has-own-quote { border-left-color: var(--color-success); background: var(--color-success-surface); }
+.trader-quote-state .eyebrow { margin-bottom: 2px; }
+.trader-quote-state h3, .trader-quote-state p { margin: 0; }
+.trader-quote-state h3 { font-size: 1rem; }
+.trader-quote-state > div > p:last-child { margin-top: 2px; color: var(--color-muted); font-size: .84rem; line-height: 1.45; }
+.trader-quote-state dl { display: flex; flex-wrap: wrap; justify-content: end; gap: var(--space-2) var(--space-4); margin: 0; }
+.trader-quote-state dl div { min-width: 110px; }
+.trader-quote-state dd { margin: 2px 0 0; font-size: 1.05rem; font-weight: 800; }
+.trader-quote-editor { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+.trader-quote-editor-heading { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); }
+.trader-quote-editor-heading h3, .trader-quote-editor-heading p { margin: 0; }
+.trader-quote-editor-heading > p { max-width: 42ch; color: var(--color-muted); font-size: .84rem; line-height: 1.45; }
+.trader-fuel-price-list { display: grid; gap: var(--space-2); }
+.trader-fuel-price-row { display: grid; grid-template-columns: minmax(0, .9fr) minmax(140px, 1.1fr); align-items: end; gap: var(--space-4); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); }
+.trader-fuel-context { display: grid; min-width: 0; gap: 2px; }
+.trader-fuel-context strong { overflow-wrap: anywhere; color: var(--color-primary); }
+.trader-fuel-context span { color: var(--color-muted); font-size: .84rem; }
+.trader-fuel-price-row input { margin-top: var(--space-1); }
+.trader-barge-fee { padding: var(--space-3); border: 1px solid #c3cedb; border-radius: var(--radius-sm); background: #edf3f9; }
+.trader-barge-fee label { max-width: 260px; color: var(--color-text); }
+.trader-quote-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }
+.trader-quote-totals > div { min-width: 0; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); }
+.trader-quote-totals .trader-authoritative-total { border-color: #b7c8da; background: #e8eef7; }
+.trader-quote-totals dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; font-size: 1.2rem; font-weight: 800; }
+.trader-quote-totals p { margin: var(--space-1) 0 0; color: var(--color-muted); font-size: .78rem; line-height: 1.4; }
+.trader-client-estimate dd { color: var(--color-muted); }
+.trader-authoritative-total dd { color: var(--color-primary); }
+.trader-quote-actions { display: flex; justify-content: end; }
+.trader-quote-actions button { min-width: 140px; }
 .operational-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px var(--space-4); margin: 14px 0; }
 .operational-data div { min-width: 0; }
 .operational-data dd { margin: 3px 0 0; overflow-wrap: anywhere; }
 .terminal-result { margin: var(--space-4) 0 0; }
-.read-only-quote { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
-.read-only-quote h3 { margin: 0; font-size: 1rem; }
+.trader-terminal-result { display: grid; gap: var(--space-1); padding: var(--space-4); border: 1px solid #b9c7d7; border-left: 4px solid var(--color-primary); border-radius: var(--radius-md); background: #edf3f9; }
+.trader-terminal-result > span { color: var(--color-muted); font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.trader-terminal-result > strong { line-height: 1.45; }
+.read-only-quote { margin-top: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
+.read-only-quote h3, .read-only-quote header > p:last-child { margin: 0; }
+.read-only-quote h3 { font-size: 1rem; }
+.read-only-quote header > p:last-child { margin-top: 2px; color: var(--color-muted); font-size: .84rem; line-height: 1.45; }
+.trader-read-only-values { margin-bottom: 0; }
+.trader-read-only-values > div { padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+.trader-read-only-values > div:nth-last-child(-n + 2) dd { color: var(--color-primary); font-size: 1.05rem; font-weight: 800; }
 .status-panel, .auth-panel { max-width: 620px; margin-inline: auto; }
 .auth-form { display: grid; gap: 10px; margin-top: 28px; }
 .auth-form label, dt { color: var(--color-muted); font-size: .85rem; font-weight: 700; }
@@ -190,5 +245,5 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-audit-timeline .operational-data { margin: 0; }
 
 @media (max-width: 900px) { .buyer-bid-layout { grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr); } .buyer-detail-form-grid { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .app-shell { width: min(100% - 24px, 1280px); padding-top: var(--space-5); } .workspace-header, .workspace-summary { align-items: stretch; flex-direction: column; } .workspace-summary-action > button { width: 100%; } .bid-layout { grid-template-columns: 1fr; } .bid-list { position: static; } .buyer-create-fields { grid-template-columns: 1fr; } }
-@media (max-width: 480px) { .panel { padding: var(--space-4); border-radius: var(--radius-md); } .trader-bids, .fuel-row { grid-template-columns: 1fr; } .context-chip { overflow-wrap: anywhere; } .buyer-summary-metrics { display: grid; } .buyer-filter-options, .buyer-filter-options label { width: 100%; } .buyer-bid-card-secondary { grid-template-columns: 1fr; } .buyer-bid-card-secondary > span:last-child { grid-column: auto; } .buyer-overview-heading, .buyer-section-heading { align-items: start; flex-direction: column; } .buyer-action-row-field button, .buyer-create-actions button { width: 100%; } .buyer-access-item { align-items: stretch; flex-direction: column; } .buyer-access-item button { width: 100%; } }
+@media (max-width: 720px) { .app-shell { width: min(100% - 24px, 1280px); padding-top: var(--space-5); } .workspace-header, .workspace-summary { align-items: stretch; flex-direction: column; } .workspace-summary-action > button { width: 100%; } .bid-layout { grid-template-columns: 1fr; } .bid-list { position: static; } .buyer-create-fields { grid-template-columns: 1fr; } .trader-bids { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .panel { padding: var(--space-4); border-radius: var(--radius-md); } .trader-bids, .fuel-row { grid-template-columns: 1fr; } .context-chip { overflow-wrap: anywhere; } .trader-summary-metrics { display: grid; } .trader-card-heading, .trader-quote-editor-heading { align-items: start; flex-direction: column; } .trader-card-status { justify-items: start; } .trader-bid-timing, .trader-fuel-price-row, .trader-quote-totals, .trader-quote-state { grid-template-columns: 1fr; } .trader-quote-state dl { justify-content: start; } .trader-barge-fee label { max-width: none; } .trader-quote-actions button { width: 100%; } .buyer-summary-metrics { display: grid; } .buyer-filter-options, .buyer-filter-options label { width: 100%; } .buyer-bid-card-secondary { grid-template-columns: 1fr; } .buyer-bid-card-secondary > span:last-child { grid-column: auto; } .buyer-overview-heading, .buyer-section-heading { align-items: start; flex-direction: column; } .buyer-action-row-field button, .buyer-create-actions button { width: 100%; } .buyer-access-item { align-items: stretch; flex-direction: column; } .buyer-access-item button { width: 100%; } }

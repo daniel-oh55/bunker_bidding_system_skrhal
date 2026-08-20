@@ -58,6 +58,7 @@
 
 ## Completed refinements
 
+- The TRADER workspace UX refinement is implemented without changing quote, authorization, deadline, RPC, or Realtime contracts.
 - The BUYER workspace presents human-readable server-backed views, authoritative-list summary counts, dense selectable bid cards, and clearer create/detail operation grouping without changing RPC, authorization, lifecycle, or Realtime behavior.
 - BUYER and TRADER workspaces share presentational summary, status-badge, and empty-state primitives with a restrained responsive operational UI foundation. These components do not own membership authority, data access, mutations, or Realtime behavior.
 - The BUYER bid detail uses a compact always-visible overview with accessible disclosure sections for bid terms and deadline, responsibility and lifecycle, TRADER access and quotes, and audit history.
