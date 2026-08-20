@@ -3,6 +3,7 @@ import type { BiddingClient, BiddingResult } from './bidding-client';
 import { FuelRows } from './bid-form';
 import { isoToLocalInput, localInputToIso } from './datetime';
 import { fuelGrades, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type Quote, type TraderOrganization } from './types';
+import { StatusBadge } from '../ui/workspace-ui';
 
 type Detail = { access: BidTraderAccess[]; quotes: Quote[]; audit: BidAuditEvent[] };
 type Row = { grade: typeof fuelGrades[number]; quantity: string };
@@ -86,14 +87,16 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
     }
   };
 
-  return <div>
+  return <div className="buyer-detail-content">
     <div className="bid-overview">
-      <h2>{bid.vessel_voyage}</h2>
+      <div className="buyer-overview-heading">
+        <div><p className="eyebrow">Selected bid</p><h2>{bid.vessel_voyage}</h2></div>
+        <StatusBadge status={bid.effective_status} label="Effective status" />
+      </div>
       <dl className="operational-data">
         <div><dt>Port</dt><dd>{bid.port_name}</dd></div>
         <div><dt>Delivery window</dt><dd>{bid.delivery_window}</dd></div>
         <div><dt>Raw status</dt><dd>{bid.raw_status}</dd></div>
-        <div><dt>Effective status</dt><dd>{bid.effective_status}</dd></div>
         <div><dt>Deadline</dt><dd>{date(bid.deadline_at)}</dd></div>
         <div><dt>Creator</dt><dd>{bid.created_by_label}</dd></div>
         <div><dt>Responsible BUYER</dt><dd>{bid.responsible_buyer_label}</dd></div>
@@ -109,49 +112,62 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
     <details className="detail-section" open={termsOpen}>
       <summary>Bid terms &amp; deadline</summary>
       {detail === null ? <p>Loading bid detail</p> : detail.quotes.length ? <p className="notice">The first quote freezes commercial terms. Only deadline changes remain available.</p> : <p>Commercial fields are editable until the first quote is retained.</p>}
-      <label>Vessel / voyage<input aria-label="Edit vessel / voyage" disabled={!commercialOpen || pending} value={draft.vessel} onChange={(event) => setDraft({ ...draft, vessel: event.target.value })} /></label>
-      <label>Port<input aria-label="Edit port" disabled={!commercialOpen || pending} value={draft.port} onChange={(event) => setDraft({ ...draft, port: event.target.value })} /></label>
-      <label>Delivery window<input aria-label="Edit delivery window" disabled={!commercialOpen || pending} value={draft.window} onChange={(event) => setDraft({ ...draft, window: event.target.value })} /></label>
-      <label>Deadline<input aria-label="Edit deadline" type="datetime-local" disabled={!deadlineOpen || detail === null || pending} value={draft.deadline} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} /></label>
+      <div className="buyer-detail-form-grid">
+        <label>Vessel / voyage<input aria-label="Edit vessel / voyage" disabled={!commercialOpen || pending} value={draft.vessel} onChange={(event) => setDraft({ ...draft, vessel: event.target.value })} /></label>
+        <label>Port<input aria-label="Edit port" disabled={!commercialOpen || pending} value={draft.port} onChange={(event) => setDraft({ ...draft, port: event.target.value })} /></label>
+        <label>Delivery window<input aria-label="Edit delivery window" disabled={!commercialOpen || pending} value={draft.window} onChange={(event) => setDraft({ ...draft, window: event.target.value })} /></label>
+        <label>Deadline<input aria-label="Edit deadline" type="datetime-local" disabled={!deadlineOpen || detail === null || pending} value={draft.deadline} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} /></label>
+      </div>
       <FuelRows rows={draft.rows} onChange={(rows) => setDraft({ ...draft, rows })} disabled={!commercialOpen || pending} />
-      <button type="button" disabled={!deadlineOpen || detail === null || !validRows || pending} onClick={saveBid}>Save bid</button>
+      <div className="buyer-action-row"><button type="button" disabled={!deadlineOpen || detail === null || !validRows || pending} onClick={saveBid}>Save bid</button></div>
     </details>
 
     <details className="detail-section">
       <summary>Responsibility &amp; lifecycle</summary>
-      <h3>Responsibility</h3>
-      <select aria-label="Assign responsible BUYER" disabled={pending || bid.raw_status === 'awarded' || bid.raw_status === 'cancelled'} value={responsible} onChange={(event) => setResponsible(event.target.value)}>
-        {buyers.map((buyer) => <option key={buyer.user_id} value={buyer.user_id}>{buyer.display_label}</option>)}
-      </select>
-      <button type="button" disabled={pending || responsible === bid.responsible_buyer_user_id} onClick={() => void mutate(() => client.reassignBid(membershipId, bid.id, bid.revision, responsible))}>Reassign</button>
-      <h3>Lifecycle</h3>
-      {bid.raw_status === 'open' ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.closeBid(membershipId, bid.id, bid.revision))}>Close</button> : null}
-      {(bid.raw_status === 'closed' || (bid.raw_status === 'open' && bid.effective_status === 'closed')) ? <>
-        <label>Reopen deadline<input aria-label="Reopen deadline" type="datetime-local" value={draft.deadline} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} /></label>
-        <button type="button" disabled={pending} onClick={() => void mutate(() => client.reopenBid(membershipId, bid.id, bid.revision, localInputToIso(draft.deadline)))}>Reopen</button>
-      </> : null}
-      {bid.raw_status === 'open' || bid.raw_status === 'closed' ? cancelConfirm
-        ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.cancelBid(membershipId, bid.id, bid.revision))}>Confirm cancel</button>
-        : <button type="button" className="secondary" disabled={pending} onClick={() => setCancelConfirm(true)}>Cancel bid</button>
-        : null}
+      <section className="buyer-operation-group" aria-labelledby="buyer-responsibility-heading">
+        <h3 id="buyer-responsibility-heading">Responsibility</h3>
+        <p className="buyer-section-helper">Assignment supports operational filtering; server authorization remains authoritative.</p>
+        <div className="buyer-action-row buyer-action-row-field">
+          <select aria-label="Assign responsible BUYER" disabled={pending || bid.raw_status === 'awarded' || bid.raw_status === 'cancelled'} value={responsible} onChange={(event) => setResponsible(event.target.value)}>
+            {buyers.map((buyer) => <option key={buyer.user_id} value={buyer.user_id}>{buyer.display_label}</option>)}
+          </select>
+          <button type="button" disabled={pending || responsible === bid.responsible_buyer_user_id} onClick={() => void mutate(() => client.reassignBid(membershipId, bid.id, bid.revision, responsible))}>Reassign</button>
+        </div>
+      </section>
+      <section className="buyer-operation-group" aria-labelledby="buyer-lifecycle-heading">
+        <h3 id="buyer-lifecycle-heading">Lifecycle</h3>
+        <div className="buyer-action-row">
+          {bid.raw_status === 'open' ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.closeBid(membershipId, bid.id, bid.revision))}>Close</button> : null}
+          {(bid.raw_status === 'closed' || (bid.raw_status === 'open' && bid.effective_status === 'closed')) ? <>
+            <label>Reopen deadline<input aria-label="Reopen deadline" type="datetime-local" value={draft.deadline} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} /></label>
+            <button type="button" disabled={pending} onClick={() => void mutate(() => client.reopenBid(membershipId, bid.id, bid.revision, localInputToIso(draft.deadline)))}>Reopen</button>
+          </> : null}
+          {bid.raw_status === 'open' || bid.raw_status === 'closed' ? cancelConfirm
+            ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.cancelBid(membershipId, bid.id, bid.revision))}>Confirm cancel</button>
+            : <button type="button" className="secondary" disabled={pending} onClick={() => setCancelConfirm(true)}>Cancel bid</button>
+            : null}
+        </div>
+      </section>
     </details>
 
     <details className="detail-section" open={traderOpen}>
       <summary>TRADER access &amp; quotes</summary>
-      <h3>TRADER access</h3>
+      <div className="buyer-section-heading"><div><h3>TRADER access</h3><p className="buyer-section-helper">Manage which active organizations can participate in this bid.</p></div>{detail ? <span>{detail.access.length} with access</span> : null}</div>
       {bid.effective_status === 'open' ? <>
-        <select aria-label="Grant TRADER organization" value={scope} onChange={(event) => setScope(event.target.value)}>
-          <option value="">Select active TRADER organization</option>
-          {organizations.filter((organization) => !detail?.access.some((access) => access.trader_organization_id === organization.organization_id)).map((organization) => <option key={organization.organization_id} value={organization.organization_id}>{organization.organization_label}</option>)}
-        </select>
-        <button type="button" disabled={!scope || pending || detail === null} onClick={() => void mutate(() => client.grantBidTraderAccess(membershipId, bid.id, bid.revision, scope))}>Grant scope</button>
+        <div className="buyer-action-row buyer-action-row-field">
+          <select aria-label="Grant TRADER organization" value={scope} onChange={(event) => setScope(event.target.value)}>
+            <option value="">Select active TRADER organization</option>
+            {organizations.filter((organization) => !detail?.access.some((access) => access.trader_organization_id === organization.organization_id)).map((organization) => <option key={organization.organization_id} value={organization.organization_id}>{organization.organization_label}</option>)}
+          </select>
+          <button type="button" disabled={!scope || pending || detail === null} onClick={() => void mutate(() => client.grantBidTraderAccess(membershipId, bid.id, bid.revision, scope))}>Grant scope</button>
+        </div>
       </> : null}
-      <ul>{detail?.access.map((access) => {
+      <ul className="buyer-access-list">{detail?.access.map((access) => {
         const confirmed = revokeIsCurrent(revokeConfirm) && revokeConfirm?.traderOrganizationId === access.trader_organization_id;
         const confirmationId = `revoke-confirmation-${access.trader_organization_id}`;
         const selectedAwardee = bid.effective_status === 'awarded' && bid.awarded_trader_organization_id === access.trader_organization_id;
         return <li key={access.trader_organization_id}>
-          {access.trader_organization_label} <button type="button" className="secondary" disabled={pending} aria-describedby={confirmed ? confirmationId : undefined} onClick={() => setRevokeConfirm({ bidId: bid.id, bidRevision: bid.revision, traderOrganizationId: access.trader_organization_id, accessSignature: currentAccessSignature })}>Revoke</button>
+          <div className="buyer-access-item"><strong>{access.trader_organization_label}</strong><button type="button" className="secondary" disabled={pending} aria-describedby={confirmed ? confirmationId : undefined} onClick={() => setRevokeConfirm({ bidId: bid.id, bidRevision: bid.revision, traderOrganizationId: access.trader_organization_id, accessSignature: currentAccessSignature })}>Revoke</button></div>
           {confirmed ? <div id={confirmationId} className="revoke-confirmation" role="alert">
             <strong>Revoke access for {access.trader_organization_label}?</strong>
             <p>Revoking access immediately removes this TRADER organization’s bid and quote visibility. BUYER records remain retained.</p>
@@ -163,32 +179,33 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
           </div> : null}
         </li>;
       })}</ul>
-      <h3>Buyer-visible quotes</h3>
+      <div className="buyer-section-heading buyer-quotes-heading"><div><h3>Buyer-visible quotes</h3><p className="buyer-section-helper">Compared in the existing authoritative order.</p></div>{detail ? <span>{detail.quotes.length} quotes</span> : null}</div>
       <ul className="quote-list">{detail?.quotes.map((quote) => {
         const confirmed = awardConfirm?.quoteId === quote.id && awardConfirm.quoteRevision === quote.revision && awardConfirm.signature === quoteSignature;
-        return <li key={quote.id}>
+        return <li className={`buyer-quote-card${quote.is_awarded ? ' is-awarded' : ''}`} key={quote.id}>
           <dl className="operational-data">
             <div><dt>TRADER organization</dt><dd>{quote.trader_organization_label}</dd></div>
             <div><dt>Grade prices</dt><dd>{quote.fuel_prices.map((price) => `${price.fuel_grade.toUpperCase()} ${number(price.unit_price)}`).join(', ')}</dd></div>
             <div><dt>Barge fee</dt><dd>{number(quote.barge_fee)}</dd></div>
-            <div><dt>Authoritative total</dt><dd>{number(quote.total_amount)}</dd></div>
+            <div className="buyer-quote-total"><dt>Authoritative total</dt><dd>{number(quote.total_amount)}</dd></div>
             <div><dt>Quote revision</dt><dd>{quote.revision}</dd></div>
             <div><dt>Access</dt><dd>{quote.access_active ? 'active' : 'revoked'}</dd></div>
             <div><dt>Organization</dt><dd>{quote.organization_active ? 'active' : 'inactive'}</dd></div>
             <div><dt>Award eligibility</dt><dd>{quote.eligible_for_award ? 'eligible' : 'ineligible'}</dd></div>
             <div><dt>Awarded</dt><dd>{quote.is_awarded ? 'yes' : 'no'}</dd></div>
           </dl>
-          {quote.eligible_for_award && !quote.is_awarded ? confirmed
-            ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.awardBid(membershipId, bid.id, bid.revision, quote.id, quote.revision))}>Confirm award</button>
-            : <button type="button" disabled={pending} onClick={() => setAwardConfirm({ quoteId: quote.id, quoteRevision: quote.revision, signature: quoteSignature })}>Award</button>
-            : null}
+          <div className="buyer-action-row">{quote.eligible_for_award && !quote.is_awarded ? confirmed
+              ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.awardBid(membershipId, bid.id, bid.revision, quote.id, quote.revision))}>Confirm award</button>
+              : <button type="button" disabled={pending} onClick={() => setAwardConfirm({ quoteId: quote.id, quoteRevision: quote.revision, signature: quoteSignature })}>Award</button>
+              : null}</div>
         </li>;
       })}</ul>
     </details>
 
     <details className="detail-section">
       <summary>Audit history</summary>
-      <ol className="audit-list">{detail?.audit.map((event) => <AuditEvent key={event.id} event={event} buyers={buyers} />)}</ol>
+      <p className="buyer-section-helper">Server-recorded changes in chronological response order.</p>
+      <ol className="audit-list buyer-audit-timeline">{detail?.audit.map((event) => <AuditEvent key={event.id} event={event} buyers={buyers} />)}</ol>
     </details>
     <button type="button" className="secondary detail-refresh" onClick={() => { setRevokeConfirm(null); refresh(); }}>Refresh detail</button>
   </div>;

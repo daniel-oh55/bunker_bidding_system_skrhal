@@ -42,6 +42,7 @@ describe('BUYER bid detail organization', () => {
     expect(screen.getByRole('heading', { name: 'MV Detail' })).toBeInTheDocument();
     const overview = document.querySelector('.bid-overview');
     for (const label of ['Port', 'Delivery window', 'Raw status', 'Effective status', 'Deadline', 'Creator', 'Responsible BUYER', 'Fuel requested', 'Revision', 'Awarded organization', 'Awarded total']) expect(overview).toHaveTextContent(label);
+    expect(screen.getByText('Effective status: open')).toHaveClass('status-badge');
     expect([...document.querySelectorAll('details > summary')].map((summary) => summary.textContent)).toEqual([
       'Bid terms & deadline', 'Responsibility & lifecycle', 'TRADER access & quotes', 'Audit history',
     ]);
@@ -63,6 +64,23 @@ describe('BUYER bid detail organization', () => {
     expect(screen.getByLabelText('Grant TRADER organization')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Award' }));
     expect(screen.getByRole('button', { name: 'Confirm award' })).toBeInTheDocument();
+  });
+
+  it('keeps close and award mutations bound to the current bid and reviewed quote arguments', () => {
+    const closeBid = vi.fn().mockResolvedValue({ data: bid(), error: null });
+    const closeMutate = vi.fn((operation: () => Promise<unknown>) => operation().then(() => true));
+    const openView = renderDetail(bid(), [], [], [], { client: { closeBid } as unknown as BiddingClient, mutate: closeMutate });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(closeBid).toHaveBeenCalledWith(currentBuyerId, bidId, 3);
+    openView.unmount();
+
+    const reviewedQuote = quote();
+    const awardBid = vi.fn().mockResolvedValue({ data: bid(), error: null });
+    const awardMutate = vi.fn((operation: () => Promise<unknown>) => operation().then(() => true));
+    renderDetail(bid({ raw_status: 'closed', effective_status: 'closed' }), [], [reviewedQuote], [], { client: { awardBid } as unknown as BiddingClient, mutate: awardMutate });
+    fireEvent.click(screen.getByRole('button', { name: 'Award' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm award' }));
+    expect(awardBid).toHaveBeenCalledWith(currentBuyerId, bidId, 3, reviewedQuote.id, reviewedQuote.revision);
   });
 
   it('renders active BUYER labels and hides full UUIDs for unavailable audit responsibility transitions', () => {
