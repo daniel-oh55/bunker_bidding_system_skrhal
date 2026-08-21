@@ -87,8 +87,8 @@ const forbiddenElevatedCredentialPatterns = [
   new RegExp(`\\bSUPABASE_(?:SECRET|${serviceRoleUpper})_KEYS?\\b`, 'i'),
   new RegExp(`\\b[A-Z0-9_]*${serviceRoleUpper}_KEY\\b`),
   new RegExp(`\\bsb_(?:secret|${serviceRoleLower})_[A-Za-z0-9_-]*`, 'i'),
-  new RegExp(`\\b${serviceRoleLower}\\b`, 'i'),
 ];
+const forbiddenElevatedRoleIdentifierPattern = new RegExp(`\\b${serviceRoleLower}\\b`, 'i');
 
 const forbiddenAnonKeyPattern = new RegExp(
   `\\b${['VITE', 'SUPABASE', 'ANON', 'KEY'].join('_')}\\b`,
@@ -369,6 +369,10 @@ function checkFiles() {
         recordFailure(`Elevated credential marker found outside legacy/: ${normalizedRelPath}`);
         break;
       }
+    }
+
+    if (!isApprovedSqlFile && forbiddenElevatedRoleIdentifierPattern.test(content)) {
+      recordFailure(`Elevated credential marker found outside legacy/: ${normalizedRelPath}`);
     }
 
     for (const identifier of firebaseIdentifiers) {

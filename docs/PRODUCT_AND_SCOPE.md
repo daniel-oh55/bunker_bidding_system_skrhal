@@ -15,13 +15,14 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 - The canonical Vercel Production deployment exists, and sanitized lifecycle smoke testing is complete using retained synthetic smoke records. Frontend private Realtime Production E2E verification is complete: a BUYER automatically reloaded after synthetic-bid creation; an authorized selected TRADER automatically reloaded after scope grant; a non-scoped TRADER and competitor organization remained isolated; and controlled `access_changed` removed protected workspace and failed closed after membership deactivation. Manual Refresh and post-mutation authoritative reload remained durable fallbacks, and controlled access state was restored after the smoke.
 - Existing Auth users can request a self-service password reset. The response is non-enumerating, and a recovery session can only update a password before local sign-out and a new normal sign-in.
 - The BUYER Create new bid form accepts one manually selected local `.msg` up to 5 MiB, parses it in the browser into a review-only draft, shows warnings, and requires explicit Apply before populating supported visible fields. The human can edit every applied value and must still explicitly use the existing Create bid action.
+- A provider-neutral server-side intake foundation exists in PostgreSQL for future mailbox work: a private bounded normalized queue, service-role-only idempotent ingress, and active-BUYER-only pending-list and revision-locked dismiss RPCs. All active approved BUYERs share the pending queue; TRADERs have no access.
 
 ## Excluded from this phase
 
 - public signup, invitation, and admin-provisioning flows
 - quote withdrawal, unaward, or award replacement
 - historical `.msg`/`.eml` migration and real operational email fixtures or data
-- manual `.eml` intake, mailbox/Gmail/Outlook connections, polling, webhooks, automatic ingestion, and automatic bid creation
+- manual `.eml` intake; Microsoft Graph or Gmail API integration; mailbox OAuth, passwords, or tokens; live mailbox connections; polling, webhooks, cron, provider fetch/delivery; intake-to-bid conversion; and automatic bid creation
 - approval and submission business rules
 - migration or use of real operational bidding data
 
@@ -42,6 +43,8 @@ These contracts are implemented in the private database/RPC backend and surfaced
 - Secret and service-role credentials never enter browser code, Vite variables, or the repository.
 - The frontend gate mirrors server access for UX but does not replace RLS or server-side authorization.
 - Local message parsing is advisory UX only. It never imports a deadline or responsible BUYER, never calls a server action, and cannot bypass the existing authoritative `createBid` RPC.
+- Server-side mail ingress accepts only normalized bounded values and is executable only by the Supabase service role; browser, anonymous, and authenticated callers cannot invoke it or directly access the private queue. The exact opaque provider/mailbox/message identity is a database-enforced, non-overwriting idempotency key and is excluded from BUYER results.
+- The mail intake queue deliberately retains no raw body, HTML, attachments, sender/recipient/address data, provider credentials, deadline, responsible BUYER, TRADER, seller, quote, award, or generic raw payload. Dismissal is one-way, row-locked, expected-revision checked, and records the actual authenticated user plus verified membership.
 - An approved BUYER may take over or modify another BUYER's bid only through server-authorized policy. `created_by` remains immutable, and the actual actor plus any responsible-BUYER reassignment are retained in audit history.
 
 The frontend selects only server-returned memberships, never grants authority, clears protected data on context switch, sign-out, password recovery, or authorization failure, and uses manual refresh plus post-mutation server reload. It consumes private Realtime Broadcast only as best-effort invalidation: one self access topic and one selected-context business topic cause server access revalidation or an authoritative BUYER/TRADER RPC reload, never payload rendering. Membership selectors and chips present the server label as display data only; the old four-field RPC shape uses a shortened neutral organization ID solely for safe frontend-first rollout ordering. Password recovery is limited to existing Auth users and does not grant workspace access; a recovery session must complete its password update and then sign in normally for server-verified membership access. Invitations and administration/provisioning flows and UI remain unimplemented. No real operational bidding data has been migrated or is in use; retained Production records are synthetic smoke records only.

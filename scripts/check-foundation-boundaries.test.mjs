@@ -50,6 +50,7 @@ const requiredAuthFailureCategories = {
 };
 const legacyProjectIdentifier = ['spot', 'bidding', 'skrhal'].join('-');
 const firebaseNamespace = ['fire', 'base'].join('');
+const elevatedRoleIdentifier = ['service', 'role'].join('_');
 const legacyPrototypePath = ['..', 'legacy', `${firebaseNamespace}-prototype`, 'index.html'].join(
   '/',
 );
@@ -217,10 +218,59 @@ describe('foundation boundary checker', () => {
     expect(result.output).toContain('Foundation boundary check passed.');
   });
 
-  it('continues to scan approved SQL files for elevated credential markers', () => {
+  it('allows a PostgreSQL elevated-role grant in an approved migration', () => {
     const root = createPassingFixture();
-    const marker = ['service', 'role'].join('_');
+    writeFixtureFile(
+      root,
+      'supabase/migrations/20260101000000_fixture.sql',
+      `grant execute on function public.fixture() to ${elevatedRoleIdentifier};\n`,
+    );
+
+    const result = runChecker(root);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
+  it('allows an elevated-role privilege assertion in an approved database test', () => {
+    const root = createPassingFixture();
+    writeFixtureFile(
+      root,
+      'supabase/tests/database/fixture.sql',
+      `select has_function_privilege('${elevatedRoleIdentifier}', 'public.fixture()', 'execute');\n`,
+    );
+
+    const result = runChecker(root);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
+  it('rejects a Supabase elevated-role key marker in an approved migration', () => {
+    const root = createPassingFixture();
+    const marker = ['SUPABASE', 'SERVICE', 'ROLE', 'KEY'].join('_');
     writeFixtureFile(root, 'supabase/migrations/20260101000000_fixture.sql', `select '${marker}';\n`);
+
+    expectFailure(root, 'Elevated credential marker');
+  });
+
+  it('rejects a generic elevated-role key marker in an approved migration', () => {
+    const root = createPassingFixture();
+    const marker = ['SERVICE', 'ROLE', 'KEY'].join('_');
+    writeFixtureFile(root, 'supabase/migrations/20260101000000_fixture.sql', `select '${marker}';\n`);
+
+    expectFailure(root, 'Elevated credential marker');
+  });
+
+  it('rejects an sb elevated-role credential marker in an approved migration', () => {
+    const root = createPassingFixture();
+    const marker = ['sb', 'service', 'role', 'fixture'].join('_');
+    writeFixtureFile(root, 'supabase/migrations/20260101000000_fixture.sql', `select '${marker}';\n`);
+
+    expectFailure(root, 'Elevated credential marker');
+  });
+
+  it('rejects a standalone elevated-role identifier in ordinary active source', () => {
+    const root = createPassingFixture();
+    writeFixtureFile(root, 'src/credential.ts', `export const role = '${elevatedRoleIdentifier}';\n`);
 
     expectFailure(root, 'Elevated credential marker');
   });

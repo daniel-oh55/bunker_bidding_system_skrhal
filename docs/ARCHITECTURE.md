@@ -3,10 +3,11 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: local CLI migrations and pgTAP tests, with seven reviewed migrations applied to Production, including the organization-label access-context migration and `20260808090000_realtime_workspace_notifications` Realtime foundation
+- Supabase access: local CLI migrations and pgTAP tests, including the repository-only mail-intake foundation migration; seven earlier reviewed migrations remain applied to Production, including the organization-label access-context migration and `20260808090000_realtime_workspace_notifications` Realtime foundation
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()`, an integrated RPC-only BUYER/TRADER workspace, and a private Realtime invalidation adapter
 - Local intake: a BUYER form-local `.msg` binary adapter validates extension, size, and CFBF signature before browser parsing; a separate pure parser converts only plain-text subject/body into advisory candidates and warnings
+- Server intake foundation: a future trusted mailbox connector may call one service-role-only normalized-ingress RPC, which stages bounded candidates in an RLS-enabled `app_private` queue; active BUYERs use only narrow list/dismiss RPCs
 - Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, sanitized synthetic lifecycle smoke testing, BUYER/TRADER trusted-label UI smoke, private Realtime channel enforcement, and E2E verification of the existing private Realtime adapter are complete
 - Legacy reference: static Firebase prototype under `legacy/firebase-prototype/`
 
@@ -23,6 +24,8 @@
 - Audit events are append-only and contain server-generated before/after snapshots, actor membership/organization/role snapshots, and the resulting revision.
 - Bid/TRADER scope is a private current access relation. Quotes and quote items are private, RLS-enabled organization-owned records; public RPCs authenticate the selected membership from `auth.uid()` and database state before every access.
 - Quote mutation and award lock the bid first, use database server time for closure, calculate totals from stored bid quantities and quote prices, and append server-generated audit snapshots. The composite award foreign key proves the award quote belongs to its bid.
+- Mail intake identity is a unique `(source_provider, source_mailbox_key, source_message_id)` tuple. The opaque mailbox/message values stay private; duplicate ingress returns the existing ID without updating candidates, status, or revision, including when the item is dismissed.
+- `public.list_mail_intake_items()` exposes only the shared pending queue after the existing active-BUYER actor check. `public.dismiss_mail_intake_item()` locks one row, verifies the expected revision and pending state, records the server-verified actor, and transitions it one way to dismissed.
 
 ## Enforced architectural boundaries
 
@@ -38,6 +41,8 @@
 - Application validation mirrors server rules only for UX.
 - Manual `.msg` intake is an application-only draft adapter, not an authorization or persistence layer. Preview and Apply make no network or RPC calls; the existing visible create form and unchanged `createBid` RPC remain the only bid creation path.
 - The intake layer keeps source bytes and normalized plain text ephemeral, exposes no HTML/attachments/message identities, performs no URL fetches, and never imports deadline or responsible-BUYER authority.
+- The server-side intake foundation is separate from browser-local parsing. Only the Supabase service role may call normalized ingress; `anon` and `authenticated` have no ingest EXECUTE or direct private-table access. BUYER results omit provider/mailbox/message identity and expose only bounded candidates, warnings, status, revision, and server timestamps.
+- No provider connector, OAuth/token/password handling, mailbox fetch, polling, webhook, cron, automatic bid creation, or intake-to-bid conversion exists. `received_at` is provider-originated metadata, never deadline authority, and the existing `createBid` contract is unchanged.
 - Private Realtime Broadcast is an authorization-checked invalidation foundation, not an authorization mechanism. Active BUYER contexts may join `workspace:buyer`; active TRADER members may join only their organization-wide `workspace:trader:<organization_uuid>` topic; authenticated users may join only their own `workspace:access:<auth_user_uuid>` topic. Browser clients have no application Broadcast send policy.
 - Realtime service is enabled in Production with public channel access disabled, so those Broadcast topics are enforced as private channels.
 - The Broadcast application payload is only `{"kind":"workspace_changed"}` or `{"kind":"access_changed"}`; Realtime adds its own opaque delivery ID. No bid, quote, organization, or identity data is placed in the application payload.
@@ -58,4 +63,4 @@ The browser creates separate access, bidding, and narrow Realtime invalidation a
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
 - seven reviewed Supabase migrations, including the organization-label access-context migration and `20260808090000_realtime_workspace_notifications`, are applied and the canonical Vercel Production deployment exists
 - no real operational bidding data has been migrated or is in use; retained Production records are synthetic smoke records only
-- manual browser-local `.msg` draft intake is allowed; manual `.eml`, mailbox connectivity, automatic ingestion/creation, historical email migration, and operational email fixtures remain outside the architecture
+- manual browser-local `.msg` draft intake and the private normalized server intake boundary are allowed; manual `.eml`, provider integrations, live mailbox connectivity/fetch/delivery, intake-to-bid conversion, automatic bid creation, historical email migration, and operational email fixtures remain outside the architecture
