@@ -30,6 +30,82 @@ describe('BUYER workspace', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
     await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
     expect(listBids).toHaveBeenLastCalledWith(id, 'created_by_me', undefined);
+    expect(screen.queryByRole('region', { name: 'Bids created by Creator' })).not.toBeInTheDocument();
+  });
+
+  it('groups All bids by immutable creator while preserving first-seen group and within-group server order', async () => {
+    const creatorA = '10000000-0000-4000-8000-000000000010';
+    const creatorB = '10000000-0000-4000-8000-000000000011';
+    const bids = [
+      bid({ id: '10000000-0000-4000-8000-000000000012', vessel_voyage: 'MV Alpha First', created_by: creatorA, created_by_label: 'Creator Alpha' }),
+      bid({ id: '10000000-0000-4000-8000-000000000013', vessel_voyage: 'MV Beta Only', created_by: creatorB, created_by_label: 'Creator Beta' }),
+      bid({ id: '10000000-0000-4000-8000-000000000014', vessel_voyage: 'MV Alpha Second', created_by: creatorA, created_by_label: 'Creator Alpha', raw_status: 'closed', effective_status: 'closed', closed_at: now }),
+    ];
+    const { client } = fakeClient(bids);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    const groups = await screen.findAllByRole('region', { name: /^Bids created by/ });
+    expect(groups.map((group) => group.getAttribute('aria-label'))).toEqual(['Bids created by Creator Alpha', 'Bids created by Creator Beta']);
+    const alphaGroup = groups[0]!;
+    const betaGroup = groups[1]!;
+    expect(within(alphaGroup).getByRole('heading', { name: 'Creator Alpha' })).toBeInTheDocument();
+    expect(within(alphaGroup).getByText((_content, element) => element?.textContent === '2 total bids')).toBeInTheDocument();
+    expect(within(alphaGroup).getByText((_content, element) => element?.textContent === '1 effective open')).toBeInTheDocument();
+    expect(within(alphaGroup).getAllByRole('button').filter((button) => button.hasAttribute('aria-pressed')).map((button) => button.textContent)).toEqual([
+      expect.stringContaining('MV Alpha First'),
+      expect.stringContaining('MV Alpha Second'),
+    ]);
+    expect(within(betaGroup).getByRole('button', { name: /MV Beta Only/ })).toBeInTheDocument();
+    expect(within(alphaGroup).getByRole('button', { name: 'Collapse bids created by Creator Alpha' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(betaGroup).getByRole('button', { name: 'Collapse bids created by Creator Beta' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(alphaGroup).getAllByText('Target buyer')).toHaveLength(2);
+    expect(within(betaGroup).getByText('Target buyer')).toBeInTheDocument();
+  });
+
+  it('independently collapses creator cards without issuing another list request', async () => {
+    const creatorA = '10000000-0000-4000-8000-000000000010';
+    const creatorB = '10000000-0000-4000-8000-000000000011';
+    const { client, listBids } = fakeClient([
+      bid({ id: '10000000-0000-4000-8000-000000000012', vessel_voyage: 'MV Alpha', created_by: creatorA, created_by_label: 'Creator Alpha' }),
+      bid({ id: '10000000-0000-4000-8000-000000000013', vessel_voyage: 'MV Beta', created_by: creatorB, created_by_label: 'Creator Beta' }),
+    ]);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    const alphaGroup = await screen.findByRole('region', { name: 'Bids created by Creator Alpha' });
+    const betaGroup = screen.getByRole('region', { name: 'Bids created by Creator Beta' });
+    fireEvent.click(within(alphaGroup).getByRole('button', { name: 'Collapse bids created by Creator Alpha' }));
+    expect(within(alphaGroup).queryByRole('button', { name: /MV Alpha/ })).not.toBeInTheDocument();
+    expect(within(betaGroup).getByRole('button', { name: /MV Beta/ })).toBeInTheDocument();
+    expect(within(alphaGroup).getByRole('button', { name: 'Expand bids created by Creator Alpha' })).toHaveAttribute('aria-expanded', 'false');
+    expect(listBids).toHaveBeenCalledOnce();
+
+    fireEvent.click(within(alphaGroup).getByRole('button', { name: 'Expand bids created by Creator Alpha' }));
+    expect(within(alphaGroup).getByRole('button', { name: /MV Alpha/ })).toBeInTheDocument();
+    expect(listBids).toHaveBeenCalledOnce();
+  });
+
+  it('keeps selected detail intact when its creator group collapses and causes no detail RPC', async () => {
+    const selectedBid = bid({ vessel_voyage: 'MV Selected', created_by_label: 'Creator Alpha' });
+    const { client, listBids } = fakeClient([selectedBid]);
+    const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
+    const listQuotesForBuyers = vi.fn(() => Promise.resolve(ok<Quote[]>([])));
+    const listBidAudit = vi.fn(() => Promise.resolve(ok<BidAuditEvent[]>([])));
+    client.listBidTraderAccess = listBidTraderAccess;
+    client.listQuotesForBuyers = listQuotesForBuyers;
+    client.listBidAudit = listBidAudit;
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /MV Selected/ }));
+    await waitFor(() => expect(listBidTraderAccess).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByText('Loading bid detail')).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'MV Selected' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse bids created by Creator Alpha' }));
+    expect(screen.getByRole('heading', { name: 'MV Selected' })).toBeInTheDocument();
+    expect(listBids).toHaveBeenCalledOnce();
+    expect(listBidTraderAccess).toHaveBeenCalledOnce();
+    expect(listQuotesForBuyers).toHaveBeenCalledOnce();
+    expect(listBidAudit).toHaveBeenCalledOnce();
   });
 
   it('shows a clear empty state after a loaded bid view has no results', async () => {
@@ -52,6 +128,7 @@ describe('BUYER workspace', () => {
     fireEvent.change(screen.getByRole('combobox', { name: /responsible buyer filter/i }), { target: { value: target } });
     await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
     expect(listBids).toHaveBeenLastCalledWith(id, 'responsible_buyer', target);
+    expect(screen.queryByRole('region', { name: 'Bids created by Creator' })).not.toBeInTheDocument();
   });
 
   it('fails closed on a BUYER primary protocol error and removes stale actions', async () => {

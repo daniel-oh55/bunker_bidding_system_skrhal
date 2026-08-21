@@ -58,6 +58,7 @@
 
 ## Completed refinements
 
+- The BUYER All bids view groups and locally collapses bids by immutable creator; Created by me, responsible-BUYER filtering, and all authorization, lifecycle, RPC, and Realtime contracts remain unchanged.
 - BUYER quote-board comparison and BUYER/TRADER deadline countdown presentation are implemented; award, quote, authorization, deadline, and Realtime contracts are unchanged.
 - The TRADER workspace UX refinement is implemented without changing quote, authorization, deadline, RPC, or Realtime contracts.
 - The BUYER workspace presents human-readable server-backed views, authoritative-list summary counts, dense selectable bid cards, and clearer create/detail operation grouping without changing RPC, authorization, lifecycle, or Realtime behavior.
