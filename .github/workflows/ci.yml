@@ -168,6 +168,9 @@ jobs:
       - name: Run trader quote and award concurrency regression tests
         run: npm run db:test:quote-concurrency -- "$LOCAL_DB_URL"
 
+      - name: Run mail intake concurrency regression tests
+        run: npm run db:test:mail-concurrency -- "$LOCAL_DB_URL"
+
       - name: Run frontend Auth access integration tests
         run: npm run auth:test:integration -- "$LOCAL_API_URL" "$LOCAL_PUBLISHABLE_KEY" "$LOCAL_FIXTURE_KEY" "$LOCAL_DB_URL"
 
