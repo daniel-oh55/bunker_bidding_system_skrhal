@@ -5,6 +5,18 @@ import { StatusBadge, WorkspaceEmptyState, WorkspaceSummary } from '../ui/worksp
 
 const amount = (value: number) =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
+const remainingTime = (deadline: string | null, nowMs: number) => {
+  if (!deadline) return 'No deadline';
+  const remainingSeconds = Math.ceil((new Date(deadline).getTime() - nowMs) / 1000);
+  if (remainingSeconds <= 0) return 'Expired';
+  const days = Math.floor(remainingSeconds / 86_400);
+  const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((remainingSeconds % 3_600) / 60);
+  const seconds = remainingSeconds % 60;
+  if (days > 0) return `${days}d ${hours}h remaining`;
+  if (hours > 0) return `${hours}h ${minutes}m remaining`;
+  return `${minutes}m ${seconds}s remaining`;
+};
 
 const unknownError: WorkflowError = {
   kind: 'unknown',
@@ -29,6 +41,7 @@ export function TraderWorkspace({
   const [error, setError] = useState<WorkflowError | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const clear = useCallback(() => {
     setBids([]);
@@ -95,6 +108,10 @@ export function TraderWorkspace({
     void load();
     return invalidateOperations;
   }, [invalidateOperations, load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const reloadRef = useRef<() => void>(() => {});
   reloadRef.current = () => { void load(); };
   useEffect(() => { if (reloadVersion > 0) reloadRef.current(); }, [reloadVersion]);
@@ -183,6 +200,7 @@ export function TraderWorkspace({
                 quote={quote}
                 pending={pending}
                 onSave={save}
+                currentTimeMs={nowMs}
               />
             );
           })
@@ -197,11 +215,13 @@ function TraderBidCard({
   quote,
   pending,
   onSave,
+  currentTimeMs,
 }: {
   bid: TraderBid;
   quote?: Quote;
   pending: boolean;
   onSave: (bid: TraderBid, quote: Quote | undefined, input: QuoteInput) => Promise<void>;
+  currentTimeMs: number;
 }) {
   const [prices, setPrices] = useState(() =>
     Object.fromEntries(
@@ -271,6 +291,10 @@ function TraderBidCard({
           <div>
             <dt>Deadline</dt>
             <dd>{bid.deadline_at ? new Date(bid.deadline_at).toLocaleString() : 'No deadline'}</dd>
+          </div>
+          <div>
+            <dt>Remaining time</dt>
+            <dd><span className={`deadline-countdown${remainingTime(bid.deadline_at, currentTimeMs) === 'Expired' ? ' is-expired' : ''}`}>{remainingTime(bid.deadline_at, currentTimeMs)}</span><small className="countdown-note">Client clock, advisory only</small></dd>
           </div>
           <div>
             <dt>Delivery window</dt>

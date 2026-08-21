@@ -151,18 +151,36 @@ describe('TRADER workspace', () => {
   });
 
   it('renders required TRADER operational data without competitor data', async () => {
-    const { client } = clientWith([traderBid()], [quote()]);
+    const { client } = clientWith([traderBid({ deadline_at: '2099-08-03T03:00:00.000Z' })], [quote()]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     const requirements = await screen.findByRole('region', { name: 'Bid requirements for MV Trader' });
     expect(screen.getByText('Effective status')).toBeInTheDocument();
     expect(screen.getByText('Own quote revision')).toBeInTheDocument();
     expect(within(requirements).getByText('Deadline')).toBeInTheDocument();
+    expect(within(requirements).getByText('Remaining time')).toBeInTheDocument();
+    expect(within(requirements).getByText(/remaining$/)).toBeInTheDocument();
+    expect(within(requirements).getByText('Client clock, advisory only')).toBeInTheDocument();
     expect(within(requirements).getByText('Delivery window')).toBeInTheDocument();
     expect(within(requirements).getByText('LSMGO')).toBeInTheDocument();
     expect(within(requirements).getByText('20 MT requested')).toBeInTheDocument();
     expect(within(requirements).getByText('VLSFO')).toBeInTheDocument();
     expect(within(requirements).getByText('10 MT requested')).toBeInTheDocument();
     expect(screen.queryByText('Competitor')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Buyer quote comparison' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Rank')).not.toBeInTheDocument();
+  });
+
+  it('does not let an expired client countdown override server-open quote editability', async () => {
+    const { client } = clientWith([traderBid({ deadline_at: '2020-01-01T00:00:00.000Z', effective_status: 'open' })]);
+    render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByText('Expired');
+    expect(screen.getByText('Effective status')).toBeInTheDocument();
+    expect(screen.getByText('open', { selector: '.status-badge' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('lsmgo unit price'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('vlsfo unit price'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Barge fee'), { target: { value: '5' } });
+    expect(screen.getByRole('button', { name: 'Save quote' })).toBeEnabled();
   });
 
   it('renders a closed own quote as read-only with its authoritative values', async () => {
