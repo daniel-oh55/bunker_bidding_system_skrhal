@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { BuyerBidDetail } from './buyer-bid-detail';
@@ -21,10 +21,10 @@ const bid = (overrides: Partial<Bid> = {}): Bid => ({
   created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null,
   awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null, ...overrides,
 });
-const quote = (): Quote => ({
+const quote = (overrides: Partial<Quote> = {}): Quote => ({
   id: '10000000-0000-4000-8000-000000000004', bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000001', trader_organization_label: 'Trader A',
   revision: 1, created_by: currentBuyerId, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 10 }], barge_fee: 2, total_amount: 102,
-  created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false,
+  created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides,
 });
 const client = {} as BiddingClient;
 const access = (organizationId = '20000000-0000-4000-8000-000000000001', label = 'Trader A'): BidTraderAccess => ({
@@ -41,7 +41,7 @@ describe('BUYER bid detail organization', () => {
     renderDetail(bid({ awarded_trader_organization_label: 'Awarded Trader', awarded_total_amount: 102 }));
     expect(screen.getByRole('heading', { name: 'MV Detail' })).toBeInTheDocument();
     const overview = document.querySelector('.bid-overview');
-    for (const label of ['Port', 'Delivery window', 'Raw status', 'Effective status', 'Deadline', 'Creator', 'Responsible BUYER', 'Fuel requested', 'Revision', 'Awarded organization', 'Awarded total']) expect(overview).toHaveTextContent(label);
+    for (const label of ['Port', 'Delivery window', 'Raw status', 'Effective status', 'Deadline', 'Remaining time', 'Creator', 'Responsible BUYER', 'Fuel requested', 'Revision', 'Awarded organization', 'Awarded total']) expect(overview).toHaveTextContent(label);
     expect(screen.getByText('Effective status: open')).toHaveClass('status-badge');
     expect([...document.querySelectorAll('details > summary')].map((summary) => summary.textContent)).toEqual([
       'Bid terms & deadline', 'Responsibility & lifecycle', 'TRADER access & quotes', 'Audit history',
@@ -64,6 +64,62 @@ describe('BUYER bid detail organization', () => {
     expect(screen.getByLabelText('Grant TRADER organization')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Award' }));
     expect(screen.getByRole('button', { name: 'Confirm award' })).toBeInTheDocument();
+  });
+
+  it('renders dynamic requested-fuel quote columns and complete comparison facts in bid fuel order', () => {
+    const current = bid({ fuel_items: [{ fuel_grade: 'lsmgo', quantity_mt: 20 }, { fuel_grade: 'vlsfo', quantity_mt: 10 }] });
+    const traderB = quote({
+      trader_organization_label: 'Trader B',
+      revision: 2,
+      fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 11 }, { fuel_grade: 'lsmgo', unit_price: 12 }],
+      barge_fee: 5,
+      total_amount: 355,
+    });
+    const traderA = quote({
+      id: '10000000-0000-4000-8000-000000000005',
+      trader_organization_id: '20000000-0000-4000-8000-000000000002',
+      trader_organization_label: 'Trader A',
+      revision: 4,
+      fuel_prices: [{ fuel_grade: 'lsmgo', unit_price: 10 }, { fuel_grade: 'vlsfo', unit_price: 9 }],
+      barge_fee: 7,
+      total_amount: 297,
+    });
+    renderDetail(current, [], [traderB, traderA]);
+
+    const board = screen.getByRole('region', { name: 'Buyer quote comparison' });
+    expect(within(board).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Rank', 'TRADER organization', 'LSMGO unit price20 MT requested', 'VLSFO unit price10 MT requested',
+      'Barge fee', 'Authoritative server total', 'Quote revision', 'Award result', 'Action',
+    ]);
+    const rows = within(board).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]!).getByRole('rowheader')).toHaveTextContent('Trader B');
+    expect(within(rows[0]!).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['1', '12', '11', '5', '355', '2', 'Pendingeligible', 'Award']);
+    expect(within(rows[1]!).getByRole('rowheader')).toHaveTextContent('Trader A');
+    expect(within(rows[1]!).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['2', '10', '9', '7', '297', '4', 'Pendingeligible', 'Award']);
+  });
+
+  it('shows selected and not-selected BUYER markers without hiding comparison rows', () => {
+    const selected = quote({ is_awarded: true, eligible_for_award: false, trader_organization_label: 'Selected Trader' });
+    const notSelected = quote({
+      id: '10000000-0000-4000-8000-000000000005',
+      trader_organization_id: '20000000-0000-4000-8000-000000000002',
+      trader_organization_label: 'Other Trader',
+      eligible_for_award: false,
+    });
+    renderDetail(bid({ raw_status: 'awarded', effective_status: 'awarded' }), [], [selected, notSelected]);
+    const board = screen.getByRole('region', { name: 'Buyer quote comparison' });
+    expect(within(board).getByText('Selected / awarded')).toBeInTheDocument();
+    expect(within(board).getByText('Not selected')).toBeInTheDocument();
+    expect(within(board).getAllByRole('row')).toHaveLength(3);
+  });
+
+  it('keeps server-open controls enabled when the advisory countdown is expired', () => {
+    renderDetail(bid({ deadline_at: '2020-01-01T00:00:00.000Z', effective_status: 'open' }), [], [], [], { currentTimeMs: Date.parse('2026-08-03T03:00:00.000Z') });
+    expect(screen.getByText('Expired')).toBeInTheDocument();
+    expect(screen.getByText('Effective status: open')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save bid' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
   });
 
   it('keeps close and award mutations bound to the current bid and reviewed quote arguments', () => {

@@ -127,7 +127,7 @@ describe('BUYER workspace', () => {
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     await screen.findByRole('button', { name: /MV Buyer/ });
     fireEvent.click(screen.getByRole('button', { name: /MV Buyer/ }));
-    const quoteAItem = (await screen.findByText('Trader A')).closest('li');
+    const quoteAItem = (await screen.findByText('Trader A')).closest('tr');
     expect(quoteAItem).not.toBeNull();
     fireEvent.click(within(quoteAItem!).getByRole('button', { name: 'Award' }));
     expect(screen.getByRole('button', { name: 'Confirm award' })).toBeInTheDocument();
@@ -142,12 +142,51 @@ describe('BUYER workspace', () => {
     const card = await screen.findByRole('button', { name: /MV Buyer/ });
     expect(within(card).getByText('Busan')).toBeInTheDocument();
     expect(within(card).getByText('Effective status: awarded')).toBeInTheDocument();
+    expect(within(card).getByText('Remaining time')).toBeInTheDocument();
+    expect(within(card).getByText('Expired')).toBeInTheDocument();
     expect(within(card).getByText('Raw status: awarded')).toBeInTheDocument();
     expect(within(card).getByText('Creator: Creator')).toBeInTheDocument();
     expect(within(card).getByText('Target buyer')).toBeInTheDocument();
     expect(within(card).getByText('VLSFO 10')).toBeInTheDocument();
     expect(within(card).getByText('Revision 3')).toBeInTheDocument();
     expect(within(card).getByText('Awarded to Awarded Trader; total 100')).toBeInTheDocument();
+  });
+
+  it('renders advisory BUYER remaining time when a deadline exists', async () => {
+    const { client } = fakeClient([bid({ deadline_at: '2099-08-03T03:00:00.000Z' })]);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    const card = await screen.findByRole('button', { name: /MV Buyer/ });
+    expect(within(card).getByText('Remaining time')).toBeInTheDocument();
+    expect(within(card).getByText(/remaining$/)).toBeInTheDocument();
+  });
+
+  it('preserves the existing awarded-first then authoritative-total quote ordering in the comparison board', async () => {
+    const selectedQuoteId = '10000000-0000-4000-8000-000000000004';
+    const awardedBid = bid({
+      raw_status: 'awarded', effective_status: 'awarded', closed_at: now,
+      awarded_quote_id: selectedQuoteId,
+      awarded_trader_organization_id: '20000000-0000-4000-8000-000000000001',
+      awarded_trader_organization_label: 'Selected Trader', awarded_total_amount: 300, awarded_at: now,
+    });
+    const quoteBase: Quote = {
+      id: selectedQuoteId, bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000001', trader_organization_label: 'Selected Trader',
+      revision: 2, created_by: id, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 30 }], barge_fee: 0, total_amount: 300,
+      created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: false, is_awarded: true,
+    };
+    const cheap = { ...quoteBase, id: '10000000-0000-4000-8000-000000000005', trader_organization_id: '20000000-0000-4000-8000-000000000002', trader_organization_label: 'Low Total Trader', total_amount: 100, is_awarded: false };
+    const middle = { ...quoteBase, id: '10000000-0000-4000-8000-000000000006', trader_organization_id: '20000000-0000-4000-8000-000000000003', trader_organization_label: 'Middle Total Trader', total_amount: 200, is_awarded: false };
+    const { client } = fakeClient([awardedBid]);
+    client.listQuotesForBuyers = vi.fn(() => Promise.resolve(ok([middle, quoteBase, cheap])));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /MV Buyer/ }));
+
+    const board = await screen.findByRole('region', { name: 'Buyer quote comparison' });
+    expect(within(board).getAllByRole('rowheader').map((header) => header.textContent)).toEqual([
+      'Selected TraderAccess active · Organization active',
+      'Low Total TraderAccess active · Organization active',
+      'Middle Total TraderAccess active · Organization active',
+    ]);
+    expect(within(board).getAllByText(/Selected \/ awarded|Not selected/).map((marker) => marker.textContent)).toEqual(['Selected / awarded', 'Not selected', 'Not selected']);
   });
 
   it('exposes the active bid as an accessible selected state', async () => {

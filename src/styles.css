@@ -27,6 +27,7 @@
 }
 
 * { box-sizing: border-box; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #f3f6fa; }
 button, input, select { max-width: 100%; font: inherit; }
 #root { min-height: 100vh; }
@@ -97,7 +98,7 @@ h2, h3 { color: var(--color-text); }
 .trader-card-status > span:first-child { color: var(--color-muted); font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .trader-bid-requirements { margin-top: var(--space-4); }
 .trader-bid-requirements > h3 { margin: 0; font-size: 1rem; }
-.trader-bid-timing { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: var(--space-3); }
+.trader-bid-timing { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: var(--space-3); }
 .trader-requested-fuels h4 { margin: 0 0 var(--space-2); color: var(--color-muted); font-size: .85rem; }
 .trader-requested-fuels ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .trader-requested-fuels li { display: grid; gap: 2px; min-width: 0; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); }
@@ -214,6 +215,9 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-bid-card-metadata { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); color: var(--color-muted); }
 .buyer-bid-card .buyer-bid-card-metadata span { font-size: .76rem; }
 .buyer-bid-card .buyer-bid-award { width: 100%; color: var(--color-success); font-weight: 800; }
+.deadline-countdown { color: var(--color-primary); font-weight: 800; font-variant-numeric: tabular-nums; }
+.deadline-countdown.is-expired { color: var(--color-danger); }
+.countdown-note { display: block; margin-top: 2px; color: var(--color-muted); font-size: .72rem; font-weight: 500; }
 .buyer-bid-detail { overflow: hidden; }
 .buyer-detail-content { min-width: 0; }
 .bid-overview { border: 1px solid #e1e7ef; border-left: 4px solid var(--color-primary); }
@@ -233,12 +237,26 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .detail-section .buyer-access-list > li { margin: 0; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); }
 .buyer-access-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .buyer-access-item strong { overflow-wrap: anywhere; }
-.quote-list { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
-.quote-list .buyer-quote-card { margin: 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
-.quote-list .buyer-quote-card.is-awarded { border-color: #8fc9ac; box-shadow: inset 4px 0 0 var(--color-success); }
-.buyer-quote-card .operational-data { margin-top: 0; }
-.buyer-quote-total { padding: var(--space-2); border-radius: var(--radius-sm); background: #e8eef7; }
-.buyer-quote-total dd { color: var(--color-primary); font-size: 1.2rem; font-weight: 800; }
+.buyer-quote-board { max-width: 100%; margin-top: var(--space-3); overflow-x: auto; border: 1px solid #b9c7d7; border-radius: var(--radius-sm); background: var(--color-surface); }
+.buyer-quote-board:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.buyer-quote-board table { width: 100%; min-width: 900px; border-spacing: 0; border-collapse: separate; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.buyer-quote-board th, .buyer-quote-board td { padding: 9px 10px; border-right: 1px solid #dce3ec; border-bottom: 1px solid #dce3ec; text-align: right; vertical-align: middle; white-space: nowrap; }
+.buyer-quote-board thead th { color: #fff; background: var(--color-primary); font-size: .72rem; letter-spacing: .02em; }
+.buyer-quote-board thead th small { display: block; margin-top: 2px; color: #cbd9e9; font-size: .67rem; font-weight: 500; }
+.buyer-quote-board tbody th { min-width: 150px; color: var(--color-primary); background: #f8fafc; text-align: left; }
+.buyer-quote-board tbody th small, .buyer-quote-board tbody td small { display: block; margin-top: 2px; color: var(--color-muted); font-size: .68rem; font-weight: 500; }
+.buyer-quote-board tbody tr:nth-child(even) td, .buyer-quote-board tbody tr:nth-child(even) th { background: #f5f8fb; }
+.buyer-quote-board tbody tr.is-awarded td, .buyer-quote-board tbody tr.is-awarded th { background: var(--color-success-surface); }
+.buyer-quote-board tr > :last-child { border-right: 0; }
+.buyer-quote-board tbody tr:last-child > * { border-bottom: 0; }
+.buyer-quote-board .buyer-quote-rank { color: var(--color-primary); font-size: 1rem; font-weight: 900; text-align: center; }
+.buyer-quote-board .buyer-quote-total { color: var(--color-primary); background: #e8eef7; font-size: .95rem; font-weight: 900; }
+.buyer-award-marker { display: inline-block; padding: 3px 7px; border-radius: 999px; color: var(--color-muted); background: #e8edf3; font-size: .7rem; font-weight: 800; }
+.buyer-award-marker.is-selected { color: var(--color-success); background: #cfeedd; }
+.buyer-award-marker.is-not-selected { color: #6e4d00; background: #fff0bd; }
+.buyer-quote-action .buyer-action-row { justify-content: end; margin-top: 0; }
+.buyer-quote-action button { padding: 7px 10px; font-size: .75rem; }
+.buyer-quote-empty { margin: var(--space-3) 0 0; padding: var(--space-3); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); color: var(--color-muted); background: var(--color-surface-subtle); }
 .buyer-audit-timeline { margin-top: var(--space-3); counter-reset: buyer-audit; }
 .buyer-audit-timeline li { position: relative; margin-left: var(--space-3); padding: var(--space-3) 0 var(--space-3) var(--space-5); border-bottom: 0; border-left: 2px solid var(--color-border); }
 .buyer-audit-timeline li::before { position: absolute; top: var(--space-4); left: -6px; width: 10px; height: 10px; border: 2px solid var(--color-surface); border-radius: 50%; background: var(--color-accent); content: ""; }
@@ -246,4 +264,4 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 
 @media (max-width: 900px) { .buyer-bid-layout { grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr); } .buyer-detail-form-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .app-shell { width: min(100% - 24px, 1280px); padding-top: var(--space-5); } .workspace-header, .workspace-summary { align-items: stretch; flex-direction: column; } .workspace-summary-action > button { width: 100%; } .bid-layout { grid-template-columns: 1fr; } .bid-list { position: static; } .buyer-create-fields { grid-template-columns: 1fr; } .trader-bids { grid-template-columns: 1fr; } }
-@media (max-width: 480px) { .panel { padding: var(--space-4); border-radius: var(--radius-md); } .trader-bids, .fuel-row { grid-template-columns: 1fr; } .context-chip { overflow-wrap: anywhere; } .trader-summary-metrics { display: grid; } .trader-card-heading, .trader-quote-editor-heading { align-items: start; flex-direction: column; } .trader-card-status { justify-items: start; } .trader-bid-timing, .trader-fuel-price-row, .trader-quote-totals, .trader-quote-state { grid-template-columns: 1fr; } .trader-quote-state dl { justify-content: start; } .trader-barge-fee label { max-width: none; } .trader-quote-actions button { width: 100%; } .buyer-summary-metrics { display: grid; } .buyer-filter-options, .buyer-filter-options label { width: 100%; } .buyer-bid-card-secondary { grid-template-columns: 1fr; } .buyer-bid-card-secondary > span:last-child { grid-column: auto; } .buyer-overview-heading, .buyer-section-heading { align-items: start; flex-direction: column; } .buyer-action-row-field button, .buyer-create-actions button { width: 100%; } .buyer-access-item { align-items: stretch; flex-direction: column; } .buyer-access-item button { width: 100%; } }
+@media (max-width: 480px) { .panel { padding: var(--space-4); border-radius: var(--radius-md); } .trader-bids, .fuel-row { grid-template-columns: 1fr; } .context-chip { overflow-wrap: anywhere; } .trader-summary-metrics { display: grid; } .trader-card-heading, .trader-quote-editor-heading { align-items: start; flex-direction: column; } .trader-card-status { justify-items: start; } .trader-bid-timing, .trader-fuel-price-row, .trader-quote-totals, .trader-quote-state { grid-template-columns: 1fr; } .trader-quote-state dl { justify-content: start; } .trader-barge-fee label { max-width: none; } .trader-quote-actions button { width: 100%; } .buyer-summary-metrics { display: grid; } .buyer-filter-options, .buyer-filter-options label { width: 100%; } .buyer-bid-card-secondary { grid-template-columns: 1fr; } .buyer-bid-card-secondary > span:last-child { grid-column: auto; } .buyer-overview-heading, .buyer-section-heading { align-items: start; flex-direction: column; } .buyer-action-row-field button, .buyer-create-actions button { width: 100%; } .buyer-access-item { align-items: stretch; flex-direction: column; } .buyer-access-item button { width: 100%; } .buyer-quote-board { margin-inline: calc(-1 * var(--space-2)); } }

@@ -12,6 +12,18 @@ type RevokeConfirmation = { bidId: string; bidRevision: number; traderOrganizati
 
 const number = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 const date = (value: string | null) => value ? new Date(value).toLocaleString() : 'No deadline';
+const remainingTime = (deadline: string | null, nowMs: number) => {
+  if (!deadline) return 'No deadline';
+  const remainingSeconds = Math.ceil((new Date(deadline).getTime() - nowMs) / 1000);
+  if (remainingSeconds <= 0) return 'Expired';
+  const days = Math.floor(remainingSeconds / 86_400);
+  const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((remainingSeconds % 3_600) / 60);
+  const seconds = remainingSeconds % 60;
+  if (days > 0) return `${days}d ${hours}h remaining`;
+  if (hours > 0) return `${hours}h ${minutes}m remaining`;
+  return `${minutes}m ${seconds}s remaining`;
+};
 const updateInput = (draft: { vessel: string; port: string; window: string; deadline: string; rows: Row[] }) => ({
   vesselVoyage: draft.vessel,
   portName: draft.port,
@@ -21,13 +33,17 @@ const updateInput = (draft: { vessel: string; port: string; window: string; dead
   quantities: draft.rows.map((row) => Number(row.quantity)),
 });
 const accessSignature = (access: BidTraderAccess[] | undefined) => access?.map((entry) => `${entry.trader_organization_id}:${entry.granted_at}`).sort().join('|') ?? '';
+const quotePrice = (quote: Quote, grade: typeof fuelGrades[number]) => {
+  const price = quote.fuel_prices.find((candidate) => candidate.fuel_grade === grade);
+  return price ? number(price.unit_price) : '—';
+};
 
 function buyerLabel(id: string | null, buyers: ActiveBuyer[]) {
   if (id === null) return 'None';
   return buyers.find((buyer) => buyer.user_id === id)?.display_label ?? `Unknown or inactive BUYER · …${id.slice(-4)}`;
 }
 
-export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, client, membershipId, mutate, refresh }: {
+export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, client, membershipId, mutate, refresh, currentTimeMs = Date.now() }: {
   bid: Bid;
   buyers: ActiveBuyer[];
   organizations: TraderOrganization[];
@@ -37,6 +53,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
   membershipId: string;
   mutate: (operation: () => Promise<BiddingResult<Bid>>) => Promise<boolean>;
   refresh: () => void;
+  currentTimeMs?: number;
 }) {
   const [draft, setDraft] = useState(() => ({
     vessel: bid.vessel_voyage,
@@ -98,6 +115,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
         <div><dt>Delivery window</dt><dd>{bid.delivery_window}</dd></div>
         <div><dt>Raw status</dt><dd>{bid.raw_status}</dd></div>
         <div><dt>Deadline</dt><dd>{date(bid.deadline_at)}</dd></div>
+        <div><dt>Remaining time</dt><dd><span className={`deadline-countdown${remainingTime(bid.deadline_at, currentTimeMs) === 'Expired' ? ' is-expired' : ''}`}>{remainingTime(bid.deadline_at, currentTimeMs)}</span><small className="countdown-note">Client clock, advisory only</small></dd></div>
         <div><dt>Creator</dt><dd>{bid.created_by_label}</dd></div>
         <div><dt>Responsible BUYER</dt><dd>{bid.responsible_buyer_label}</dd></div>
         <div><dt>Fuel requested</dt><dd>{bid.fuel_items.map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt}`).join(', ')}</dd></div>
@@ -180,26 +198,40 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
         </li>;
       })}</ul>
       <div className="buyer-section-heading buyer-quotes-heading"><div><h3>Buyer-visible quotes</h3><p className="buyer-section-helper">Compared in the existing authoritative order.</p></div>{detail ? <span>{detail.quotes.length} quotes</span> : null}</div>
-      <ul className="quote-list">{detail?.quotes.map((quote) => {
-        const confirmed = awardConfirm?.quoteId === quote.id && awardConfirm.quoteRevision === quote.revision && awardConfirm.signature === quoteSignature;
-        return <li className={`buyer-quote-card${quote.is_awarded ? ' is-awarded' : ''}`} key={quote.id}>
-          <dl className="operational-data">
-            <div><dt>TRADER organization</dt><dd>{quote.trader_organization_label}</dd></div>
-            <div><dt>Grade prices</dt><dd>{quote.fuel_prices.map((price) => `${price.fuel_grade.toUpperCase()} ${number(price.unit_price)}`).join(', ')}</dd></div>
-            <div><dt>Barge fee</dt><dd>{number(quote.barge_fee)}</dd></div>
-            <div className="buyer-quote-total"><dt>Authoritative total</dt><dd>{number(quote.total_amount)}</dd></div>
-            <div><dt>Quote revision</dt><dd>{quote.revision}</dd></div>
-            <div><dt>Access</dt><dd>{quote.access_active ? 'active' : 'revoked'}</dd></div>
-            <div><dt>Organization</dt><dd>{quote.organization_active ? 'active' : 'inactive'}</dd></div>
-            <div><dt>Award eligibility</dt><dd>{quote.eligible_for_award ? 'eligible' : 'ineligible'}</dd></div>
-            <div><dt>Awarded</dt><dd>{quote.is_awarded ? 'yes' : 'no'}</dd></div>
-          </dl>
-          <div className="buyer-action-row">{quote.eligible_for_award && !quote.is_awarded ? confirmed
-              ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.awardBid(membershipId, bid.id, bid.revision, quote.id, quote.revision))}>Confirm award</button>
-              : <button type="button" disabled={pending} onClick={() => setAwardConfirm({ quoteId: quote.id, quoteRevision: quote.revision, signature: quoteSignature })}>Award</button>
-              : null}</div>
-        </li>;
-      })}</ul>
+      {detail?.quotes.length ? <div className="buyer-quote-board" role="region" aria-label="Buyer quote comparison" tabIndex={0}>
+        <table>
+          <caption className="visually-hidden"><span>Grade prices</span><span>Authoritative total</span></caption>
+          <thead>
+            <tr>
+              <th scope="col">Rank</th>
+              <th scope="col">TRADER organization</th>
+              {bid.fuel_items.map((item) => <th scope="col" key={item.fuel_grade}><span>{item.fuel_grade.toUpperCase()} unit price</span><small>{number(item.quantity_mt)} MT requested</small></th>)}
+              <th scope="col">Barge fee</th>
+              <th scope="col">Authoritative server total</th>
+              <th scope="col">Quote revision</th>
+              <th scope="col">Award result</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>{detail.quotes.map((quote, index) => {
+            const confirmed = awardConfirm?.quoteId === quote.id && awardConfirm.quoteRevision === quote.revision && awardConfirm.signature === quoteSignature;
+            const awardResult = quote.is_awarded ? 'Selected / awarded' : bid.effective_status === 'awarded' ? 'Not selected' : 'Pending';
+            return <tr className={quote.is_awarded ? 'is-awarded' : undefined} key={quote.id}>
+              <td className="buyer-quote-rank" data-label="Rank">{index + 1}</td>
+              <th scope="row" data-label="TRADER organization"><strong>{quote.trader_organization_label}</strong><small>Access <span>{quote.access_active ? 'active' : 'revoked'}</span> · Organization <span>{quote.organization_active ? 'active' : 'inactive'}</span></small></th>
+              {bid.fuel_items.map((item) => <td data-label={`${item.fuel_grade.toUpperCase()} unit price`} key={item.fuel_grade}>{quotePrice(quote, item.fuel_grade)}</td>)}
+              <td data-label="Barge fee">{number(quote.barge_fee)}</td>
+              <td className="buyer-quote-total" data-label="Authoritative server total">{number(quote.total_amount)}</td>
+              <td data-label="Quote revision">{quote.revision}</td>
+              <td data-label="Award result"><span className={`buyer-award-marker${quote.is_awarded ? ' is-selected' : bid.effective_status === 'awarded' ? ' is-not-selected' : ''}`}>{awardResult}</span><small>{quote.eligible_for_award ? 'eligible' : 'ineligible'}</small>{quote.is_awarded ? <span className="visually-hidden">yes</span> : null}</td>
+              <td className="buyer-quote-action" data-label="Action"><div className="buyer-action-row">{quote.eligible_for_award && !quote.is_awarded ? confirmed
+                ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.awardBid(membershipId, bid.id, bid.revision, quote.id, quote.revision))}>Confirm award</button>
+                : <button type="button" disabled={pending} onClick={() => setAwardConfirm({ quoteId: quote.id, quoteRevision: quote.revision, signature: quoteSignature })}>Award</button>
+                : null}</div></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div> : detail ? <p className="buyer-quote-empty">No quotes submitted for this bid.</p> : null}
     </details>
 
     <details className="detail-section">
