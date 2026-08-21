@@ -159,6 +159,7 @@ button.secondary { color: var(--color-primary); background: var(--color-surface)
 button.secondary:hover:not(:disabled) { background: #edf3f9; }
 .notice { margin: 0 0 var(--space-2); padding: 10px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); }
 .notice.error { border-color: #e7b2ba; color: var(--color-danger); background: var(--color-danger-surface); }
+.notice.warning { border-color: #dfc47d; color: #6d4d00; background: #fff8df; }
 .notice.success { border-color: #a9d7bf; color: var(--color-success); background: var(--color-success-surface); }
 .link-button { padding: 0; border: 0; border-radius: 0; color: var(--color-primary); background: transparent; text-decoration: underline; }
 .link-button:hover:not(:disabled) { color: var(--color-primary-hover); background: transparent; }
@@ -188,6 +189,16 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-create-panel > summary::marker { color: var(--color-accent); }
 .buyer-create-panel > summary small { color: var(--color-muted); font-size: .82rem; font-weight: 500; }
 .buyer-create-panel[open] > summary { padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
+.msg-intake { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
+.msg-intake h3, .msg-intake-preview h4 { margin: 0 0 var(--space-1); }
+.msg-intake input[type="file"] { background: var(--color-surface); }
+.msg-intake-preview { display: grid; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.msg-intake-preview dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); margin: 0; }
+.msg-intake-preview dl > div { min-width: 0; }
+.msg-intake-preview dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+.msg-intake-preview .notice { margin: 0; }
+.msg-intake-preview .notice ul { margin: var(--space-1) 0 0; padding-left: 20px; }
+.imported-draft-helper { margin: 0; }
 .buyer-create-fields, .buyer-detail-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3) var(--space-4); }
 .operation-form .buyer-fuel-block { min-width: 0; margin: var(--space-1) 0 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
 .buyer-fuel-block legend { padding: 0 var(--space-2); color: var(--color-text); font-weight: 800; }
@@ -275,5 +286,5 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-audit-timeline .operational-data { margin: 0; }
 
 @media (max-width: 900px) { .buyer-bid-layout { grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr); } .buyer-detail-form-grid { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .app-shell { width: min(100% - 24px, 1280px); padding-top: var(--space-5); } .workspace-header, .workspace-summary { align-items: stretch; flex-direction: column; } .workspace-summary-action > button { width: 100%; } .bid-layout { grid-template-columns: 1fr; } .bid-list { position: static; } .buyer-create-fields { grid-template-columns: 1fr; } .trader-bids { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .app-shell { width: min(100% - 24px, 1280px); padding-top: var(--space-5); } .workspace-header, .workspace-summary { align-items: stretch; flex-direction: column; } .workspace-summary-action > button { width: 100%; } .bid-layout { grid-template-columns: 1fr; } .bid-list { position: static; } .buyer-create-fields, .msg-intake-preview dl { grid-template-columns: 1fr; } .trader-bids { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .panel { padding: var(--space-4); border-radius: var(--radius-md); } .trader-bids, .fuel-row { grid-template-columns: 1fr; } .context-chip { overflow-wrap: anywhere; } .trader-summary-metrics { display: grid; } .trader-card-heading, .trader-quote-editor-heading { align-items: start; flex-direction: column; } .trader-card-status { justify-items: start; } .trader-bid-timing, .trader-fuel-price-row, .trader-quote-totals, .trader-quote-state { grid-template-columns: 1fr; } .trader-quote-state dl { justify-content: start; } .trader-barge-fee label { max-width: none; } .trader-quote-actions button { width: 100%; } .buyer-summary-metrics { display: grid; } .buyer-filter-options, .buyer-filter-options label { width: 100%; } .buyer-creator-group-header, .buyer-creator-group-actions { align-items: stretch; flex-direction: column; } .buyer-creator-group-counts { justify-content: start; white-space: normal; } .buyer-creator-toggle { width: 100%; } .buyer-bid-card-secondary { grid-template-columns: 1fr; } .buyer-bid-card-secondary > span:last-child { grid-column: auto; } .buyer-overview-heading, .buyer-section-heading { align-items: start; flex-direction: column; } .buyer-action-row-field button, .buyer-create-actions button { width: 100%; } .buyer-access-item { align-items: stretch; flex-direction: column; } .buyer-access-item button { width: 100%; } .buyer-quote-board { margin-inline: calc(-1 * var(--space-2)); } }

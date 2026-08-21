@@ -2,7 +2,7 @@
 
 ## Rolling state
 
-- Current baseline: trusted organization labels are server-sourced presentation data in the access context and frontend workspace
+- Current baseline: trusted organization labels are server-sourced presentation data in the access context and frontend workspace; BUYER bid creation also supports advisory browser-local `.msg` draft intake
 - Active frontend baseline: React + Vite + TypeScript sign-in-only access gate and integrated BUYER/TRADER workspace
 - Active backend baseline: local migrations, pgTAP database tests, and server-authorized bid, quote, award, scope, and audit RPCs
 - Legacy reference location: `legacy/firebase-prototype/`
@@ -22,6 +22,8 @@
 - Deadlines will use server time, and quote creation or modification after close will be rejected server-side.
 - Close, reopen, award, and cancel will be server-side transactional operations.
 - Browser code will use only the Supabase publishable key.
+- A manually selected local `.msg` may supply review-only BUYER form candidates. Parsing and Apply are never authority or creation actions; the existing explicit Create bid action and `createBid` RPC remain the sole creation path.
+- Message intake never imports a deadline or responsible BUYER, persists or uploads email contents/files, renders HTML or attachments, or fetches message resources.
 - Secret and service-role credentials will never enter browser code, Vite variables, or the repository.
 - The frontend authorized shell requires at least one context returned by `public.current_access_context()`; an Auth session alone is insufficient.
 - Bids use raw `open`, `closed`, `awarded`, and `cancelled` states. Raw open with a non-null passed deadline is effectively closed using server time; no cron transition exists.
@@ -50,11 +52,13 @@
 - Controlled Production frontend Realtime smoke is complete. A BUYER automatically reloaded after `workspace_changed` from synthetic-bid creation; a selected TRADER automatically reloaded from zero to one accessible bid after an authorized scope grant; the non-scoped TRADER and other TRADER organization remained isolated. A controlled membership active-to-inactive transition delivered `access_changed`, removed protected workspace without manual refresh, and failed closed with no active authorized membership. Controlled access state was restored and normal sign-in reverified.
 - Manual Refresh and the existing post-mutation authoritative reload remain fallback paths. The temporary Realtime synthetic bid was cancelled at revision 4 with zero retained TRADER scope; retained Production records are synthetic smoke records only.
 - Controlled Production UI smoke is complete for BUYER and TRADER: each displayed its trusted server organization label and entered its authorized workspace without using the UUID/neutral short-ID fallback.
+- Manual BUYER `.msg` intake is implemented as a browser-local, size/signature-gated parser followed by a parsed-draft preview, warnings, explicit Apply, and unrestricted human review/editing in the existing create form. Only normalized plain-text subject/body reach the conservative business parser; no import interaction invokes RPC, Auth, list, or Realtime work.
 
 ## Not yet implemented
 
 - No remote auth configuration push is authorized.
 - Invitations and administration/provisioning flows and UI.
+- Mailbox/Gmail/Outlook connections, polling, webhooks, automatic ingestion or bid creation, manual `.eml` intake, historical `.msg`/`.eml` migration, and use of real operational email fixtures.
 
 ## Completed refinements
 
