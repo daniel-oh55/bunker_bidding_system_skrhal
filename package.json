@@ -15,6 +15,7 @@
     "db:test": "supabase test db --local supabase/tests/database",
     "db:test:concurrency": "node scripts/test-membership-concurrency.mjs",
     "db:test:bid-concurrency": "node scripts/test-bid-concurrency.mjs",
+    "db:test:mail-concurrency": "node scripts/test-mail-intake-concurrency.mjs",
     "auth:test:integration": "node scripts/test-frontend-auth-access.mjs",
     "db:test:quote-concurrency": "node scripts/test-quote-concurrency.mjs",
     "quote:test:integration": "node scripts/test-trader-quote-integration.mjs",

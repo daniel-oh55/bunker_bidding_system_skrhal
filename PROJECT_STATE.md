@@ -23,7 +23,7 @@
 - Close, reopen, award, and cancel will be server-side transactional operations.
 - Browser code will use only the Supabase publishable key.
 - A manually selected local `.msg` may supply review-only BUYER form candidates. Parsing and Apply are never authority or creation actions; the existing explicit Create bid action and `createBid` RPC remain the sole creation path.
-- The provider-neutral server-side mail intake foundation stores only bounded normalized candidates in a private queue. Ingress is executable only by the Supabase service role; every active approved BUYER shares pending visibility through server-verified RPC authorization; TRADERs have no access.
+- The provider-neutral server-side mail intake foundation stores only bounded normalized candidates in a private queue. The elevated connector role is intentionally ingest-only through the `SECURITY DEFINER` RPC: it has no list/dismiss EXECUTE and no direct queue SELECT/INSERT/UPDATE/DELETE. Every active approved BUYER retains shared pending visibility and dismissal through server-verified RPC authorization; TRADERs have no access.
 - Mail intake never retains raw body, HTML, attachments, sender/recipient/address fields, provider credentials, deadline, or responsible BUYER; it does not fetch messages or create bids. Opaque provider/mailbox/message identity is used only for non-overwriting idempotency and is not exposed in BUYER results.
 - Secret and service-role credentials will never enter browser code, Vite variables, or the repository.
 - The frontend authorized shell requires at least one context returned by `public.current_access_context()`; an Auth session alone is insufficient.
@@ -54,7 +54,8 @@
 - Manual Refresh and the existing post-mutation authoritative reload remain fallback paths. The temporary Realtime synthetic bid was cancelled at revision 4 with zero retained TRADER scope; retained Production records are synthetic smoke records only.
 - Controlled Production UI smoke is complete for BUYER and TRADER: each displayed its trusted server organization label and entered its authorized workspace without using the UUID/neutral short-ID fallback.
 - Manual BUYER `.msg` intake is implemented as a browser-local, size/signature-gated parser followed by a parsed-draft preview, warnings, explicit Apply, and unrestricted human review/editing in the existing create form. Only normalized plain-text subject/body reach the conservative business parser; no import interaction invokes RPC, Auth, list, or Realtime work.
-- The repository now contains a provider-neutral server-side mail intake foundation: an RLS-enabled private normalized queue, a unique source-identity dedupe boundary, service-role-only non-overwriting ingress, and active-BUYER-only pending-list and revision-locked one-way dismiss RPCs. It is not applied to Production by this PR and contains no operational messages.
+- PR #31's provider-neutral server-side mail intake foundation is merged in the repository, and this hardening pins its elevated connector role to ingest-only with no direct table CRUD. Neither mail-intake migration is applied to Production by this PR, and the repository contains no operational messages.
+- Deterministic CI regressions now cover duplicate-ingest unique-index waits when the first transaction commits and when it rolls back under normal READ COMMITTED isolation. A future connector must tolerate lock waits and treat SQLSTATE `40001` as retryable if it uses a stronger isolation path or otherwise receives a serialization failure; the unique source constraint remains authoritative.
 
 ## Not yet implemented
 
