@@ -25,6 +25,8 @@ describe('BUYER workspace', () => {
     expect(screen.getByRole('radio', { name: 'All bids' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Created by me' })).not.toBeChecked();
     expect(screen.getByRole('radio', { name: 'By BUYER' })).not.toBeChecked();
+    expect(screen.getByText('Grouped by creator')).toBeInTheDocument();
+    expect(screen.getByText('Filter by responsibility')).toBeInTheDocument();
     expect(listBids).toHaveBeenLastCalledWith(id, 'all', undefined);
 
     fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
@@ -218,15 +220,18 @@ describe('BUYER workspace', () => {
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     const card = await screen.findByRole('button', { name: /MV Buyer/ });
     expect(within(card).getByText('Busan')).toBeInTheDocument();
-    expect(within(card).getByText('Effective status: awarded')).toBeInTheDocument();
+    expect(within(card).getByText('Effective status')).toBeInTheDocument();
+    expect(within(card).getByText('awarded', { selector: '.status-badge' })).toBeInTheDocument();
     expect(within(card).getByText('Remaining time')).toBeInTheDocument();
     expect(within(card).getByText('Expired')).toBeInTheDocument();
     expect(within(card).getByText('Raw status: awarded')).toBeInTheDocument();
     expect(within(card).getByText('Creator: Creator')).toBeInTheDocument();
     expect(within(card).getByText('Target buyer')).toBeInTheDocument();
-    expect(within(card).getByText('VLSFO 10')).toBeInTheDocument();
+    expect(within(card).getByText('VLSFO 10 MT')).toBeInTheDocument();
     expect(within(card).getByText('Revision 3')).toBeInTheDocument();
-    expect(within(card).getByText('Awarded to Awarded Trader; total 100')).toBeInTheDocument();
+    expect(within(card).getByText('Awarded result')).toBeInTheDocument();
+    expect(within(card).getByText('Awarded Trader')).toBeInTheDocument();
+    expect(within(card).getByText('Authoritative total 100')).toBeInTheDocument();
   });
 
   it('renders advisory BUYER remaining time when a deadline exists', async () => {

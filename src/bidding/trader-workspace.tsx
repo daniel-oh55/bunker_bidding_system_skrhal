@@ -270,9 +270,12 @@ function TraderBidCard({
       : bid.effective_status === 'cancelled'
         ? 'This bid has been cancelled.'
         : 'Quote submission is closed.';
+  const resultClass = bid.effective_status === 'awarded'
+    ? quote?.is_awarded ? ' result-selected' : ' result-not-selected'
+    : ' result-terminal';
 
   return (
-    <article className="panel trader-card">
+    <article className={`panel trader-card status-${bid.effective_status}${editable ? ' is-editable' : ' is-terminal'}`}>
       <header className="trader-card-heading">
         <div>
           <p className="eyebrow">Accessible bid</p>
@@ -335,7 +338,7 @@ function TraderBidCard({
             </div>
             <div>
               <dt>Authoritative server total</dt>
-              <dd>{amount(quote.total_amount)}</dd>
+              <dd className="server-value">{amount(quote.total_amount)}</dd>
             </div>
           </dl>
         ) : null}
@@ -358,7 +361,7 @@ function TraderBidCard({
                   <span>{amount(item.quantity_mt)} MT requested</span>
                 </div>
                 <label>
-                  Unit price
+                  <span className="trader-input-label"><span>Unit price</span><small>Editable</small></span>
                   <input
                     aria-label={`${item.fuel_grade} unit price`}
                     type="number"
@@ -376,7 +379,7 @@ function TraderBidCard({
           </div>
           <div className="trader-barge-fee">
             <label>
-              Barge fee
+              <span className="trader-input-label"><span>Barge fee</span><small>Editable</small></span>
               <input
                 aria-label="Barge fee"
                 type="number"
@@ -400,7 +403,13 @@ function TraderBidCard({
                 <dd>{amount(quote.total_amount)}</dd>
                 <p>Current total returned by the server.</p>
               </div>
-            ) : null}
+            ) : (
+              <div className="trader-authoritative-total is-pending">
+                <dt>Authoritative server total</dt>
+                <dd>Not submitted</dd>
+                <p>The server returns this value after your quote is saved.</p>
+              </div>
+            )}
           </dl>
           <div className="trader-quote-actions">
             <button type="submit" disabled={!canSave || pending}>
@@ -410,7 +419,7 @@ function TraderBidCard({
         </form>
       ) : (
         <>
-          <div className="terminal-result trader-terminal-result" role="status">
+          <div className={`terminal-result trader-terminal-result${resultClass}`} role="status">
             <span>Bid result</span>
             <strong>{terminalMessage}</strong>
           </div>
@@ -440,7 +449,7 @@ function ReadOnlyQuoteSummary({ quote }: { quote: Quote }) {
           <dt>Barge fee</dt>
           <dd>{amount(quote.barge_fee)}</dd>
         </div>
-        <div>
+        <div className="trader-read-only-total">
           <dt>Authoritative server total</dt>
           <dd>{amount(quote.total_amount)}</dd>
         </div>

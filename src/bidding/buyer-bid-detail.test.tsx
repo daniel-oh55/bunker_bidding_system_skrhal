@@ -40,9 +40,10 @@ describe('BUYER bid detail organization', () => {
   it('preserves the required overview and exposes four named native disclosure sections', () => {
     renderDetail(bid({ awarded_trader_organization_label: 'Awarded Trader', awarded_total_amount: 102 }));
     expect(screen.getByRole('heading', { name: 'MV Detail' })).toBeInTheDocument();
-    const overview = document.querySelector('.bid-overview');
+    const overview = screen.getByRole('region', { name: 'Selected bid overview' });
     for (const label of ['Port', 'Delivery window', 'Raw status', 'Effective status', 'Deadline', 'Remaining time', 'Creator', 'Responsible BUYER', 'Fuel requested', 'Revision', 'Awarded organization', 'Awarded total']) expect(overview).toHaveTextContent(label);
-    expect(screen.getByText('Effective status: open')).toHaveClass('status-badge');
+    expect(within(overview).getByText('open', { selector: '.status-badge' })).toHaveClass('status-open');
+    expect(overview.querySelector('.buyer-overview-award')).toHaveAttribute('aria-label', 'Awarded result');
     expect([...document.querySelectorAll('details > summary')].map((summary) => summary.textContent)).toEqual([
       'Bid terms & deadline', 'Responsibility & lifecycle', 'TRADER access & quotes', 'Audit history',
     ]);
@@ -87,10 +88,14 @@ describe('BUYER bid detail organization', () => {
     renderDetail(current, [], [traderB, traderA]);
 
     const board = screen.getByRole('region', { name: 'Buyer quote comparison' });
+    expect(board).toHaveAttribute('tabindex', '0');
+    expect(board).toHaveAccessibleDescription(/Award selection remains manual/);
     expect(within(board).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
       'Rank', 'TRADER organization', 'LSMGO unit price20 MT requested', 'VLSFO unit price10 MT requested',
       'Barge fee', 'Authoritative server total', 'Quote revision', 'Award result', 'Action',
     ]);
+    expect(within(board).getByRole('columnheader', { name: 'Rank' })).toHaveClass('buyer-quote-rank-column');
+    expect(within(board).getByRole('columnheader', { name: 'TRADER organization' })).toHaveClass('buyer-quote-org-column');
     const rows = within(board).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]!).getByRole('rowheader')).toHaveTextContent('Trader B');
@@ -117,7 +122,7 @@ describe('BUYER bid detail organization', () => {
   it('keeps server-open controls enabled when the advisory countdown is expired', () => {
     renderDetail(bid({ deadline_at: '2020-01-01T00:00:00.000Z', effective_status: 'open' }), [], [], [], { currentTimeMs: Date.parse('2026-08-03T03:00:00.000Z') });
     expect(screen.getByText('Expired')).toBeInTheDocument();
-    expect(screen.getByText('Effective status: open')).toBeInTheDocument();
+    expect(screen.getByText('open', { selector: '.status-badge' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save bid' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
   });

@@ -61,6 +61,9 @@ describe('TRADER workspace', () => {
     expect(ownQuoteState).toHaveTextContent('No own quote submitted');
     expect(ownQuoteState).toHaveTextContent('Your organization has not submitted a quote for this bid.');
     expect(screen.getByRole('heading', { name: 'Create quote' })).toBeInTheDocument();
+    const totals = screen.getByLabelText('Quote totals');
+    expect(within(totals).getByText('Authoritative server total').closest('div')).toHaveTextContent('Not submitted');
+    expect(within(totals).getByText('Authoritative server total').closest('div')).toHaveTextContent('The server returns this value after your quote is saved.');
   });
 
   it('shows requested fuel quantities beside their matching unit-price inputs', async () => {
@@ -188,6 +191,7 @@ describe('TRADER workspace', () => {
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText('Quote submission is closed.');
     expect(screen.getByRole('status')).toHaveTextContent('Quote submission is closed.');
+    expect(screen.getByRole('status')).toHaveClass('result-terminal');
     expect(screen.getByRole('region', { name: 'Your quote summary' })).toHaveTextContent('LSMGO unit price');
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /quote/i })).not.toBeInTheDocument();
@@ -222,6 +226,7 @@ describe('TRADER workspace', () => {
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     await screen.findByText(message);
     expect(screen.getByRole('status')).toHaveTextContent(message);
+    expect(screen.getByRole('status')).toHaveClass(isAwarded ? 'result-selected' : 'result-not-selected');
     expect(screen.getByRole('region', { name: 'Your quote summary' })).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save quote' })).not.toBeInTheDocument();

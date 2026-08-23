@@ -65,6 +65,7 @@
 
 ## Completed refinements
 
+- Final BUYER/TRADER workspace presentation polish strengthens operational hierarchy, quote comparison scanning, editor/read-only distinction, terminal results, responsive behavior, and keyboard/focus presentation without changing backend, authorization, deadline, award, quote, or Realtime contracts.
 - The BUYER All bids view groups and locally collapses bids by immutable creator; Created by me, responsible-BUYER filtering, and all authorization, lifecycle, RPC, and Realtime contracts remain unchanged.
 - BUYER quote-board comparison and BUYER/TRADER deadline countdown presentation are implemented; award, quote, authorization, deadline, and Realtime contracts are unchanged.
 - The TRADER workspace UX refinement is implemented without changing quote, authorization, deadline, RPC, or Realtime contracts.

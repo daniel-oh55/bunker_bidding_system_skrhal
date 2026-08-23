@@ -8,10 +8,10 @@ import { StatusBadge, WorkspaceEmptyState, WorkspaceSummary } from '../ui/worksp
 type View = 'all' | 'created_by_me' | 'responsible_buyer';
 type Detail = { access: BidTraderAccess[]; quotes: Quote[]; audit: BidAuditEvent[] };
 type CreatorGroup = { creatorId: string; creatorLabel: string; bids: Bid[] };
-const views: { value: View; label: string }[] = [
-  { value: 'all', label: 'All bids' },
-  { value: 'created_by_me', label: 'Created by me' },
-  { value: 'responsible_buyer', label: 'By BUYER' },
+const views: { value: View; label: string; description: string }[] = [
+  { value: 'all', label: 'All bids', description: 'Grouped by creator' },
+  { value: 'created_by_me', label: 'Created by me', description: 'Only bids you created' },
+  { value: 'responsible_buyer', label: 'By BUYER', description: 'Filter by responsibility' },
 ];
 const quoteSort = (a: Quote, b: Quote) => Number(b.is_awarded) - Number(a.is_awarded) || a.total_amount - b.total_amount || a.id.localeCompare(b.id);
 const unknownError: WorkflowError = { kind: 'unknown', code: null, message: 'The request could not be completed. Please try again.' };
@@ -142,18 +142,20 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
   const renderBidCard = (bid: Bid) => {
     const isSelected = selected?.id === bid.id;
     return <button type="button" className={`bid-button buyer-bid-card${isSelected ? ' is-selected' : ''}`} aria-pressed={isSelected} key={bid.id} onClick={() => void loadDetail(bid)}>
-      <span className="buyer-bid-card-heading"><span><strong>{bid.vessel_voyage}</strong><span className="buyer-bid-port">{bid.port_name}</span></span><StatusBadge status={bid.effective_status} label="Effective status" /></span>
-      <span className="buyer-bid-card-secondary">
+      <span className="buyer-bid-card-heading"><span><span className="buyer-card-label">Vessel / voyage</span><strong>{bid.vessel_voyage}</strong><span className="buyer-bid-port">{bid.port_name}</span></span><span className="buyer-bid-card-status"><span className="buyer-card-label">Effective status</span><StatusBadge status={bid.effective_status} /></span></span>
+      <span className="buyer-bid-card-attention">
         <span><span className="buyer-card-label">Deadline</span>{displayDate(bid.deadline_at)}</span>
         <span><span className="buyer-card-label">Remaining time</span><span className={`deadline-countdown${remainingTime(bid.deadline_at, nowMs) === 'Expired' ? ' is-expired' : ''}`}>{remainingTime(bid.deadline_at, nowMs)}</span></span>
-        <span><span className="buyer-card-label">Responsible BUYER</span>{bid.responsible_buyer_label}</span>
-        <span><span className="buyer-card-label">Fuel request</span>{bid.fuel_items.map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt}`).join(', ')}</span>
       </span>
+      <span className="buyer-bid-card-secondary">
+        <span><span className="buyer-card-label">Fuel request</span>{bid.fuel_items.map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt} MT`).join(', ')}</span>
+        <span><span className="buyer-card-label">Responsible BUYER</span>{bid.responsible_buyer_label}</span>
+      </span>
+      {bid.awarded_trader_organization_label ? <span className="buyer-bid-award"><span className="buyer-card-label">Awarded result</span><strong>{bid.awarded_trader_organization_label}</strong><span>Authoritative total {bid.awarded_total_amount}</span></span> : null}
       <span className="buyer-bid-card-metadata">
         <span>Creator: {bid.created_by_label}</span>
         <span>Raw status: {bid.raw_status}</span>
         <span>Revision {bid.revision}</span>
-        {bid.awarded_trader_organization_label ? <span className="buyer-bid-award">Awarded to {bid.awarded_trader_organization_label}; total {bid.awarded_total_amount}</span> : null}
       </span>
     </button>;
   };
@@ -169,7 +171,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
       <fieldset>
         <legend>Bid view</legend>
         <div className="buyer-filter-options">
-          {views.map((option) => <label key={option.value}><input type="radio" name="bid-view" checked={view === option.value} onChange={() => changeView(option.value)} /> <span>{option.label}</span></label>)}
+          {views.map((option) => <label key={option.value}><input type="radio" name="bid-view" aria-label={option.label} checked={view === option.value} onChange={() => changeView(option.value)} /> <span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}
         </div>
       </fieldset>
       {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
@@ -182,7 +184,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
           const isCollapsed = collapsedCreators[group.creatorId] ?? false;
           const groupContentId = `buyer-creator-bids-${group.creatorId}`;
           const groupOpenCount = group.bids.filter((bid) => bid.effective_status === 'open').length;
-          return <section className="buyer-creator-group" aria-label={`Bids created by ${group.creatorLabel}`} key={group.creatorId}>
+          return <section className={`buyer-creator-group${isCollapsed ? ' is-collapsed' : ''}`} aria-label={`Bids created by ${group.creatorLabel}`} key={group.creatorId}>
             <header className="buyer-creator-group-header">
               <div className="buyer-creator-identity"><p className="eyebrow">Bid creator</p><h3>{group.creatorLabel}</h3></div>
               <div className="buyer-creator-group-actions">
