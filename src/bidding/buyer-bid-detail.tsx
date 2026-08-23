@@ -105,38 +105,42 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
   };
 
   return <div className="buyer-detail-content">
-    <div className="bid-overview">
+    <div className={`bid-overview status-${bid.effective_status}`} role="region" aria-label="Selected bid overview">
       <div className="buyer-overview-heading">
-        <div><p className="eyebrow">Selected bid</p><h2>{bid.vessel_voyage}</h2></div>
-        <StatusBadge status={bid.effective_status} label="Effective status" />
+        <div><p className="eyebrow">Selected bid · Vessel / voyage</p><h2>{bid.vessel_voyage}</h2><p className="buyer-overview-port"><span>Port</span>{bid.port_name}</p></div>
+        <div className="buyer-overview-status"><span>Effective status</span><StatusBadge status={bid.effective_status} /></div>
       </div>
-      <dl className="operational-data">
-        <div><dt>Port</dt><dd>{bid.port_name}</dd></div>
+      <dl className="operational-data buyer-overview-primary">
+        <div className="buyer-overview-deadline"><dt>Deadline</dt><dd>{date(bid.deadline_at)}</dd></div>
+        <div className="buyer-overview-remaining"><dt>Remaining time</dt><dd><span className={`deadline-countdown${remainingTime(bid.deadline_at, currentTimeMs) === 'Expired' ? ' is-expired' : ''}`}>{remainingTime(bid.deadline_at, currentTimeMs)}</span><small className="countdown-note">Client clock, advisory only</small></dd></div>
         <div><dt>Delivery window</dt><dd>{bid.delivery_window}</dd></div>
-        <div><dt>Raw status</dt><dd>{bid.raw_status}</dd></div>
-        <div><dt>Deadline</dt><dd>{date(bid.deadline_at)}</dd></div>
-        <div><dt>Remaining time</dt><dd><span className={`deadline-countdown${remainingTime(bid.deadline_at, currentTimeMs) === 'Expired' ? ' is-expired' : ''}`}>{remainingTime(bid.deadline_at, currentTimeMs)}</span><small className="countdown-note">Client clock, advisory only</small></dd></div>
-        <div><dt>Creator</dt><dd>{bid.created_by_label}</dd></div>
-        <div><dt>Responsible BUYER</dt><dd>{bid.responsible_buyer_label}</dd></div>
         <div><dt>Fuel requested</dt><dd>{bid.fuel_items.map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt}`).join(', ')}</dd></div>
+        <div><dt>Responsible BUYER</dt><dd>{bid.responsible_buyer_label}</dd></div>
+      </dl>
+      {bid.awarded_trader_organization_label ? <dl className="buyer-overview-award" aria-label="Awarded result">
+        <div><dt>Awarded organization</dt><dd>{bid.awarded_trader_organization_label}</dd></div>
+        <div><dt>Awarded total</dt><dd>{number(bid.awarded_total_amount ?? 0)}</dd></div>
+      </dl> : null}
+      <dl className="buyer-overview-metadata" aria-label="Bid metadata">
+        <div><dt>Creator</dt><dd>{bid.created_by_label}</dd></div>
+        <div><dt>Raw status</dt><dd>{bid.raw_status}</dd></div>
         <div><dt>Revision</dt><dd>{bid.revision}</dd></div>
-        {bid.awarded_trader_organization_label ? <>
-          <div><dt>Awarded organization</dt><dd>{bid.awarded_trader_organization_label}</dd></div>
-          <div><dt>Awarded total</dt><dd>{number(bid.awarded_total_amount ?? 0)}</dd></div>
-        </> : null}
       </dl>
     </div>
 
     <details className="detail-section" open={termsOpen}>
       <summary>Bid terms &amp; deadline</summary>
       {detail === null ? <p>Loading bid detail</p> : detail.quotes.length ? <p className="notice">The first quote freezes commercial terms. Only deadline changes remain available.</p> : <p>Commercial fields are editable until the first quote is retained.</p>}
-      <div className="buyer-detail-form-grid">
-        <label>Vessel / voyage<input aria-label="Edit vessel / voyage" disabled={!commercialOpen || pending} value={draft.vessel} onChange={(event) => setDraft({ ...draft, vessel: event.target.value })} /></label>
-        <label>Port<input aria-label="Edit port" disabled={!commercialOpen || pending} value={draft.port} onChange={(event) => setDraft({ ...draft, port: event.target.value })} /></label>
-        <label>Delivery window<input aria-label="Edit delivery window" disabled={!commercialOpen || pending} value={draft.window} onChange={(event) => setDraft({ ...draft, window: event.target.value })} /></label>
-        <label>Deadline<input aria-label="Edit deadline" type="datetime-local" disabled={!deadlineOpen || detail === null || pending} value={draft.deadline} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} /></label>
+      <div className="buyer-editable-surface" aria-label="Editable bid fields">
+        <div className="buyer-editable-heading"><strong>Editable fields</strong><span>Disabled values are read-only under the current bid state.</span></div>
+        <div className="buyer-detail-form-grid">
+          <label>Vessel / voyage<input aria-label="Edit vessel / voyage" disabled={!commercialOpen || pending} value={draft.vessel} onChange={(event) => setDraft({ ...draft, vessel: event.target.value })} /></label>
+          <label>Port<input aria-label="Edit port" disabled={!commercialOpen || pending} value={draft.port} onChange={(event) => setDraft({ ...draft, port: event.target.value })} /></label>
+          <label>Delivery window<input aria-label="Edit delivery window" disabled={!commercialOpen || pending} value={draft.window} onChange={(event) => setDraft({ ...draft, window: event.target.value })} /></label>
+          <label>Deadline<input aria-label="Edit deadline" type="datetime-local" disabled={!deadlineOpen || detail === null || pending} value={draft.deadline} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} /></label>
+        </div>
+        <FuelRows rows={draft.rows} onChange={(rows) => setDraft({ ...draft, rows })} disabled={!commercialOpen || pending} />
       </div>
-      <FuelRows rows={draft.rows} onChange={(rows) => setDraft({ ...draft, rows })} disabled={!commercialOpen || pending} />
       <div className="buyer-action-row"><button type="button" disabled={!deadlineOpen || detail === null || !validRows || pending} onClick={saveBid}>Save bid</button></div>
     </details>
 
@@ -161,7 +165,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
             <button type="button" disabled={pending} onClick={() => void mutate(() => client.reopenBid(membershipId, bid.id, bid.revision, localInputToIso(draft.deadline)))}>Reopen</button>
           </> : null}
           {bid.raw_status === 'open' || bid.raw_status === 'closed' ? cancelConfirm
-            ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.cancelBid(membershipId, bid.id, bid.revision))}>Confirm cancel</button>
+            ? <button type="button" className="danger" disabled={pending} onClick={() => void mutate(() => client.cancelBid(membershipId, bid.id, bid.revision))}>Confirm cancel</button>
             : <button type="button" className="secondary" disabled={pending} onClick={() => setCancelConfirm(true)}>Cancel bid</button>
             : null}
         </div>
@@ -191,20 +195,20 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
             <p>Revoking access immediately removes this TRADER organization’s bid and quote visibility. BUYER records remain retained.</p>
             {selectedAwardee ? <p className="revoke-award-warning">This is the selected TRADER organization. Revoking access will remove its award-result visibility.</p> : null}
             <div className="revoke-confirmation-actions">
-              <button type="button" disabled={pending} onClick={confirmRevoke}>Confirm revoke</button>
+              <button type="button" className="danger" disabled={pending} onClick={confirmRevoke}>Confirm revoke</button>
               <button type="button" className="secondary" disabled={pending} onClick={() => setRevokeConfirm(null)}>Keep access</button>
             </div>
           </div> : null}
         </li>;
       })}</ul>
-      <div className="buyer-section-heading buyer-quotes-heading"><div><h3>Buyer-visible quotes</h3><p className="buyer-section-helper">Compared in the existing authoritative order.</p></div>{detail ? <span>{detail.quotes.length} quotes</span> : null}</div>
-      {detail?.quotes.length ? <div className="buyer-quote-board" role="region" aria-label="Buyer quote comparison" tabIndex={0}>
+      <div className="buyer-section-heading buyer-quotes-heading"><div><h3>Buyer-visible quotes</h3><p className="buyer-section-helper" id="buyer-quote-board-help">Ranked by returned authoritative total for comparison only. Award selection remains manual. Scroll horizontally to review every commercial value.</p></div>{detail ? <span>{detail.quotes.length} quotes</span> : null}</div>
+      {detail?.quotes.length ? <div className="buyer-quote-board" role="region" aria-label="Buyer quote comparison" aria-describedby="buyer-quote-board-help" tabIndex={0}>
         <table>
           <caption className="visually-hidden"><span>Grade prices</span><span>Authoritative total</span></caption>
           <thead>
             <tr>
-              <th scope="col">Rank</th>
-              <th scope="col">TRADER organization</th>
+              <th scope="col" className="buyer-quote-rank-column">Rank</th>
+              <th scope="col" className="buyer-quote-org-column">TRADER organization</th>
               {bid.fuel_items.map((item) => <th scope="col" key={item.fuel_grade}><span>{item.fuel_grade.toUpperCase()} unit price</span><small>{number(item.quantity_mt)} MT requested</small></th>)}
               <th scope="col">Barge fee</th>
               <th scope="col">Authoritative server total</th>
@@ -217,8 +221,8 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
             const confirmed = awardConfirm?.quoteId === quote.id && awardConfirm.quoteRevision === quote.revision && awardConfirm.signature === quoteSignature;
             const awardResult = quote.is_awarded ? 'Selected / awarded' : bid.effective_status === 'awarded' ? 'Not selected' : 'Pending';
             return <tr className={quote.is_awarded ? 'is-awarded' : undefined} key={quote.id}>
-              <td className="buyer-quote-rank" data-label="Rank">{index + 1}</td>
-              <th scope="row" data-label="TRADER organization"><strong>{quote.trader_organization_label}</strong><small>Access <span>{quote.access_active ? 'active' : 'revoked'}</span> · Organization <span>{quote.organization_active ? 'active' : 'inactive'}</span></small></th>
+              <td className="buyer-quote-rank buyer-quote-rank-column" data-label="Rank">{index + 1}</td>
+              <th scope="row" className="buyer-quote-org-column" data-label="TRADER organization"><strong>{quote.trader_organization_label}</strong><small>Access <span>{quote.access_active ? 'active' : 'revoked'}</span> · Organization <span>{quote.organization_active ? 'active' : 'inactive'}</span></small></th>
               {bid.fuel_items.map((item) => <td data-label={`${item.fuel_grade.toUpperCase()} unit price`} key={item.fuel_grade}>{quotePrice(quote, item.fuel_grade)}</td>)}
               <td data-label="Barge fee">{number(quote.barge_fee)}</td>
               <td className="buyer-quote-total" data-label="Authoritative server total">{number(quote.total_amount)}</td>
