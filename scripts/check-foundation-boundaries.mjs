@@ -200,6 +200,10 @@ function isApprovedSqlPath(relativePath) {
   return approvedSqlPathPrefixes.some((prefix) => relativePath.startsWith(prefix));
 }
 
+function isServerOnlyEdgeFunctionPath(relativePath) {
+  return relativePath.startsWith('supabase/functions/');
+}
+
 function checkRequiredDocs() {
   for (const relativePath of requiredDocs) {
     if (!isRegularFile(path.join(rootDir, relativePath))) {
@@ -337,6 +341,7 @@ function checkFiles() {
     const extension = path.extname(fullPath).toLowerCase();
 
     const isApprovedSqlFile = extension === '.sql' && isApprovedSqlPath(normalizedRelPath);
+    const isServerOnlyEdgeFunctionFile = isServerOnlyEdgeFunctionPath(normalizedRelPath);
     if (extension === '.sql' && !isApprovedSqlFile) {
       recordFailure(
         `SQL files are only allowed in supabase/migrations/ or supabase/tests/database/: ${normalizedRelPath}`,
@@ -365,13 +370,17 @@ function checkFiles() {
     }
 
     for (const pattern of forbiddenElevatedCredentialPatterns) {
-      if (pattern.test(content)) {
+      if (!isServerOnlyEdgeFunctionFile && pattern.test(content)) {
         recordFailure(`Elevated credential marker found outside legacy/: ${normalizedRelPath}`);
         break;
       }
     }
 
-    if (!isApprovedSqlFile && forbiddenElevatedRoleIdentifierPattern.test(content)) {
+    if (
+      !isApprovedSqlFile
+      && !isServerOnlyEdgeFunctionFile
+      && forbiddenElevatedRoleIdentifierPattern.test(content)
+    ) {
       recordFailure(`Elevated credential marker found outside legacy/: ${normalizedRelPath}`);
     }
 

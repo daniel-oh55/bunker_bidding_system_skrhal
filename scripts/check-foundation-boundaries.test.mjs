@@ -244,6 +244,32 @@ describe('foundation boundary checker', () => {
     expect(result.output).toContain('Foundation boundary check passed.');
   });
 
+  it('allows symbolic elevated credential markers only in server-side Edge Function files', () => {
+    const root = createPassingFixture();
+    const secretKeysMarker = ['SUPABASE', 'SECRET', 'KEYS'].join('_');
+    writeFixtureFile(
+      root,
+      'supabase/functions/_shared/server-credentials.ts',
+      `export const serverNames = ['${secretKeysMarker}', '${elevatedRoleIdentifier}'];\n`,
+    );
+
+    const result = runChecker(root);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
+  it('still rejects browser/Vite elevated credential markers in Edge Function files', () => {
+    const root = createPassingFixture();
+    const browserMarker = ['VITE', 'SUPABASE', 'SECRET', 'KEY'].join('_');
+    writeFixtureFile(
+      root,
+      'supabase/functions/_shared/browser-credential.ts',
+      `export const forbiddenBrowserName = '${browserMarker}';\n`,
+    );
+
+    expectFailure(root, 'Browser/Vite elevated credential variable');
+  });
+
   it('rejects a Supabase elevated-role key marker in an approved migration', () => {
     const root = createPassingFixture();
     const marker = ['SUPABASE', 'SERVICE', 'ROLE', 'KEY'].join('_');

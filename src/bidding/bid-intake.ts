@@ -1,5 +1,3 @@
-import type { FuelGrade } from './types';
-
 export type BunkerRequestSource = {
   subject: string;
   body: string;
@@ -13,14 +11,17 @@ export type BunkerRequestDraft = {
   warnings: string[];
 };
 
-const supportedAliases: Record<string, FuelGrade> = {
+const supportedAliases = {
   HSHFO: 'hsfo',
   HSFO: 'hsfo',
   VLSFO: 'vlsfo',
   ULSFO: 'ulsfo',
   LSFO: 'lsfo',
   LSMGO: 'lsmgo',
-};
+} as const;
+
+type FuelGrade = (typeof supportedAliases)[keyof typeof supportedAliases];
+type SupportedAlias = keyof typeof supportedAliases;
 
 const bunkerRequestWording = String.raw`BUNKER\s+(?:REQUEST|REQUISITION|REQ(?:UEST)?)`;
 const nonRequestFuelContext = /\b(?:ROB|REMAINING\s+ON\s+BOARD|CONSUMPTION|PRICE|QUOTE|OFFER|USD|EUR|SGD|BARGING\s+FEE|AWARD)\b|[$€]/i;
@@ -55,6 +56,10 @@ function parseQuantityToken(token: string): number | undefined {
   return Number.isFinite(quantity) && quantity > 0 ? quantity : undefined;
 }
 
+function isSupportedAlias(alias: string): alias is SupportedAlias {
+  return Object.hasOwn(supportedAliases, alias);
+}
+
 function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['fuelItems'] {
   const candidates = new Map<FuelGrade, Set<number>>();
 
@@ -71,7 +76,8 @@ function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['f
     }
 
     const alias = supported[1]!.toUpperCase();
-    const grade = supportedAliases[alias]!;
+    if (!isSupportedAlias(alias)) continue;
+    const grade = supportedAliases[alias];
     const amountToken = line.match(/(\S+)\s*M\s*\/?\s*T\b/i)?.[1];
     const quantity = amountToken ? parseQuantityToken(amountToken) : undefined;
     if (quantity === undefined) {
