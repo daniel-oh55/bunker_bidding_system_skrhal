@@ -5,6 +5,22 @@ export type EffectiveBidStatus = 'open' | 'closed' | 'cancelled' | 'awarded';
 
 export type BidFuelItem = { fuel_grade: FuelGrade; quantity_mt: number };
 export type QuoteFuelPrice = { fuel_grade: FuelGrade; unit_price: number };
+export type MailIntakeFuelItem = { grade: FuelGrade; quantity: number };
+export type MailIntakeItem = {
+  id: string;
+  received_at: string;
+  subject: string;
+  vessel_voyage: string | null;
+  port_name: string | null;
+  delivery_window: string | null;
+  fuel_items: MailIntakeFuelItem[];
+  warnings: string[];
+  status: 'pending' | 'dismissed';
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  dismissed_at: string | null;
+};
 export type Bid = {
   id: string; vessel_voyage: string; port_name: string; delivery_window: string;
   deadline_at: string | null; raw_status: BidStatus; effective_status: EffectiveBidStatus;
@@ -41,6 +57,71 @@ function nullableId(value: unknown): string | null | undefined { if (value === n
 function nullableNumber(value: unknown): number | null | undefined { if (value === null) return null; return finite(value) ?? undefined; }
 function nullableDate(value: unknown): string | null | undefined { return date(value, true); }
 function bool(value: unknown): boolean | null { return typeof value === 'boolean' ? value : null; }
+
+const mailIntakeKeys = new Set([
+  'id', 'received_at', 'subject', 'vessel_voyage', 'port_name', 'delivery_window',
+  'fuel_items', 'warnings', 'status', 'revision', 'created_at', 'updated_at', 'dismissed_at',
+]);
+function exactKeys(value: Record<string, unknown>, allowed: Set<string>): boolean { return Object.keys(value).length === allowed.size && Object.keys(value).every((key) => allowed.has(key)); }
+function boundedText(value: unknown, maximum: number, allowEmpty = false): string | null {
+  const candidate = text(value);
+  return candidate !== null && candidate === candidate.trim() && candidate.length <= maximum && (allowEmpty || candidate.length > 0) ? candidate : null;
+}
+function nullableBoundedText(value: unknown, maximum: number): string | null | undefined { return value === null ? null : boundedText(value, maximum) ?? undefined; }
+function mailIntakeRevision(value: unknown): number | null { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : null; }
+function mailIntakeTimestamp(value: unknown): string | null {
+  const candidate = text(value);
+  const match = candidate?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/);
+  if (!candidate || !match || !Number.isFinite(Date.parse(candidate))) return null;
+  const year = Number(match[1]); const month = Number(match[2]); const day = Number(match[3]);
+  const hour = Number(match[4]); const minute = Number(match[5]); const second = Number(match[6]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month - 1]! || hour > 23 || minute > 59 || second > 59) return null;
+  if (match[7] !== 'Z') { const offsetHour = Number(match[7]!.slice(1, 3)); const offsetMinute = Number(match[7]!.slice(4, 6)); if (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0)) return null; }
+  return candidate;
+}
+function nullableMailIntakeTimestamp(value: unknown): string | null | undefined { return value === null ? null : mailIntakeTimestamp(value) ?? undefined; }
+function mailIntakeFuelItems(value: unknown): MailIntakeFuelItem[] | null {
+  if (!Array.isArray(value) || value.length > 5) return null;
+  const found = new Set<FuelGrade>(); const output: MailIntakeFuelItem[] = [];
+  for (const candidate of value) {
+    const item = record(candidate);
+    if (!item || Object.keys(item).length !== 2 || !Object.hasOwn(item, 'grade') || !Object.hasOwn(item, 'quantity')) return null;
+    const grade = text(item.grade); const quantity = item.quantity;
+    if (!grade || !grades.has(grade as FuelGrade) || found.has(grade as FuelGrade) || typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) return null;
+    found.add(grade as FuelGrade); output.push({ grade: grade as FuelGrade, quantity });
+  }
+  return output;
+}
+function mailIntakeWarnings(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 20) return null;
+  const output: string[] = [];
+  for (const candidate of value) { const warning = boundedText(candidate, 300); if (warning === null) return null; output.push(warning); }
+  return output;
+}
+function parseMailIntakeItem(value: unknown, expectedStatus: MailIntakeItem['status']): MailIntakeItem | null {
+  const r = record(value);
+  if (!r || !exactKeys(r, mailIntakeKeys) || !id(r.id) || !mailIntakeTimestamp(r.received_at) || boundedText(r.subject, 512, true) === null || nullableBoundedText(r.vessel_voyage, 256) === undefined || nullableBoundedText(r.port_name, 256) === undefined || nullableBoundedText(r.delivery_window, 256) === undefined || !mailIntakeFuelItems(r.fuel_items) || !mailIntakeWarnings(r.warnings) || r.status !== expectedStatus || mailIntakeRevision(r.revision) === null || !mailIntakeTimestamp(r.created_at) || !mailIntakeTimestamp(r.updated_at) || nullableMailIntakeTimestamp(r.dismissed_at) === undefined) return null;
+  if ((expectedStatus === 'pending' && r.dismissed_at !== null) || (expectedStatus === 'dismissed' && r.dismissed_at === null)) return null;
+  return {
+    id: r.id as string,
+    received_at: r.received_at as string,
+    subject: r.subject as string,
+    vessel_voyage: r.vessel_voyage as string | null,
+    port_name: r.port_name as string | null,
+    delivery_window: r.delivery_window as string | null,
+    fuel_items: mailIntakeFuelItems(r.fuel_items)!,
+    warnings: mailIntakeWarnings(r.warnings)!,
+    status: expectedStatus,
+    revision: mailIntakeRevision(r.revision)!,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+    dismissed_at: r.dismissed_at as string | null,
+  };
+}
+export function parsePendingMailIntakeItem(value: unknown): MailIntakeItem | null { return parseMailIntakeItem(value, 'pending'); }
+export function parseDismissedMailIntakeItem(value: unknown): MailIntakeItem | null { return parseMailIntakeItem(value, 'dismissed'); }
 
 function fuelItems(value: unknown): BidFuelItem[] | null {
   if (!Array.isArray(value) || value.length < 1 || value.length > 5) return null;

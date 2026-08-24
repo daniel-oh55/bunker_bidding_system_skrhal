@@ -1,9 +1,11 @@
-import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseQuote, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type Quote, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
+import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type MailIntakeItem, type Quote, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
 
 export type BiddingResult<T> = { data: T | null; error: WorkflowError | null };
 export type BidInput = { vesselVoyage: string; portName: string; deliveryWindow: string; deadlineAt: string | null; responsibleBuyerUserId: string | null; fuelGrades: string[]; quantities: number[] };
 export type QuoteInput = { fuelGrades: string[]; unitPrices: number[]; bargeFee: number };
 export interface BiddingClient {
+  listMailIntakeItems(membershipId: string): Promise<BiddingResult<MailIntakeItem[]>>;
+  dismissMailIntakeItem(membershipId: string, itemId: string, expectedRevision: number): Promise<BiddingResult<MailIntakeItem>>;
   listActiveBuyers(membershipId: string): Promise<BiddingResult<ActiveBuyer[]>>;
   listBids(membershipId: string, view: 'all' | 'created_by_me' | 'responsible_buyer', responsibleBuyerUserId?: string): Promise<BiddingResult<Bid[]>>;
   listBidAudit(membershipId: string, bidId: string): Promise<BiddingResult<BidAuditEvent[]>>;
@@ -36,6 +38,8 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
   }
   const many = <T>(parser: (value: unknown) => T | null) => (value: unknown) => parseArray(value, parser);
   return {
+    listMailIntakeItems: (m) => rpc('list_mail_intake_items', { p_actor_membership_id: m }, many(parsePendingMailIntakeItem)),
+    dismissMailIntakeItem: (m, i, r) => rpc('dismiss_mail_intake_item', { p_actor_membership_id: m, p_item_id: i, p_expected_revision: r }, parseDismissedMailIntakeItem),
     listActiveBuyers: (m) => rpc('list_active_buyers', { p_actor_membership_id: m }, many(parseActiveBuyer)),
     listBids: (m, view, user) => rpc('list_bids', { p_actor_membership_id: m, p_view: view, p_responsible_buyer_user_id: view === 'responsible_buyer' ? user ?? null : null }, many(parseBid)),
     listBidAudit: (m, b) => rpc('list_bid_audit', { p_actor_membership_id: m, p_bid_id: b }, many(parseBidAuditEvent)),

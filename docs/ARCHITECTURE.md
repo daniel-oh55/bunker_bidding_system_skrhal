@@ -3,12 +3,12 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: local CLI migrations and pgTAP tests, including the repository-only PR #31 mail-intake foundation and its ingest-only privilege hardening; seven earlier reviewed migrations remain applied to Production, including the organization-label access-context migration and `20260808090000_realtime_workspace_notifications` Realtime foundation
+- Supabase access: local CLI migrations and pgTAP tests; all nine canonical migrations are applied to Production, including `20260821070000_mail_intake_foundation` and `20260821100000_mail_intake_ingress_hardening`
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
-- Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()`, an integrated RPC-only BUYER/TRADER workspace, and a private Realtime invalidation adapter
+- Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()`, an integrated RPC-only BUYER/TRADER workspace with isolated BUYER mail-intake list/dismiss state, and a private Realtime invalidation adapter
 - Local intake: a BUYER form-local `.msg` binary adapter validates extension, size, and CFBF signature before browser parsing; a separate pure parser converts only plain-text subject/body into advisory candidates and warnings
-- Server intake foundation: a future trusted mailbox connector may call one service-role-only normalized-ingress RPC, which stages bounded candidates in an RLS-enabled `app_private` queue; active BUYERs use only narrow list/dismiss RPCs
-- Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, sanitized synthetic lifecycle smoke testing, BUYER/TRADER trusted-label UI smoke, private Realtime channel enforcement, and E2E verification of the existing private Realtime adapter are complete
+- Server intake foundation: a future trusted mailbox connector may call one service-role-only normalized-ingress RPC, which stages bounded candidates in an RLS-enabled `app_private` queue; the BUYER frontend uses only narrow authenticated list/dismiss RPCs and exposes no ingest surface
+- Production baseline: controlled BUYER/TRADER provisioning, canonical Vercel Production deployment, sanitized synthetic lifecycle smoke testing, BUYER/TRADER trusted-label UI smoke, private Realtime channel enforcement, E2E verification of the existing private Realtime adapter, and mail-intake privilege verification are complete. The Supabase service role is ingest-only, `authenticated` is list/dismiss-only, `anon` has no mail-intake RPC access, direct queue CRUD is denied, and the queue was empty after rollout.
 - Legacy reference: static Firebase prototype under `legacy/firebase-prototype/`
 
 ## Implemented authorization baseline
@@ -61,7 +61,7 @@ The browser creates separate access, bidding, and narrow Realtime invalidation a
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- seven reviewed Supabase migrations, including the organization-label access-context migration and `20260808090000_realtime_workspace_notifications`, are applied and the canonical Vercel Production deployment exists
+- nine reviewed Supabase migrations, including canonical mail-intake versions `20260821070000` and `20260821100000`, are applied and the canonical Vercel Production deployment exists
 - no real operational bidding data has been migrated or is in use; retained Production records are synthetic smoke records only
-- manual browser-local `.msg` draft intake and the private normalized server intake boundary are allowed; PR #31 is merged in the repository, but neither mail-intake migration is applied to Production by this hardening PR; manual `.eml`, provider integrations, live mailbox connectivity/fetch/delivery, intake-to-bid conversion, automatic bid creation, historical email migration, and operational email fixtures remain outside the architecture
+- manual browser-local `.msg` draft intake, the private normalized server intake boundary, and the active-BUYER provider-neutral pending list/dismiss UI are allowed. Provider connectors, OAuth/token/password handling, live mailbox connectivity/fetch/delivery, polling/webhook/cron, manual `.eml`, intake-to-bid conversion, automatic bid creation, historical email migration, and operational email fixtures remain outside the architecture; no real operational mail data was introduced
 - a future connector must tolerate unique-index lock waits and treat SQLSTATE `40001` as retryable if it adopts stronger isolation or otherwise receives a serialization failure; the unique source constraint remains the authoritative identity boundary

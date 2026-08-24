@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BiddingClient, BiddingResult, BidInput } from './bidding-client';
 import { CreateBidForm } from './bid-form';
 import { BuyerBidDetail } from './buyer-bid-detail';
+import { MailIntakeQueue } from './mail-intake-queue';
 import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, Quote, TraderOrganization, WorkflowError } from './types';
 import { StatusBadge, WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
 
@@ -176,6 +177,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
       </fieldset>
       {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
     </section>
+    <MailIntakeQueue client={client} membershipId={membershipId} onAuthorizationFailure={onAuthorizationFailure} />
     <CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} />
     <section className="bid-layout buyer-bid-layout">
       <section className="panel bid-list buyer-bid-list">
