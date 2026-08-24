@@ -41,6 +41,7 @@ type HarnessOptions = {
   ingestResults?: Array<'ok' | '40001' | 'failed'>;
   cursorCasResult?: 'ok' | '40001' | 'failed';
   oauthStatus?: number;
+  oauthScope?: unknown;
 };
 
 function json(value: unknown, status = 200): Response {
@@ -91,9 +92,14 @@ class FetchHarness {
     this.calls.push({ url, init, body });
 
     if (url.href === 'https://oauth2.googleapis.com/token') {
-      return this.options.oauthStatus
-        ? json({ error: `${CLIENT_SECRET}-${REFRESH_TOKEN}-${ACCESS_TOKEN}` }, this.options.oauthStatus)
-        : json({ access_token: ACCESS_TOKEN });
+      if (this.options.oauthStatus) {
+        return json({ error: `${CLIENT_SECRET}-${REFRESH_TOKEN}-${ACCESS_TOKEN}` }, this.options.oauthStatus);
+      }
+      const payload: Record<string, unknown> = { access_token: ACCESS_TOKEN };
+      if (this.options.oauthScope !== null) {
+        payload.scope = this.options.oauthScope ?? GMAIL_OAUTH_SCOPE;
+      }
+      return json(payload);
     }
     if (url.pathname.endsWith('/profile')) {
       return json(this.options.profile ?? {
@@ -207,14 +213,60 @@ describe('Gmail mail intake Edge Function', () => {
     const oauthCall = harness.calls[0]!;
     const parameters = new URLSearchParams(String(oauthCall.body));
 
+    expect([...parameters.keys()].sort()).toEqual([
+      'client_id',
+      'client_secret',
+      'grant_type',
+      'refresh_token',
+      'scope',
+    ]);
+    expect(parameters.get('client_id')).toBe(baseEnvironment.GMAIL_OAUTH_CLIENT_ID);
     expect(parameters.get('grant_type')).toBe('refresh_token');
     expect(parameters.get('client_secret')).toBe(CLIENT_SECRET);
     expect(parameters.get('refresh_token')).toBe(REFRESH_TOKEN);
+    expect(parameters.get('scope')).toBe(GMAIL_OAUTH_SCOPE);
     const returned = JSON.stringify(await response.json());
     expect(returned).toBe('{"status":"error","code":"gmail_oauth_failed"}');
     for (const secret of [CLIENT_SECRET, REFRESH_TOKEN, ACCESS_TOKEN, DATABASE_SECRET, TRIGGER_SECRET]) {
       expect(returned).not.toContain(secret);
     }
+  });
+
+  it('accepts an OAuth success response with exactly gmail.readonly', async () => {
+    const harness = new FetchHarness({ cursor: null, oauthScope: GMAIL_OAUTH_SCOPE });
+    const response = await handlerFor(harness)(authorizedRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: 'initialized', discovered: 0, ingested: 0 });
+    expect(harness.callsFor('/profile')).toHaveLength(1);
+  });
+
+  it('fails closed when the OAuth success response omits scope', async () => {
+    const harness = new FetchHarness({ oauthScope: null });
+    const response = await handlerFor(harness)(authorizedRequest());
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ status: 'error', code: 'gmail_oauth_scope_invalid' });
+    expect(harness.callsFor('/profile')).toHaveLength(0);
+    expect(harness.callsFor('/rest/v1/rpc/get_mail_connector_cursor')).toHaveLength(0);
+  });
+
+  it.each([
+    `${GMAIL_OAUTH_SCOPE} https://www.googleapis.com/auth/gmail.modify`,
+    'https://www.googleapis.com/auth/gmail.modify',
+  ])('fails closed on a non-exact OAuth scope response', async (oauthScope) => {
+    const harness = new FetchHarness({ oauthScope });
+    const response = await handlerFor(harness)(authorizedRequest());
+    const returned = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(502);
+    expect(returned).toBe('{"status":"error","code":"gmail_oauth_scope_invalid"}');
+    expect(returned).not.toContain(oauthScope);
+    for (const secret of [CLIENT_SECRET, REFRESH_TOKEN, ACCESS_TOKEN, DATABASE_SECRET, TRIGGER_SECRET]) {
+      expect(returned).not.toContain(secret);
+    }
+    expect(harness.callsFor('/profile')).toHaveLength(0);
+    expect(harness.callsFor('/rest/v1/rpc/get_mail_connector_cursor')).toHaveLength(0);
   });
 
   it('requires the Gmail profile account to match exactly before cursor work', async () => {

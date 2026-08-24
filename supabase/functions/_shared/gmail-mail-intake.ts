@@ -159,6 +159,7 @@ async function refreshAccessToken(config: ConnectorConfig, fetcher: typeof fetch
     client_secret: config.oauthClientSecret,
     refresh_token: config.oauthRefreshToken,
     grant_type: 'refresh_token',
+    scope: GMAIL_OAUTH_SCOPE,
   });
   let response: Response;
   try {
@@ -177,6 +178,14 @@ async function refreshAccessToken(config: ConnectorConfig, fetcher: typeof fetch
   const accessToken = payload.access_token;
   if (typeof accessToken !== 'string' || accessToken === '') {
     throw new OperationalError('gmail_oauth_failed');
+  }
+  const returnedScope = payload.scope;
+  if (typeof returnedScope !== 'string' || returnedScope.trim() === '') {
+    throw new OperationalError('gmail_oauth_scope_invalid');
+  }
+  const returnedScopes = new Set(returnedScope.trim().split(/\s+/));
+  if (returnedScopes.size !== 1 || !returnedScopes.has(GMAIL_OAUTH_SCOPE)) {
+    throw new OperationalError('gmail_oauth_scope_invalid');
   }
   return accessToken;
 }

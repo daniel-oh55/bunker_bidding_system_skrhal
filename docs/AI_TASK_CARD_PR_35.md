@@ -39,7 +39,7 @@ Only a request carrying the dedicated connector trigger secret may cause the ser
 | --- | --- | --- | --- | --- |
 | Bounded provider-neutral cursor identity | Provider, opaque mailbox key, cursor, and revision checks | Enabled with no policies | Fixed-search-path get/CAS RPCs validate all inputs | No browser surface |
 | Cursor access is connector-only | Primary key and non-secret columns only | Defense in depth | Execute granted only to backend role; direct table privileges revoked | No browser surface |
-| Gmail is readonly and account-bound | Server configuration validation | N/A | Exact OAuth scope contract and exact profile email comparison | No browser surface |
+| Gmail is readonly and account-bound | Server configuration validation | N/A | Refresh exchange requests only `gmail.readonly`, validates the returned scope set is exactly `gmail.readonly`, and compares the profile email exactly | No browser surface |
 | No historical import or silent recovery | Cursor represents explicit cutover | N/A | First run initializes only; stale history fails closed | Fixed aggregate operational result |
 | Normalized advisory ingress only | Existing queue constraints and source identity uniqueness | Existing private queue boundary | Existing ingest-only RPC; serialization failures have a bounded retry | Existing BUYER/TRADER behavior unchanged |
 | Raw/HTML/attachment/address exclusion | No storage columns for those values | Existing private queue boundary | Inline `text/plain` only with total decoded cap; no attachment endpoint | No browser surface |
@@ -61,7 +61,7 @@ Only a request carrying the dedicated connector trigger secret may cause the ser
 
 ## Forbidden scope
 
-No frontend behavior, bid/quote/award RPC, Realtime, browser Auth, `CreateBidForm`, PR #34 queue behavior, queue direct CRUD/list/dismiss authority for the connector, IMAP, broader Gmail scope, raw format, HTML parsing, attachment fetch, address extraction, URL following, real fixture/data/account, secret value, Google OAuth setup, remote link, deploy, Production config/migration, cron, automatic historical recovery, dependency expansion, or duplicated business parser.
+No frontend behavior, bid/quote/award RPC, Realtime, browser Auth, `CreateBidForm`, PR #34 queue behavior, queue direct CRUD/list/dismiss authority for the connector, IMAP, broader Gmail scope, raw format, HTML parsing, attachment fetch, address extraction, URL following, real fixture/data/account, secret value, Google OAuth setup (which remains a later owner-controlled Production step), remote link, deploy, Production config/migration, cron, automatic historical recovery, dependency expansion, or duplicated business parser.
 
 ## Database and migration plan
 

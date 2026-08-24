@@ -36,7 +36,6 @@ enabled = true
 [functions.gmail-mail-intake]
 enabled = true
 verify_jwt = false
-import_map = "./functions/gmail-mail-intake/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/gmail-mail-intake/index.ts"

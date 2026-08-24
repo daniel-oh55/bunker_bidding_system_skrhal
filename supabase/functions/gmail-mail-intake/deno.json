@@ -1,8 +1,5 @@
 {
   "compilerOptions": {
     "strict": true
-  },
-  "imports": {
-    "../../../src/bidding/types": "../../../src/bidding/types.ts"
   }
 }
