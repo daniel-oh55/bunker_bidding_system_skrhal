@@ -12,11 +12,22 @@ function fakeClient(bids: Bid[] = [bid()]) {
   const listBids = vi.fn(() => Promise.resolve(ok(bids)));
   const listActiveBuyers = vi.fn(() => Promise.resolve(ok<ActiveBuyer[]>([{ user_id: target, display_label: 'Target buyer', active_buyer_membership_count: 1 }])));
   const listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok<TraderOrganization[]>([])));
-  const client: BiddingClient = { listActiveBuyers, listBids, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), createQuote: () => Promise.resolve(ok<Quote>(null as never)), updateQuote: () => Promise.resolve(ok<Quote>(null as never)) };
+  const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), createQuote: () => Promise.resolve(ok<Quote>(null as never)), updateQuote: () => Promise.resolve(ok<Quote>(null as never)) };
   return { client, listBids, listActiveBuyers, listActiveTraderOrganizations };
 }
 
 describe('BUYER workspace', () => {
+  it('keeps normal bid operations available when the isolated mail queue has a non-authorization failure', async () => {
+    const { client, listBids } = fakeClient();
+    client.listMailIntakeItems = vi.fn<BiddingClient['listMailIntakeItems']>(() => Promise.resolve({ data: null, error: { kind: 'unknown', code: null, message: 'raw queue failure' } }));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    expect(await screen.findByRole('button', { name: /MV Buyer/ })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The mail intake request could not be completed. Please try again.');
+    expect(screen.getByText('Create new bid')).toBeInTheDocument();
+    expect(listBids).toHaveBeenCalledWith(id, 'all', undefined);
+  });
+
   it('presents human-readable BUYER views while preserving the exact server view arguments', async () => {
     const { client, listBids } = fakeClient();
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);

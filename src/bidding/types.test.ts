@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArray, parseBid, parseBidAuditEvent, parseQuote, parseTraderBid } from './types';
+import { parseArray, parseBid, parseBidAuditEvent, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseTraderBid } from './types';
 
 const id = '10000000-0000-4000-8000-000000000001';
 const otherId = '10000000-0000-4000-8000-000000000002';
@@ -14,8 +14,50 @@ function audit(overrides: Record<string, unknown> = {}) {
 function quote(overrides: Record<string, unknown> = {}) {
   return { id, bid_id: otherId, trader_organization_id: id, trader_organization_label: 'Trader', revision: 1, created_by: otherId, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 1 }], barge_fee: 0, total_amount: 1, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides };
 }
+function mailItem(overrides: Record<string, unknown> = {}) {
+  return { id, received_at: now, subject: '', vessel_voyage: null, port_name: 'Busan', delivery_window: '2026-08-04', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: ['Confirm delivery window'], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null, ...overrides };
+}
 
 describe('bidding protocol parsers', () => {
+  it('accepts valid pending and dismissed mail-intake results with only the narrow result fields', () => {
+    expect(parsePendingMailIntakeItem(mailItem())).toEqual(mailItem());
+    const dismissed = mailItem({ status: 'dismissed', revision: 2, dismissed_at: now });
+    expect(parseDismissedMailIntakeItem(dismissed)).toEqual(dismissed);
+    expect(parsePendingMailIntakeItem({ ...mailItem(), source_provider: 'secret-provider' })).toBeNull();
+  });
+
+  it('rejects malformed mail-intake identity, timestamps, revisions, and status consistency', () => {
+    for (const candidate of [
+      mailItem({ id: 'bad' }), mailItem({ received_at: 'bad' }), mailItem({ received_at: '2026-02-30T03:00:00.000Z' }), mailItem({ created_at: 'bad' }), mailItem({ updated_at: 'bad' }),
+      mailItem({ revision: 0 }), mailItem({ revision: 1.5 }), mailItem({ revision: '1' }),
+      mailItem({ status: 'dismissed' }), mailItem({ dismissed_at: now }),
+    ]) expect(parsePendingMailIntakeItem(candidate)).toBeNull();
+    expect(parseDismissedMailIntakeItem(mailItem({ status: 'dismissed', dismissed_at: null }))).toBeNull();
+    expect(parseDismissedMailIntakeItem(mailItem({ status: 'pending', dismissed_at: now }))).toBeNull();
+  });
+
+  it('enforces mail-intake candidate string and fuel bounds exactly', () => {
+    expect(parsePendingMailIntakeItem(mailItem({ subject: 'x'.repeat(513) }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ vessel_voyage: '' }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ port_name: ' x' }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ delivery_window: 'x'.repeat(257) }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ fuel_items: [] }))).not.toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ fuel_items: ['vlsfo', 'hsfo', 'ulsfo', 'lsfo', 'lsmgo', 'vlsfo'].map((grade) => ({ grade, quantity: 1 })) }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ fuel_items: [{ grade: 'mgo', quantity: 1 }] }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ fuel_items: [{ grade: 'vlsfo', quantity: 1 }, { grade: 'vlsfo', quantity: 2 }] }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ fuel_items: [{ grade: 'vlsfo', quantity: 0 }] }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ fuel_items: [{ grade: 'vlsfo', quantity: Number.POSITIVE_INFINITY }] }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ fuel_items: [{ grade: 'vlsfo', quantity: 1, unit: 'mt' }] }))).toBeNull();
+  });
+
+  it('enforces mail-intake warning count, nonblank text, and length bounds', () => {
+    expect(parsePendingMailIntakeItem(mailItem({ warnings: [] }))).not.toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ warnings: Array.from({ length: 20 }, (_, index) => `Warning ${index}`) }))).not.toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ warnings: Array.from({ length: 21 }, (_, index) => `Warning ${index}`) }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ warnings: [' '] }))).toBeNull();
+    expect(parsePendingMailIntakeItem(mailItem({ warnings: ['x'.repeat(301)] }))).toBeNull();
+  });
+
   it('rejects invalid bid lifecycle combinations and non-positive awards', () => {
     expect(parseBid(bid({ raw_status: 'awarded', effective_status: 'awarded', closed_at: now, awarded_quote_id: id, awarded_trader_organization_id: otherId, awarded_trader_organization_label: 'Trader', awarded_total_amount: -1, awarded_at: now }))).toBeNull();
     expect(parseBid(bid({ raw_status: 'cancelled', effective_status: 'cancelled', cancelled_at: null }))).toBeNull();
