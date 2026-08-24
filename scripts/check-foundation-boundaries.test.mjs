@@ -244,6 +244,46 @@ describe('foundation boundary checker', () => {
     expect(result.output).toContain('Foundation boundary check passed.');
   });
 
+  it('allows symbolic elevated credential markers only in server-side Edge Function files', () => {
+    const root = createPassingFixture();
+    const secretKeysMarker = ['SUPABASE', 'SECRET', 'KEYS'].join('_');
+    writeFixtureFile(
+      root,
+      'supabase/functions/_shared/server-credentials.ts',
+      `export const serverNames = ['${secretKeysMarker}', '${elevatedRoleIdentifier}'];\n`,
+    );
+
+    const result = runChecker(root);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
+  it.each([
+    ['secret-shaped', ['sb', 'secret', 'fixture_not_a_real_key'].join('_')],
+    ['service-role-shaped', ['sb', 'service', 'role', 'fixture_not_a_real_key'].join('_')],
+  ])('rejects a %s credential value even in server-side Edge Function files', (_name, credentialValue) => {
+    const root = createPassingFixture();
+    writeFixtureFile(
+      root,
+      'supabase/functions/_shared/example.ts',
+      `export const fixtureCredential = '${credentialValue}';\n`,
+    );
+
+    expectFailure(root, 'Elevated credential value found outside legacy/');
+  });
+
+  it('still rejects browser/Vite elevated credential markers in Edge Function files', () => {
+    const root = createPassingFixture();
+    const browserMarker = ['VITE', 'SUPABASE', 'SECRET', 'KEY'].join('_');
+    writeFixtureFile(
+      root,
+      'supabase/functions/_shared/browser-credential.ts',
+      `export const forbiddenBrowserName = '${browserMarker}';\n`,
+    );
+
+    expectFailure(root, 'Browser/Vite elevated credential variable');
+  });
+
   it('rejects a Supabase elevated-role key marker in an approved migration', () => {
     const root = createPassingFixture();
     const marker = ['SUPABASE', 'SERVICE', 'ROLE', 'KEY'].join('_');
@@ -265,7 +305,7 @@ describe('foundation boundary checker', () => {
     const marker = ['sb', 'service', 'role', 'fixture'].join('_');
     writeFixtureFile(root, 'supabase/migrations/20260101000000_fixture.sql', `select '${marker}';\n`);
 
-    expectFailure(root, 'Elevated credential marker');
+    expectFailure(root, 'Elevated credential value');
   });
 
   it('rejects a standalone elevated-role identifier in ordinary active source', () => {
@@ -580,17 +620,17 @@ describe('foundation boundary checker', () => {
     });
   }
 
-  for (const markerParts of [
-    ['sb', 'secret', 'fixture'],
-    ['service', 'role'],
-    ['SUPABASE', 'SECRET', 'KEY'],
+  for (const [markerParts, expectedFailure] of [
+    [['sb', 'secret', 'fixture'], 'Elevated credential value'],
+    [['service', 'role'], 'Elevated credential marker'],
+    [['SUPABASE', 'SECRET', 'KEY'], 'Elevated credential marker'],
   ]) {
     it(`rejects elevated credential marker: ${markerParts.join('-')}`, () => {
       const root = createPassingFixture();
       const marker = markerParts.join('_');
       writeFixtureFile(root, 'src/credential.ts', `export const credential = '${marker}';\n`);
 
-      expectFailure(root, 'Elevated credential marker');
+      expectFailure(root, expectedFailure);
     });
   }
 

@@ -2,9 +2,9 @@
 
 ## Rolling state
 
-- Current baseline: trusted organization labels are server-sourced presentation data in the access context and frontend workspace; BUYER bid creation supports advisory browser-local `.msg` draft intake; and the BUYER frontend exposes the provider-neutral shared pending mail-intake queue through narrow list/dismiss RPCs
+- Current baseline: trusted organization labels are server-sourced presentation data in the access context and frontend workspace; BUYER bid creation supports advisory browser-local `.msg` draft intake; the BUYER frontend exposes the provider-neutral shared pending mail-intake queue through narrow list/dismiss RPCs; and the repository contains an undeployed server-only Gmail connector foundation
 - Active frontend baseline: React + Vite + TypeScript sign-in-only access gate and integrated BUYER/TRADER workspace
-- Active backend baseline: local migrations, pgTAP database tests, server-authorized bid, quote, award, scope, and audit RPCs, plus service-role-only normalized mail ingress and active-BUYER queue RPCs
+- Active backend baseline: local migrations, pgTAP database tests, server-authorized bid, quote, award, scope, and audit RPCs, plus backend-only normalized mail ingress, active-BUYER queue RPCs, and provider-neutral cursor RPCs for the undeployed Gmail connector
 - Legacy reference location: `legacy/firebase-prototype/`
 
 ## Fixed contracts
@@ -24,8 +24,8 @@
 - Browser code will use only the Supabase publishable key.
 - A manually selected local `.msg` may supply review-only BUYER form candidates. Parsing and Apply are never authority or creation actions; the existing explicit Create bid action and `createBid` RPC remain the sole creation path.
 - The provider-neutral server-side mail intake foundation stores only bounded normalized candidates in a private queue. The elevated connector role is intentionally ingest-only through the `SECURITY DEFINER` RPC: it has no list/dismiss EXECUTE and no direct queue SELECT/INSERT/UPDATE/DELETE. Every active approved BUYER retains shared pending visibility and dismissal through server-verified RPC authorization; TRADERs have no access.
-- Mail intake never retains raw body, HTML, attachments, sender/recipient/address fields, provider credentials, deadline, or responsible BUYER; it does not fetch messages or create bids. Opaque provider/mailbox/message identity is used only for non-overwriting idempotency and is not exposed in BUYER results.
-- Secret and service-role credentials will never enter browser code, Vite variables, or the repository.
+- Mail intake never retains raw body, HTML, attachments, sender/recipient/address fields, provider credentials, deadline, or responsible BUYER, and never creates bids. The Gmail connector analyzes only bounded inline plain text in memory. Opaque provider/mailbox/message identity is used only for non-overwriting idempotency and is not exposed in BUYER results.
+- Secret values and backend credentials will never enter browser code, Vite variables, repository source values, logs, or test output. Server-only code may reference expected runtime variable names without values.
 - The frontend authorized shell requires at least one context returned by `public.current_access_context()`; an Auth session alone is insufficient.
 - Bids use raw `open`, `closed`, `awarded`, and `cancelled` states. Raw open with a non-null passed deadline is effectively closed using server time; no cron transition exists.
 - Details are editable only while effective-open. After an organization quote exists, commercial terms and quantities are immutable; a real future/null deadline-only update remains possible.
@@ -57,12 +57,14 @@
 - Production privilege verification confirms the Supabase service role may execute mail ingest only, `authenticated` may execute list/dismiss but not ingest, `anon` has no mail-intake RPC access, and all three roles are denied direct queue CRUD. The queue was empty after rollout, and no real operational mail data was introduced.
 - The BUYER workspace now lists, refreshes, and revision-safely dismisses provider-neutral pending mail candidates through the authenticated RPC adapter. Its state and failures are isolated from bid operations; dismissal is shared, irreversible, target-confirmed, and followed by an authoritative reload. No provider identity or intake-to-bid action is exposed.
 - Deterministic CI regressions now cover duplicate-ingest unique-index waits when the first transaction commits and when it rolls back under normal READ COMMITTED isolation. A future connector must tolerate lock waits and treat SQLSTATE `40001` as retryable if it uses a stronger isolation path or otherwise receives a serialization failure; the unique source constraint remains authoritative.
+- The undeployed Gmail foundation uses only the readonly Gmail OAuth scope, verifies the configured profile exactly, and establishes a current-history cutover without importing historical mail. Later invocations paginate `messageAdded` INBOX history, fetch each message in full format, analyze only inline `text/plain` up to 256 KiB total, call the existing normalized ingest RPC, and advance the provider-neutral cursor once through revision CAS only after the full batch succeeds. A definitive `users.messages.get` HTTP 404 for a history-discovered message is terminal absence, not a retryable partial failure: it is not ingested or identified, its count is bounded in the aggregate response, and it may accompany an otherwise successful cursor advance. Stale history, every other partial failure, and cursor conflict fail closed without reset or advance; a completed pagination persists the final returned Gmail history ID.
+- The connector is POST-only and uses its dedicated trigger header before OAuth, Gmail, database, or cursor work. `verify_jwt = false` permits server-to-server invocation, but browser JWTs confer no authority. No Gmail or Supabase secret value is registered by this repository change.
 
 ## Not yet implemented
 
 - No remote auth configuration push is authorized.
 - Invitations and administration/provisioning flows and UI.
-- Microsoft Graph, Gmail API, mailbox OAuth/passwords/tokens, live mailbox connections, polling, webhooks, cron, provider fetch, automatic provider-to-queue delivery, intake-to-bid conversion or automatic bid creation, manual `.eml` intake, historical `.msg`/`.eml` migration, and use of real operational email fixtures.
+- Microsoft Graph, manual `.eml` intake, real Google OAuth/client/refresh setup, secret registration, live mailbox connections, scheduled polling/webhooks/cron, Production function or migration deployment for the Gmail foundation, automatic historical mailbox import, intake-to-bid conversion or automatic bid creation, historical `.msg`/`.eml` migration, and use of real operational email fixtures.
 
 ## Completed refinements
 

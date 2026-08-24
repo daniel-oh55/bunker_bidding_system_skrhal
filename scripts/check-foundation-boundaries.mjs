@@ -83,9 +83,11 @@ const firebaseIdentifiers = [
   ['spot', 'bidding', 'skrhal'].join('-'),
 ];
 
-const forbiddenElevatedCredentialPatterns = [
+const forbiddenElevatedCredentialNamePatterns = [
   new RegExp(`\\bSUPABASE_(?:SECRET|${serviceRoleUpper})_KEYS?\\b`, 'i'),
   new RegExp(`\\b[A-Z0-9_]*${serviceRoleUpper}_KEY\\b`),
+];
+const forbiddenElevatedCredentialValuePatterns = [
   new RegExp(`\\bsb_(?:secret|${serviceRoleLower})_[A-Za-z0-9_-]*`, 'i'),
 ];
 const forbiddenElevatedRoleIdentifierPattern = new RegExp(`\\b${serviceRoleLower}\\b`, 'i');
@@ -198,6 +200,10 @@ function recordFailure(message) {
 
 function isApprovedSqlPath(relativePath) {
   return approvedSqlPathPrefixes.some((prefix) => relativePath.startsWith(prefix));
+}
+
+function isServerOnlyEdgeFunctionPath(relativePath) {
+  return relativePath.startsWith('supabase/functions/');
 }
 
 function checkRequiredDocs() {
@@ -337,6 +343,7 @@ function checkFiles() {
     const extension = path.extname(fullPath).toLowerCase();
 
     const isApprovedSqlFile = extension === '.sql' && isApprovedSqlPath(normalizedRelPath);
+    const isServerOnlyEdgeFunctionFile = isServerOnlyEdgeFunctionPath(normalizedRelPath);
     if (extension === '.sql' && !isApprovedSqlFile) {
       recordFailure(
         `SQL files are only allowed in supabase/migrations/ or supabase/tests/database/: ${normalizedRelPath}`,
@@ -364,14 +371,25 @@ function checkFiles() {
       recordFailure(`Browser/Vite elevated credential variable found outside legacy/: ${normalizedRelPath}`);
     }
 
-    for (const pattern of forbiddenElevatedCredentialPatterns) {
-      if (pattern.test(content)) {
+    for (const pattern of forbiddenElevatedCredentialNamePatterns) {
+      if (!isServerOnlyEdgeFunctionFile && pattern.test(content)) {
         recordFailure(`Elevated credential marker found outside legacy/: ${normalizedRelPath}`);
         break;
       }
     }
 
-    if (!isApprovedSqlFile && forbiddenElevatedRoleIdentifierPattern.test(content)) {
+    for (const pattern of forbiddenElevatedCredentialValuePatterns) {
+      if (pattern.test(content)) {
+        recordFailure(`Elevated credential value found outside legacy/: ${normalizedRelPath}`);
+        break;
+      }
+    }
+
+    if (
+      !isApprovedSqlFile
+      && !isServerOnlyEdgeFunctionFile
+      && forbiddenElevatedRoleIdentifierPattern.test(content)
+    ) {
       recordFailure(`Elevated credential marker found outside legacy/: ${normalizedRelPath}`);
     }
 

@@ -131,6 +131,15 @@ jobs:
       - name: Replay migrations from a clean local database
         run: npm run db:reset
 
+      - name: Validate Gmail Edge Function bundle and fail-closed config boundary
+        shell: bash
+        run: |
+          response_file="$RUNNER_TEMP/gmail-function-response.json"
+          status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --request POST 'http://127.0.0.1:54321/functions/v1/gmail-mail-intake')"
+          [[ "$status" == '500' ]] || { echo 'Expected missing connector configuration to fail closed.'; exit 1; }
+          jq -e '. == {"status":"error","code":"connector_configuration_invalid"}' "$response_file" >/dev/null
+
       - name: Run pgTAP database tests
         run: npm run db:test
 
