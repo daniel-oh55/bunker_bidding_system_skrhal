@@ -83,9 +83,11 @@ const firebaseIdentifiers = [
   ['spot', 'bidding', 'skrhal'].join('-'),
 ];
 
-const forbiddenElevatedCredentialPatterns = [
+const forbiddenElevatedCredentialNamePatterns = [
   new RegExp(`\\bSUPABASE_(?:SECRET|${serviceRoleUpper})_KEYS?\\b`, 'i'),
   new RegExp(`\\b[A-Z0-9_]*${serviceRoleUpper}_KEY\\b`),
+];
+const forbiddenElevatedCredentialValuePatterns = [
   new RegExp(`\\bsb_(?:secret|${serviceRoleLower})_[A-Za-z0-9_-]*`, 'i'),
 ];
 const forbiddenElevatedRoleIdentifierPattern = new RegExp(`\\b${serviceRoleLower}\\b`, 'i');
@@ -369,9 +371,16 @@ function checkFiles() {
       recordFailure(`Browser/Vite elevated credential variable found outside legacy/: ${normalizedRelPath}`);
     }
 
-    for (const pattern of forbiddenElevatedCredentialPatterns) {
+    for (const pattern of forbiddenElevatedCredentialNamePatterns) {
       if (!isServerOnlyEdgeFunctionFile && pattern.test(content)) {
         recordFailure(`Elevated credential marker found outside legacy/: ${normalizedRelPath}`);
+        break;
+      }
+    }
+
+    for (const pattern of forbiddenElevatedCredentialValuePatterns) {
+      if (pattern.test(content)) {
+        recordFailure(`Elevated credential value found outside legacy/: ${normalizedRelPath}`);
         break;
       }
     }

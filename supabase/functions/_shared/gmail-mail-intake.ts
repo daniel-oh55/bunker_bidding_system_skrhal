@@ -8,6 +8,7 @@ const SOURCE_PROVIDER = 'gmail';
 const MAX_SUBJECT_LENGTH = 512;
 const MAX_CANDIDATE_LENGTH = 256;
 const MAX_INGEST_ATTEMPTS = 3;
+const MAX_SKIPPED_ABSENT_MESSAGES = 1_000;
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const GMAIL_API_ROOT = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const encoder = new TextEncoder();
@@ -420,12 +421,37 @@ function normalizedSubject(payload: GmailMessagePart): { subject: string; warnin
     return stringProperty((candidate as Record<string, unknown>).name)?.toLowerCase() === 'subject';
   }) as Record<string, unknown> | undefined;
   const raw = stringProperty(header?.value) ?? '';
-  const normalized = raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (normalized.length <= MAX_SUBJECT_LENGTH) return { subject: normalized };
+  const normalized = wellFormedUnicode(raw)
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const codePoints = [...normalized];
+  if (codePoints.length <= MAX_SUBJECT_LENGTH) return { subject: normalized };
   return {
-    subject: normalized.slice(0, MAX_SUBJECT_LENGTH).trimEnd(),
+    subject: codePoints.slice(0, MAX_SUBJECT_LENGTH).join('').trimEnd(),
     warning: 'Subject exceeded the connector size limit and was truncated.',
   };
+}
+
+function wellFormedUnicode(value: string): string {
+  let result = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1);
+      if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+        result += value.charAt(index) + value.charAt(index + 1);
+        index += 1;
+      } else {
+        result += '\ufffd';
+      }
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      result += '\ufffd';
+    } else {
+      result += value.charAt(index);
+    }
+  }
+  return result;
 }
 
 function boundedWarnings(values: string[]): string[] {
@@ -452,10 +478,21 @@ async function ingestMessage(
   fetcher: typeof fetch,
   accessToken: string,
   messageId: string,
-): Promise<void> {
+): Promise<boolean> {
   const url = new URL(`${GMAIL_API_ROOT}/messages/${encodeURIComponent(messageId)}`);
   url.searchParams.set('format', 'full');
-  const message = await gmailGet(fetcher, accessToken, url, 'gmail_message_failed');
+  let response: Response;
+  try {
+    response = await fetcher(url, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+  } catch {
+    throw new OperationalError('gmail_message_failed');
+  }
+  if (response.status === 404) return false;
+  if (!response.ok) throw new OperationalError('gmail_message_failed');
+  const message = objectValue(await responseJson(response, 'gmail_message_failed'), 'gmail_message_failed');
   if (message.id !== messageId || !message.payload) {
     throw new OperationalError('gmail_message_invalid');
   }
@@ -490,12 +527,14 @@ async function ingestMessage(
   for (let attempt = 1; attempt <= MAX_INGEST_ATTEMPTS; attempt += 1) {
     try {
       await supabaseRpc(config, fetcher, 'ingest_mail_intake_item', parameters, 'ingest_failed');
-      return;
+      return true;
     } catch (error) {
       if (!(error instanceof OperationalError) || error.code !== 'serialization_failure') throw error;
       if (attempt === MAX_INGEST_ATTEMPTS) throw new OperationalError('ingest_failed');
     }
   }
+
+  throw new OperationalError('ingest_failed');
 }
 
 async function discoverMessageIds(
@@ -565,12 +604,21 @@ async function runConnector(config: ConnectorConfig, fetcher: typeof fetch): Pro
 
   const discovery = await discoverMessageIds(fetcher, accessToken, cursor.cursorValue);
   let ingested = 0;
+  let skippedAbsent = 0;
   for (const messageId of discovery.messageIds) {
-    await ingestMessage(config, fetcher, accessToken, messageId);
-    ingested += 1;
+    if (await ingestMessage(config, fetcher, accessToken, messageId)) {
+      ingested += 1;
+    } else {
+      skippedAbsent = Math.min(skippedAbsent + 1, MAX_SKIPPED_ABSENT_MESSAGES);
+    }
   }
   await compareAndSwapCursor(config, fetcher, cursor.revision, discovery.currentHistoryId);
-  return jsonResponse({ status: 'completed', discovered: discovery.messageIds.length, ingested }, 200);
+  return jsonResponse({
+    status: 'completed',
+    discovered: discovery.messageIds.length,
+    ingested,
+    skipped_absent: skippedAbsent,
+  }, 200);
 }
 
 export function createGmailMailIntakeHandler(dependencies: ConnectorDependencies) {

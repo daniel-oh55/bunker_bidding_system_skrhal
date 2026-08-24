@@ -5,8 +5,8 @@
 - Repository: `https://github.com/daniel-oh55/bunker_bidding_system_skrhal.git`
 - Base branch and exact base SHA: `origin/main` at `0177fef859c09ba1bfad28f162ba5448dd1c8ca8`
 - Working branch: `feat/pr-35-gmail-mailbox-connector-foundation`
-- Target PR and expected HEAD: Draft PR #35; one implementation commit above the exact base
-- Working tree status: continuation pre-flight (2026-08-24): `HEAD` and merge-base are both `0177fef859c09ba1bfad28f162ba5448dd1c8ca8`; no merge, rebase, cherry-pick, or revert is in progress. Existing WIP is limited to this task card, the documented connector migration/tests/function/config/boundary/CI files, and PR #35 documentation; it is preserved.
+- Target PR and expected HEAD: Draft PR #35; reviewed implementation head `f729eac7defba8674bbdea9857e1d90e9e1c6430` plus exactly one correction commit
+- Working tree status: correction continuation pre-flight (2026-08-24): `HEAD` is the reviewed implementation head and the tree is clean; no merge, rebase, cherry-pick, or revert is in progress.
 
 ## Current migration state
 
@@ -20,7 +20,7 @@ Add the provider-specific, server-only foundation that discovers new Gmail INBOX
 
 ## Protected business invariant
 
-Only a request carrying the dedicated connector trigger secret may cause the server function to use the configured read-only Gmail OAuth grant and backend Supabase credential. The configured Gmail profile must match exactly. A first run establishes a no-history-import cutover. Later runs ingest only fully fetched, normalized candidates discovered from the saved history cursor, and the cursor advances exactly once only after the full batch succeeds. No actor may use this connector to read queue rows, mutate queue lifecycle, create bids, derive commercial authority, store message/address/credential data, or bypass cursor CAS.
+Only a request carrying the dedicated connector trigger secret may cause the server function to use the configured read-only Gmail OAuth grant and backend Supabase credential. The configured Gmail profile must match exactly. A first run establishes a no-history-import cutover. Later runs ingest only fully fetched, normalized candidates discovered from the saved history cursor, and the cursor advances exactly once only after the full batch succeeds, except that a definitive `users.messages.get` HTTP 404 for an already history-discovered message is terminal absence and may be counted without revealing its identity. No actor may use this connector to read queue rows, mutate queue lifecycle, create bids, derive commercial authority, store message/address/credential data, or bypass cursor CAS.
 
 ## Actor and action matrix
 
@@ -40,7 +40,7 @@ Only a request carrying the dedicated connector trigger secret may cause the ser
 | Bounded provider-neutral cursor identity | Provider, opaque mailbox key, cursor, and revision checks | Enabled with no policies | Fixed-search-path get/CAS RPCs validate all inputs | No browser surface |
 | Cursor access is connector-only | Primary key and non-secret columns only | Defense in depth | Execute granted only to backend role; direct table privileges revoked | No browser surface |
 | Gmail is readonly and account-bound | Server configuration validation | N/A | Refresh exchange requests only `gmail.readonly`, validates the returned scope set is exactly `gmail.readonly`, and compares the profile email exactly | No browser surface |
-| No historical import or silent recovery | Cursor represents explicit cutover | N/A | First run initializes only; stale history fails closed | Fixed aggregate operational result |
+| No historical import or silent recovery | Cursor represents explicit cutover | N/A | First run initializes only; stale history fails closed; only a history-discovered message GET 404 is terminal absence | Fixed aggregate operational result with no message identity |
 | Normalized advisory ingress only | Existing queue constraints and source identity uniqueness | Existing private queue boundary | Existing ingest-only RPC; serialization failures have a bounded retry | Existing BUYER/TRADER behavior unchanged |
 | Raw/HTML/attachment/address exclusion | No storage columns for those values | Existing private queue boundary | Inline `text/plain` only with total decoded cap; no attachment endpoint | No browser surface |
 
@@ -69,9 +69,9 @@ Create one provider-neutral private cursor table containing only provider, opaqu
 
 ## Test scenarios
 
-- Positive, denial, and cross-organization cases: trigger rejection before side effects; configuration validation; exact Gmail profile; first-run cutover; history pagination/filtering/deduplication; full-format fetch; inline plain-text extraction and cap; exact normalized ingest mapping; full-batch cursor advance; private cursor privileges; existing queue privilege regression.
+- Positive, denial, and cross-organization cases: trigger rejection before side effects; configuration validation; exact Gmail profile; first-run cutover; history pagination/filtering/deduplication and final-page history ID persistence; full-format fetch; terminal message GET 404 skip without identifier disclosure; non-404 message failure no-advance; Unicode-safe bounded Subject normalization; inline plain-text extraction and cap; exact normalized ingest mapping; full-batch cursor advance; private cursor privileges; existing queue privilege regression.
 - Client-claim bypass, inactive/suspended, and privilege cases: user JWT is never authority; no client credential path; `anon` and `authenticated` cannot execute cursor RPCs; backend role cannot directly CRUD cursor or gain queue list/dismiss authority; errors/logs never contain credentials or mail contents.
-- Concurrency cases where relevant: duplicate message ingest remains idempotent; ingest SQLSTATE `40001` retries only a small bounded number; stale cursor revisions fail with `40001`; partial message/ingest failure and stale Gmail history never advance/reset the cursor.
+- Concurrency cases where relevant: duplicate message ingest remains idempotent; ingest SQLSTATE `40001` retries only a small bounded number; stale cursor revisions fail with `40001`; all message/ingest failures except definitive history-discovered message GET 404 and stale Gmail history never advance/reset the cursor.
 
 ## Validation commands
 
@@ -83,7 +83,7 @@ Stop for a dirty tree, base or migration-history mismatch, conflicting PR, requi
 
 ## Git and PR rules
 
-Create one commit titled `feat: add gmail mail intake connector foundation`, push only the feature branch, and open a Draft PR with the same title against `main`. Do not mark ready, merge, deploy, apply a Production migration, register secrets, configure Google OAuth or cron, access real Gmail, or start another PR.
+Create exactly one correction commit titled `fix: harden gmail connector intake resilience`, push only the existing feature branch, and retain Draft PR #35 against `main`. Do not mark ready, merge, deploy, apply a Production migration, register secrets, configure Google OAuth or cron, access real Gmail, or start another PR.
 
 ## Completion report
 

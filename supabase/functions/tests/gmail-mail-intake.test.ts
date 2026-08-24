@@ -296,7 +296,7 @@ describe('Gmail mail intake Edge Function', () => {
     }]);
   });
 
-  it('uses the stored cursor and paginates messageAdded INBOX history completely', async () => {
+  it('uses the final Gmail history page cursor after complete messageAdded INBOX pagination', async () => {
     const harness = new FetchHarness({
       historyPages: {
         '': {
@@ -322,13 +322,15 @@ describe('Gmail mail intake Edge Function', () => {
     const response = await handlerFor(harness)(authorizedRequest());
     const historyCalls = harness.callsFor('/history');
 
-    expect(await response.json()).toEqual({ status: 'completed', discovered: 2, ingested: 2 });
+    expect(await response.json()).toEqual({ status: 'completed', discovered: 2, ingested: 2, skipped_absent: 0 });
     expect(historyCalls).toHaveLength(2);
     expect(historyCalls[0]!.url.searchParams.get('startHistoryId')).toBe('1000');
     expect(historyCalls[0]!.url.searchParams.get('historyTypes')).toBe('messageAdded');
     expect(historyCalls[0]!.url.searchParams.get('labelId')).toBe('INBOX');
     expect(historyCalls[1]!.url.searchParams.get('pageToken')).toBe('next-page');
     expect(rpcBodies(harness, 'ingest_mail_intake_item').map((body) => body.p_source_message_id)).toEqual(['message-a', 'message-b']);
+    // Gmail instructs clients to persist the historyId returned after the final page.
+    expect(rpcBodies(harness, 'compare_and_swap_mail_connector_cursor')[0]!.p_cursor_value).toBe('2002');
   });
 
   it('gets messages in full format, never raw, and never calls the attachment API', async () => {
@@ -398,6 +400,33 @@ describe('Gmail mail intake Edge Function', () => {
     expect(ingress).not.toHaveProperty('recipient');
   });
 
+  it('truncates an astral Subject character on a code-point boundary before ingress', async () => {
+    const subject = `${'A'.repeat(511)}😀A`;
+    const harness = new FetchHarness({
+      historyPages: { '': { historyId: '2001', history: [{ messagesAdded: [{ message: { id: 'message-unicode', labelIds: ['INBOX'] } }] }] } },
+      messages: { 'message-unicode': plainMessage('message-unicode', undefined, subject) },
+    });
+    await handlerFor(harness)(authorizedRequest());
+    const ingressSubject = String(rpcBodies(harness, 'ingest_mail_intake_item')[0]!.p_subject);
+
+    expect([...ingressSubject]).toHaveLength(512);
+    expect(ingressSubject.endsWith('😀')).toBe(true);
+    expect(rpcBodies(harness, 'ingest_mail_intake_item')[0]!.p_warnings)
+      .toContain('Subject exceeded the connector size limit and was truncated.');
+  });
+
+  it('replaces a lone Subject surrogate before ingress', async () => {
+    const harness = new FetchHarness({
+      historyPages: { '': { historyId: '2001', history: [{ messagesAdded: [{ message: { id: 'message-malformed-subject', labelIds: ['INBOX'] } }] }] } },
+      messages: { 'message-malformed-subject': plainMessage('message-malformed-subject', undefined, 'TEST\ud800SUBJECT') },
+    });
+    await handlerFor(harness)(authorizedRequest());
+    const ingressSubject = String(rpcBodies(harness, 'ingest_mail_intake_item')[0]!.p_subject);
+
+    expect(ingressSubject).toBe('TEST\ufffdSUBJECT');
+    expect(ingressSubject).not.toContain('\ud800');
+  });
+
   it('enforces the strict total decoded plain-text size bound', () => {
     const oversizedData = Buffer.alloc(MAX_DECODED_PLAIN_TEXT_BYTES + 1, 65).toString('base64url');
     const extracted = extractInlinePlainText({
@@ -442,6 +471,23 @@ describe('Gmail mail intake Edge Function', () => {
       .toBeGreaterThan(callPaths.lastIndexOf('/rest/v1/rpc/ingest_mail_intake_item'));
   });
 
+  it('skips only terminal messages.get 404 responses and advances after all remaining messages ingest', async () => {
+    const harness = new FetchHarness({
+      historyPages: { '': { historyId: '2001', history: [{ messagesAdded: [
+        { message: { id: 'message-a', labelIds: ['INBOX'] } },
+        { message: { id: 'message-b', labelIds: ['INBOX'] } },
+      ] }] } },
+      messageStatuses: { 'message-a': 404 },
+    });
+    const response = await handlerFor(harness)(authorizedRequest());
+    const payload = await response.json();
+
+    expect(payload).toEqual({ status: 'completed', discovered: 2, ingested: 1, skipped_absent: 1 });
+    expect(JSON.stringify(payload)).not.toContain('message-a');
+    expect(rpcBodies(harness, 'ingest_mail_intake_item').map((body) => body.p_source_message_id)).toEqual(['message-b']);
+    expect(rpcBodies(harness, 'compare_and_swap_mail_connector_cursor')[0]!.p_cursor_value).toBe('2001');
+  });
+
   it('does not advance the cursor after a partial message retrieval failure', async () => {
     const harness = new FetchHarness({
       historyPages: { '': { historyId: '2001', history: [{ messagesAdded: [
@@ -454,6 +500,18 @@ describe('Gmail mail intake Edge Function', () => {
 
     expect(await response.json()).toEqual({ status: 'error', code: 'gmail_message_failed' });
     expect(rpcBodies(harness, 'ingest_mail_intake_item')).toHaveLength(1);
+    expect(rpcBodies(harness, 'compare_and_swap_mail_connector_cursor')).toHaveLength(0);
+  });
+
+  it.each([401, 403, 429])('does not skip messages.get HTTP %i failures or advance the cursor', async (status) => {
+    const harness = new FetchHarness({
+      historyPages: { '': { historyId: '2001', history: [{ messagesAdded: [{ message: { id: 'message-a', labelIds: ['INBOX'] } }] }] } },
+      messageStatuses: { 'message-a': status },
+    });
+    const response = await handlerFor(harness)(authorizedRequest());
+
+    expect(await response.json()).toEqual({ status: 'error', code: 'gmail_message_failed' });
+    expect(rpcBodies(harness, 'ingest_mail_intake_item')).toHaveLength(0);
     expect(rpcBodies(harness, 'compare_and_swap_mail_connector_cursor')).toHaveLength(0);
   });
 
