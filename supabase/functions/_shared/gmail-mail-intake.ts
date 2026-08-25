@@ -4,6 +4,7 @@ import type { GmailImapAdapter, GmailImapAdapterFactory, ImapMailboxSnapshot, Im
 export const CONNECTOR_TRIGGER_HEADER = 'x-gmail-connector-secret';
 export const MAX_DECODED_PLAIN_TEXT_BYTES = 256 * 1024;
 const SOURCE_PROVIDER = 'gmail';
+const ELIGIBLE_SUBJECT_PREFIX = '//SPOT//';
 const MAX_SUBJECT_LENGTH = 512;
 const MAX_CANDIDATE_LENGTH = 256;
 const MAX_INGEST_ATTEMPTS = 3;
@@ -16,6 +17,7 @@ type EnvironmentReader = (name: string) => string | undefined;
 export type ConnectorDependencies = { env: EnvironmentReader; fetch: typeof fetch; imapFactory: GmailImapAdapterFactory };
 type ConnectorConfig = { imapUser: string; imapAppPassword: string; mailboxKey: string; supabaseUrl: string; supabaseSecretKey: string };
 type CursorState = { cursorValue: string; revision: number };
+type MessageResult = 'ingested' | 'filtered' | 'absent';
 export type ImapCursor = { uidValidity: number; lastUid: number };
 
 class OperationalError extends Error {
@@ -143,10 +145,13 @@ function normalizeBounded(value: string | undefined, limit: number): string | nu
 }
 function boundedWarnings(values: string[]): string[] { return [...new Set(values)].filter((value) => value.trim() !== '').map((value) => value.slice(0, 300)).slice(0, 20); }
 function receivedAt(value: unknown): string { if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw new OperationalError('gmail_message_invalid'); return value.toISOString(); }
-async function ingestMessage(config: ConnectorConfig, fetcher: typeof fetch, adapter: GmailImapAdapter, uidValidity: number, uid: number): Promise<boolean> {
+async function processMessage(config: ConnectorConfig, fetcher: typeof fetch, adapter: GmailImapAdapter, uidValidity: number, uid: number): Promise<MessageResult> {
   let message: ImapMessageMetadata | null; try { message = await adapter.fetchMessageMetadata(uid); } catch { throw new OperationalError('gmail_imap_failed'); }
-  if (!message) return false; if (message.uid !== uid) throw new OperationalError('gmail_message_invalid');
-  const subject = normalizedSubject(message.subject); const plain = await inlinePlainText(adapter, uid, message.bodyStructure); const parsed = parseBunkerRequest({ subject: subject.subject, body: plain.body });
+  if (!message) return 'absent'; if (message.uid !== uid) throw new OperationalError('gmail_message_invalid');
+  if (typeof message.subject !== 'string') throw new OperationalError('gmail_message_invalid');
+  if (!message.subject.startsWith(ELIGIBLE_SUBJECT_PREFIX)) return 'filtered';
+  const subject = normalizedSubject(message.subject); const plain = await inlinePlainText(adapter, uid, message.bodyStructure);
+  const parserSubject = subject.subject.slice(ELIGIBLE_SUBJECT_PREFIX.length).trimStart(); const parsed = parseBunkerRequest({ subject: parserSubject, body: plain.body });
   const warnings = [...plain.warnings, ...parsed.warnings]; if (subject.warning) warnings.push(subject.warning);
   const vesselVoyage = normalizeBounded(parsed.vesselVoyage, MAX_CANDIDATE_LENGTH); const portName = normalizeBounded(parsed.portName, MAX_CANDIDATE_LENGTH); const deliveryWindow = normalizeBounded(parsed.deliveryWindow, MAX_CANDIDATE_LENGTH);
   if (parsed.vesselVoyage && !vesselVoyage) warnings.push('Vessel/voyage candidate exceeded the connector limit and was omitted.');
@@ -154,7 +159,7 @@ async function ingestMessage(config: ConnectorConfig, fetcher: typeof fetch, ada
   if (parsed.deliveryWindow && !deliveryWindow) warnings.push('Delivery-window candidate exceeded the connector limit and was omitted.');
   const parameters = { p_source_provider: SOURCE_PROVIDER, p_source_mailbox_key: config.mailboxKey, p_source_message_id: `${uidValidity}:${uid}`, p_received_at: receivedAt(message.internalDate), p_subject: subject.subject, p_vessel_voyage: vesselVoyage, p_port_name: portName, p_delivery_window: deliveryWindow, p_fuel_items: parsed.fuelItems, p_warnings: boundedWarnings(warnings) };
   for (let attempt = 1; attempt <= MAX_INGEST_ATTEMPTS; attempt += 1) {
-    try { await supabaseRpc(config, fetcher, 'ingest_mail_intake_item', parameters, 'ingest_failed'); return true; }
+    try { await supabaseRpc(config, fetcher, 'ingest_mail_intake_item', parameters, 'ingest_failed'); return 'ingested'; }
     catch (error) { if (!(error instanceof OperationalError) || error.code !== 'serialization_failure' || attempt === MAX_INGEST_ATTEMPTS) throw error instanceof OperationalError && error.code === 'serialization_failure' ? new OperationalError('ingest_failed') : error; }
   }
   throw new OperationalError('ingest_failed');
@@ -174,7 +179,11 @@ async function runConnector(config: ConnectorConfig, fetcher: typeof fetch, imap
     const upperUid = mailbox.uidNext - 1; if (upperUid <= parsed.lastUid) return jsonResponse({ status: 'completed', discovered: 0, ingested: 0, skipped_absent: 0 }, 200);
     let discovered: number[]; try { discovered = sortedSnapshotUids(await adapter.searchSnapshotUids(parsed.lastUid + 1, upperUid), parsed.lastUid + 1, upperUid); } catch (error) { if (error instanceof OperationalError) throw error; throw new OperationalError('gmail_imap_failed'); }
     let ingested = 0; let skippedAbsent = 0;
-    for (const uid of discovered) { if (await ingestMessage(config, fetcher, adapter, mailbox.uidValidity, uid)) ingested += 1; else skippedAbsent = Math.min(skippedAbsent + 1, MAX_SKIPPED_ABSENT_MESSAGES); }
+    for (const uid of discovered) {
+      const result = await processMessage(config, fetcher, adapter, mailbox.uidValidity, uid);
+      if (result === 'ingested') ingested += 1;
+      else if (result === 'absent') skippedAbsent = Math.min(skippedAbsent + 1, MAX_SKIPPED_ABSENT_MESSAGES);
+    }
     await compareAndSwapCursor(config, fetcher, cursor.revision, cursorValue(mailbox.uidValidity, upperUid));
     return jsonResponse({ status: 'completed', discovered: discovered.length, ingested, skipped_absent: skippedAbsent }, 200);
   } finally { try { await adapter.close(); } catch { /* cleanup errors are deliberately nonsensitive */ } }

@@ -66,7 +66,7 @@ class FakeImap implements GmailImapAdapter {
   async downloadPlainTextPart(uid: number, part: string, max: number) { this.downloads.push([uid, part, max]); if (this.options.downloadError) throw new Error('synthetic'); return this.options.parts?.[part] ?? new TextEncoder().encode('PORT : TEST PORT\nVLSFO : 25 MT'); }
   async close() { this.closes += 1; }
 }
-function message(uid: number, subject = 'TEST VESSEL 2601E / BUNKER REQUEST AT TEST PORT'): ImapMessageMetadata {
+function message(uid: number, subject = '//SPOT// TEST VESSEL 2601E / BUNKER REQUEST AT TEST PORT'): ImapMessageMetadata {
   return { uid, subject, internalDate: new Date('2026-09-01T00:00:00.000Z'), bodyStructure: structure };
 }
 function request(secret = trigger) { return new Request('https://function.example.test/gmail-mail-intake', { method: 'POST', headers: { [CONNECTOR_TRIGGER_HEADER]: secret } }); }
@@ -104,6 +104,64 @@ describe('Gmail IMAP mail intake', () => {
     expect(harness.imap.searches).toEqual([[501, 503]]); expect(harness.imap.fetched).toEqual([501, 502, 503]);
     expect(harness.rpc('ingest_mail_intake_item').map((call) => call.body.p_source_message_id)).toEqual(['100:501', '100:502', '100:503']);
     expect(harness.rpc('compare_and_swap_mail_connector_cursor')[0]?.body.p_cursor_value).toBe('imap-v1:100:503');
+  });
+  it.each([
+    '//SPOT// TEST VESSEL 001E / BUNKER REQUEST AT BUSAN',
+    '//SPOT//TEST VESSEL 001E / BUNKER REQUEST AT BUSAN',
+  ])('ingests an exact leading marker while preserving stored subject and excluding it from parser candidates: %s', async (subject) => {
+    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: message(501, subject) } });
+    const response = await harness.handler()(request());
+
+    expect(await response.json()).toEqual({ status: 'completed', discovered: 1, ingested: 1, skipped_absent: 0 });
+    expect(harness.imap.downloads).toHaveLength(1);
+    expect(harness.rpc('ingest_mail_intake_item')).toHaveLength(1);
+    const ingress = harness.rpc('ingest_mail_intake_item')[0]?.body;
+    expect(ingress?.p_subject).toBe(subject);
+    expect(ingress?.p_vessel_voyage).toBe('TEST VESSEL 001E');
+    expect(String(ingress?.p_vessel_voyage)).not.toContain('//SPOT//');
+  });
+  it('filters an ordinary subject before body download without treating it as absent', async () => {
+    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: message(501, 'BUNKER REQUEST AT BUSAN') } });
+    const response = await harness.handler()(request());
+
+    expect(await response.json()).toEqual({ status: 'completed', discovered: 1, ingested: 0, skipped_absent: 0 });
+    expect(harness.imap.fetched).toEqual([501]);
+    expect(harness.imap.downloads).toEqual([]);
+    expect(harness.rpc('ingest_mail_intake_item')).toEqual([]);
+    expect(harness.rpc('compare_and_swap_mail_connector_cursor')).toHaveLength(1);
+  });
+  it.each([
+    'RE: //SPOT// TEST VESSEL 001E / BUNKER REQUEST AT BUSAN',
+    ' //SPOT// TEST VESSEL 001E / BUNKER REQUEST AT BUSAN',
+    '//spot// TEST VESSEL 001E / BUNKER REQUEST AT BUSAN',
+  ])('filters a non-exact subject prefix before body download: %s', async (subject) => {
+    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: message(501, subject) } });
+    const response = await harness.handler()(request());
+
+    expect(await response.json()).toEqual({ status: 'completed', discovered: 1, ingested: 0, skipped_absent: 0 });
+    expect(harness.imap.downloads).toEqual([]);
+    expect(harness.rpc('ingest_mail_intake_item')).toEqual([]);
+    expect(harness.rpc('compare_and_swap_mail_connector_cursor')).toHaveLength(1);
+  });
+  it('handles exact-prefix, filtered, and definitively absent messages in one snapshot before one cursor advance', async () => {
+    const harness = new Harness({
+      uidNext: 505,
+      uids: [504, 502, 503, 501],
+      messages: {
+        501: message(501, '//SPOT// FIRST VESSEL 001E / BUNKER REQUEST AT BUSAN'),
+        502: message(502, 'RE: //SPOT// FILTERED'),
+        503: null,
+        504: message(504, '//SPOT//SECOND VESSEL 002W / BUNKER REQUEST AT ULSAN'),
+      },
+    });
+    const response = await harness.handler()(request());
+
+    expect(await response.json()).toEqual({ status: 'completed', discovered: 4, ingested: 2, skipped_absent: 1 });
+    expect(harness.imap.fetched).toEqual([501, 502, 503, 504]);
+    expect(harness.imap.downloads.map(([uid]) => uid)).toEqual([501, 504]);
+    expect(harness.rpc('ingest_mail_intake_item').map((call) => call.body.p_source_message_id)).toEqual(['100:501', '100:504']);
+    expect(harness.rpc('compare_and_swap_mail_connector_cursor')).toHaveLength(1);
+    expect(harness.rpc('compare_and_swap_mail_connector_cursor')[0]?.body.p_cursor_value).toBe('imap-v1:100:504');
   });
   it('fails closed without ingest or cursor reset when UIDVALIDITY changes', async () => {
     const harness = new Harness({ uidValidity: 101n }); const response = await harness.handler()(request());
@@ -190,7 +248,7 @@ describe('Gmail IMAP mail intake', () => {
     const ingress = harness.rpc('ingest_mail_intake_item')[0]?.body; expect(ingress?.p_fuel_items).toEqual([]); expect(ingress?.p_warnings).toContain('Plain-text content exceeded the connector size limit and was not analyzed.');
   });
   it.each(['A😀'.repeat(300), 'bad\ud800subject', 'bad\udc00subject'])('normalizes Unicode subjects safely before ingress', async (subject) => {
-    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: message(501, subject) } }); await harness.handler()(request());
+    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: message(501, `//SPOT// ${subject}`) } }); await harness.handler()(request());
     const ingress = harness.rpc('ingest_mail_intake_item')[0]?.body; expect(ingress?.p_subject).not.toContain('\ud800'); expect(ingress?.p_subject).not.toContain('\udc00');
   });
   it('uses IMAP INTERNALDATE rather than an envelope Date header', async () => {
