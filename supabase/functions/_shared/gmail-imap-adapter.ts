@@ -16,6 +16,14 @@ export const GMAIL_IMAP_CONNECTION = {
   host: 'imap.gmail.com', port: 993, secure: true, mailbox: 'INBOX', readOnly: true,
 } as const;
 
+export const GMAIL_IMAP_CLIENT_OPTIONS = {
+  host: GMAIL_IMAP_CONNECTION.host,
+  port: GMAIL_IMAP_CONNECTION.port,
+  secure: GMAIL_IMAP_CONNECTION.secure,
+  logger: false,
+  disableAutoIdle: true,
+} as const;
+
 async function readBounded(stream: AsyncIterable<Uint8Array>, maxBytes: number): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -32,9 +40,7 @@ async function readBounded(stream: AsyncIterable<Uint8Array>, maxBytes: number):
 
 export const createGmailImapAdapter: GmailImapAdapterFactory = ({ user, password }) => {
   const client = new ImapFlow({
-    host: GMAIL_IMAP_CONNECTION.host,
-    port: GMAIL_IMAP_CONNECTION.port,
-    secure: GMAIL_IMAP_CONNECTION.secure,
+    ...GMAIL_IMAP_CLIENT_OPTIONS,
     auth: { user, pass: password },
   });
   let lock: { release(): void } | undefined;

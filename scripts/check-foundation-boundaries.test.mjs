@@ -244,6 +244,16 @@ describe('foundation boundary checker', () => {
     expect(result.output).toContain('Foundation boundary check passed.');
   });
 
+  it('ignores generated local Supabase state only at supabase/.temp', () => {
+    const root = createPassingFixture();
+    const syntheticCredentialValue = ['sb', 'secret', 'fixture'].join('_');
+    writeFixtureFile(root, 'supabase/.temp/generated-state.ts', `export const value = '${syntheticCredentialValue}';\n`);
+
+    const result = runChecker(root);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('Foundation boundary check passed.');
+  });
+
   it('allows symbolic elevated credential markers only in server-side Edge Function files', () => {
     const root = createPassingFixture();
     const secretKeysMarker = ['SUPABASE', 'SECRET', 'KEYS'].join('_');
@@ -450,7 +460,7 @@ describe('foundation boundary checker', () => {
     },
   );
 
-  for (const ignoredName of ['dist', 'coverage', 'node_modules', '.temp']) {
+  for (const ignoredName of ['dist', 'coverage', 'node_modules']) {
     it(`rejects an ignored-name directory link: src/${ignoredName}`, () => {
       const root = createPassingFixture();
       const linkPath = `src/${ignoredName}`;
@@ -505,6 +515,29 @@ describe('foundation boundary checker', () => {
       expectFailure(root, 'Schema/RLS SQL implementation found in active source');
     });
   }
+
+  it('rejects a directory link in active src/.temp', () => {
+    const root = createPassingFixture();
+    replaceFixturePathWithDirectoryLink(root, 'src/.temp');
+
+    expectFailure(root, 'Symbolic link is not allowed in the active repository tree: src/.temp');
+  });
+
+  it('scans active src/.temp directories for synthetic credential values', () => {
+    const root = createPassingFixture();
+    const syntheticCredentialValue = ['sb', 'secret', 'fixture'].join('_');
+    writeFixtureFile(root, 'src/.temp/example.ts', `export const value = '${syntheticCredentialValue}';\n`);
+
+    expectFailure(root, 'Elevated credential value found outside legacy/: src/.temp/example.ts');
+  });
+
+  it('scans a regular file named src/.temp', () => {
+    const root = createPassingFixture();
+    const statement = ['CREATE', 'TABLE'].join(' ');
+    writeFixtureFile(root, 'src/.temp', `${statement} fixture_table (id bigint);\n`);
+
+    expectFailure(root, 'Schema/RLS SQL implementation found in active source');
+  });
 
   for (const legacyFile of requiredLegacyFiles) {
     it(`rejects a missing required legacy file: ${legacyFile}`, () => {

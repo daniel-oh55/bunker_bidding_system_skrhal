@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GMAIL_IMAP_CONNECTION } from '../_shared/gmail-imap-adapter.ts';
+import { GMAIL_IMAP_CLIENT_OPTIONS, GMAIL_IMAP_CONNECTION } from '../_shared/gmail-imap-adapter.ts';
 import type { GmailImapAdapter, ImapMessageMetadata } from '../_shared/gmail-imap-adapter.ts';
 import { CONNECTOR_TRIGGER_HEADER, createGmailMailIntakeHandler, MAX_DECODED_PLAIN_TEXT_BYTES, parseImapCursor } from '../_shared/gmail-mail-intake.ts';
 
@@ -24,6 +24,7 @@ type Options = {
   connectError?: boolean;
   downloadError?: boolean;
   ingestFailure?: boolean;
+  ingestResults?: Array<'40001' | 'success'>;
   casConflict?: boolean;
 };
 class Harness {
@@ -40,7 +41,11 @@ class Harness {
       if (this.options.casConflict) return Response.json({ code: '40001' }, { status: 409 });
       return Response.json([{ cursor_value: body.p_cursor_value, revision: body.p_expected_revision === null ? 1 : Number(body.p_expected_revision) + 1 }]);
     }
-    if (url.pathname.endsWith('/ingest_mail_intake_item')) return this.options.ingestFailure ? Response.json({ code: 'XX000' }, { status: 500 }) : Response.json('00000000-0000-0000-0000-000000000001');
+    if (url.pathname.endsWith('/ingest_mail_intake_item')) {
+      const result = this.options.ingestResults?.[this.rpc('ingest_mail_intake_item').length - 1];
+      if (result === '40001') return Response.json({ code: '40001' }, { status: 409 });
+      return this.options.ingestFailure ? Response.json({ code: 'XX000' }, { status: 500 }) : Response.json('00000000-0000-0000-0000-000000000001');
+    }
     throw new Error('unexpected synthetic request');
   };
   handler(environment = env) {
@@ -117,7 +122,22 @@ describe('Gmail IMAP mail intake', () => {
   });
   it('keeps the fixed TLS endpoint and the adapter exposes no mutation operation', () => {
     expect(GMAIL_IMAP_CONNECTION).toEqual({ host: 'imap.gmail.com', port: 993, secure: true, mailbox: 'INBOX', readOnly: true });
+    expect(GMAIL_IMAP_CLIENT_OPTIONS).toEqual({ host: 'imap.gmail.com', port: 993, secure: true, logger: false, disableAutoIdle: true });
     expect(Object.keys(new FakeImap({}))).not.toContain('messageFlagsAdd');
+  });
+  it('retries ingest serialization failures twice before completing and advances the cursor once', async () => {
+    const harness = new Harness({ uidNext: 502, uids: [501], ingestResults: ['40001', '40001', 'success'] });
+    const response = await harness.handler()(request());
+
+    expect(response.status).toBe(200); expect(await response.json()).toEqual({ status: 'completed', discovered: 1, ingested: 1, skipped_absent: 0 });
+    expect(harness.rpc('ingest_mail_intake_item')).toHaveLength(3); expect(harness.rpc('compare_and_swap_mail_connector_cursor')).toHaveLength(1);
+  });
+  it('fails after three ingest serialization failures without advancing the cursor', async () => {
+    const harness = new Harness({ uidNext: 502, uids: [501], ingestResults: ['40001', '40001', '40001'] });
+    const response = await harness.handler()(request());
+
+    expect(response.status).toBe(502); expect(await response.json()).toEqual({ status: 'error', code: 'ingest_failed' });
+    expect(harness.rpc('ingest_mail_intake_item')).toHaveLength(3); expect(harness.rpc('compare_and_swap_mail_connector_cursor')).toHaveLength(0);
   });
   it('downloads only inline text/plain parts, never HTML, attachments, or filename-bearing parts', async () => {
     const mixed = { type: 'multipart/mixed', childNodes: [{ part: '1', type: 'text/plain' }, { part: '2', type: 'text/html' }, { part: '3', type: 'text/plain', disposition: 'attachment' }, { part: '4', type: 'text/plain', parameters: { name: 'request.txt' } }] };
