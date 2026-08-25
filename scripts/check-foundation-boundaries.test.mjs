@@ -450,7 +450,7 @@ describe('foundation boundary checker', () => {
     },
   );
 
-  for (const ignoredName of ['dist', 'coverage', 'node_modules']) {
+  for (const ignoredName of ['dist', 'coverage', 'node_modules', '.temp']) {
     it(`rejects an ignored-name directory link: src/${ignoredName}`, () => {
       const root = createPassingFixture();
       const linkPath = `src/${ignoredName}`;

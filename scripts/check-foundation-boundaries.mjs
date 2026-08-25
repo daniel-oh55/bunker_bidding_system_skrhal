@@ -46,6 +46,7 @@ const ignoredDirs = new Set([
   'dist',
   'node_modules',
   'coverage',
+  '.temp',
 ]);
 
 const markdownProseExtensions = new Set(['.md', '.markdown']);
