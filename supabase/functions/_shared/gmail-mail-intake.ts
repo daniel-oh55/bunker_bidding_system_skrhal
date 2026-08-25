@@ -116,7 +116,11 @@ function selectInlinePlainParts(bodyStructure: unknown): string[] {
     const parameters = value.parameters && typeof value.parameters === 'object' && !Array.isArray(value.parameters) ? value.parameters as Record<string, unknown> : {};
     const dispositionParameters = value.dispositionParameters && typeof value.dispositionParameters === 'object' && !Array.isArray(value.dispositionParameters) ? value.dispositionParameters as Record<string, unknown> : {};
     const filename = parameters.name ?? dispositionParameters.filename;
-    if (type === 'text/plain' && disposition !== 'attachment' && (filename === undefined || filename === '')) { if (typeof value.part !== 'string' || value.part === '') throw new OperationalError('gmail_message_invalid'); selected.push(value.part); }
+    if (type === 'text/plain' && disposition !== 'attachment' && (filename === undefined || filename === '')) {
+      if (typeof value.part === 'string' && value.part !== '') selected.push(value.part);
+      else if (depth === 0 && value.part === undefined) selected.push('1');
+      else throw new OperationalError('gmail_message_invalid');
+    }
     if (value.childNodes !== undefined) { if (!Array.isArray(value.childNodes)) throw new OperationalError('gmail_message_invalid'); for (const child of value.childNodes) visit(child, depth + 1); }
   };
   visit(bodyStructure, 0); return selected;

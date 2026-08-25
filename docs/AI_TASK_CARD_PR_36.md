@@ -22,6 +22,8 @@ Replace the undeployed Gmail API/OAuth mail transport with a server-only Gmail I
 
 Harden the already-reviewed connector without changing its transport or ingestion behavior: explicitly disable ImapFlow logging and automatic IDLE, restrict generated-state scanning exclusion to `supabase/.temp`, and restore bounded `40001` ingest retry coverage.
 
+Correct the narrowly scoped ImapFlow single-part BODYSTRUCTURE shape: an eligible root `text/plain` node with an absent `part` maps to fixed IMAP part `"1"`; malformed eligible non-root nodes remain hard failures. Root HTML and attachment/filename-bearing plaintext remain excluded from download.
+
 ## Protected business invariant
 
 Only a caller holding the server trigger secret may run a short-lived, read-only Gmail INBOX intake. It may persist only normalized advisory candidates through the existing authoritative ingest RPC and may advance the opaque cursor exactly once after a complete bounded snapshot. Browser users receive neither mailbox credentials nor mail content.
@@ -62,6 +64,7 @@ No database change. Reuse the existing `cursor_value` with strict `imap-v1:<uidv
 - First run, empty inbox, no-new-mail, bounded snapshot, ordering, identity, UIDVALIDITY mismatch, and CAS conflict.
 - Definitive absence advances only after other successful ingest; IMAP/body/ingest failures do not advance.
 - Read-only behavior, MIME selection, 256 KiB aggregate cap, Unicode subjects including lone low surrogate, and INTERNALDATE authority.
+- Single-part root plaintext with no `part` downloads only fixed part `"1"`, reaches normalized ingest once, and advances the captured cursor once; root HTML and root attachment/filename plaintext with no `part` do not download or hard-fail.
 - ImapFlow construction fixes protocol logging off and automatic IDLE off without exposing credentials through the fixed-options contract.
 - Only `supabase/.temp` is excluded from foundation scanning; `src/.temp` remains scanned for synthetic elevated credential values.
 - A serialized ingest succeeds after two `40001` responses and fails after three without advancing the cursor.

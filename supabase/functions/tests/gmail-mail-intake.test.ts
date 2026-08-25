@@ -144,6 +144,46 @@ describe('Gmail IMAP mail intake', () => {
     const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: { ...message(501), bodyStructure: mixed } } }); await harness.handler()(request());
     expect(harness.imap.downloads.map((call) => call[1])).toEqual(['1']);
   });
+  it('downloads a single-part root plaintext body as IMAP part 1 and ingests it once', async () => {
+    const rootPlainText = { type: 'text/plain', parameters: { charset: 'UTF-8' }, encoding: '7bit', size: 42 };
+    const harness = new Harness({ uidNext: 505, uids: [504], messages: { 504: { ...message(504), internalDate: new Date('2026-10-03T04:05:06.000Z'), bodyStructure: rootPlainText } }, parts: { '1': new TextEncoder().encode('PORT : ROOT TEST PORT\nVLSFO : 25 MT') } });
+    const response = await harness.handler()(request());
+
+    expect(response.status).toBe(200); expect(await response.json()).toEqual({ status: 'completed', discovered: 1, ingested: 1, skipped_absent: 0 });
+    expect(harness.imap.downloads).toEqual([[504, '1', MAX_DECODED_PLAIN_TEXT_BYTES + 1]]);
+    expect(harness.imap.downloads.every(([, part]) => typeof part === 'string' && part !== '')).toBe(true);
+    expect(harness.rpc('ingest_mail_intake_item')).toHaveLength(1);
+    expect(harness.rpc('ingest_mail_intake_item')[0]?.body).toMatchObject({ p_source_message_id: '100:504', p_received_at: '2026-10-03T04:05:06.000Z', p_port_name: 'ROOT TEST PORT' });
+    expect(harness.rpc('compare_and_swap_mail_connector_cursor')).toHaveLength(1);
+    expect(harness.rpc('compare_and_swap_mail_connector_cursor')[0]?.body.p_cursor_value).toBe('imap-v1:100:504');
+  });
+  it('fails closed when an eligible non-root plaintext node has no part', async () => {
+    const malformedNestedPlainText = { type: 'multipart/mixed', childNodes: [{ type: 'text/plain' }] };
+    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: { ...message(501), bodyStructure: malformedNestedPlainText } } });
+    const response = await harness.handler()(request());
+
+    expect(response.status).toBe(502); expect(await response.json()).toEqual({ status: 'error', code: 'gmail_message_invalid' });
+    expect(harness.imap.downloads).toEqual([]); expect(harness.rpc('ingest_mail_intake_item')).toEqual([]); expect(harness.rpc('compare_and_swap_mail_connector_cursor')).toEqual([]);
+  });
+  it('does not hard-fail or download a single-part root HTML body without a part', async () => {
+    const rootHtml = { type: 'text/html', parameters: { charset: 'UTF-8' }, encoding: '7bit', size: 42 };
+    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: { ...message(501), bodyStructure: rootHtml } } });
+    const response = await harness.handler()(request());
+
+    expect(response.status).toBe(200); expect(harness.imap.downloads).toEqual([]);
+    expect(harness.rpc('ingest_mail_intake_item')[0]?.body.p_warnings).toContain('No inline plain-text content was available for analysis.');
+  });
+  it.each([
+    { type: 'text/plain', disposition: 'attachment' },
+    { type: 'text/plain', parameters: { name: 'request.txt' } },
+    { type: 'text/plain', dispositionParameters: { filename: 'request.txt' } },
+  ])('excludes root attachment or filename-bearing plaintext without a part: %o', async (rootPlainText) => {
+    const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: { ...message(501), bodyStructure: rootPlainText } } });
+    const response = await harness.handler()(request());
+
+    expect(response.status).toBe(200); expect(harness.imap.downloads).toEqual([]);
+    expect(harness.rpc('ingest_mail_intake_item')[0]?.body.p_warnings).toContain('No inline plain-text content was available for analysis.');
+  });
   it('rejects oversized aggregate plain text without partial business analysis', async () => {
     const oversized = new Uint8Array(MAX_DECODED_PLAIN_TEXT_BYTES + 1); oversized.fill('x'.charCodeAt(0));
     const harness = new Harness({ uidNext: 502, uids: [501], parts: { '1': oversized } }); await harness.handler()(request());
