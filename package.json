@@ -28,6 +28,7 @@
   "dependencies": {
     "@kenjiuno/msgreader-web-ng": "0.2.0-alpha1",
     "@supabase/supabase-js": "^2.57.2",
+    "imapflow": "1.7.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

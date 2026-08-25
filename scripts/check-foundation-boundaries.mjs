@@ -5,6 +5,7 @@ import process from 'node:process';
 const rootDir = path.resolve(process.cwd());
 const legacyDir = path.join(rootDir, 'legacy', 'firebase-prototype');
 const supabaseConfigPath = path.join(rootDir, 'supabase', 'config.toml');
+const localSupabaseTempDir = path.join(rootDir, 'supabase', '.temp');
 const envExamplePath = path.join(rootDir, '.env.example');
 
 const requiredDocs = [
@@ -172,7 +173,7 @@ function walk(dir) {
     }
 
     if (stats.isDirectory()) {
-      if (ignoredDirs.has(entry.name)) {
+      if (fullPath === localSupabaseTempDir || ignoredDirs.has(entry.name)) {
         continue;
       }
 

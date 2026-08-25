@@ -1,4 +1,7 @@
 {
+  "imports": {
+    "imapflow": "npm:imapflow@1.7.6"
+  },
   "compilerOptions": {
     "strict": true
   }
