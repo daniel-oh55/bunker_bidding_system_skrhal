@@ -70,6 +70,7 @@
 
 ## Completed refinements
 
+- The BUYER main bid presentation is a full-width responsive operational board: each bid card places its server-returned summary above a per-bid table of BUYER-visible quotes loaded only through `listQuotesForBuyers`. Requested fuel columns follow bid fuel-item order, `total_amount` remains server-authoritative, and retained inactive or ineligible quotes remain visible with status metadata. The displayed lowest eligible offer and gap are advisory only; award remains manual through the existing server-authorized detail flow, which opens below the board. Board quote loads use bounded concurrency, isolate non-authorization failures, fail closed on authorization failures, and reject superseded view, membership, and reload results. No authorization scope or backend contract changed.
 - Final BUYER/TRADER workspace presentation polish strengthens operational hierarchy, quote comparison scanning, editor/read-only distinction, terminal results, responsive behavior, and keyboard/focus presentation without changing backend, authorization, deadline, award, quote, or Realtime contracts.
 - The BUYER All bids view groups and locally collapses bids by immutable creator; Created by me, responsible-BUYER filtering, and all authorization, lifecycle, RPC, and Realtime contracts remain unchanged.
 - BUYER quote-board comparison and BUYER/TRADER deadline countdown presentation are implemented; award, quote, authorization, deadline, and Realtime contracts are unchanged.
