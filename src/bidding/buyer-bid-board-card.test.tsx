@@ -52,28 +52,77 @@ describe('BuyerBidBoardCard', () => {
     expect(within(row).queryByText('$1,007')).not.toBeInTheDocument();
   });
 
-  it('ignores a lower ineligible quote when deriving the advisory lowest eligible offer', () => {
+  it('ranks active OPEN-bid quotes for current comparison without implying they can be awarded', () => {
     const quotes = [
-      quote('Ineligible Low', 50, { access_active: false, eligible_for_award: false }),
-      quote('Eligible Low', 100),
-      quote('Eligible Second', 125),
+      quote('Current Low', 100, { eligible_for_award: false }),
+      quote('Current Second', 125, { eligible_for_award: false }),
     ];
     const { card } = renderCard(bid(), quotes);
-    const result = within(card).getByText(/Lowest eligible offer/).closest('.buyer-board-result')!;
-    expect(result).toHaveTextContent('Eligible Low · $100');
-    expect(result).toHaveTextContent('Gap to second eligible: $25 (25%)');
-    expect(result).not.toHaveTextContent('Ineligible Low · $50');
-    expect(within(card).getByRole('rowheader', { name: /Ineligible Low/ })).toHaveTextContent('Access inactive · Ineligible for award');
+    const lowRow = within(card).getByRole('rowheader', { name: /Current Low/ }).closest('tr')!;
+    const secondRow = within(card).getByRole('rowheader', { name: /Current Second/ }).closest('tr')!;
+    expect(within(lowRow).getByText('1')).toBeInTheDocument();
+    expect(within(secondRow).getByText('2')).toBeInTheDocument();
+    expect(lowRow).not.toHaveClass('is-comparison-excluded');
+    expect(within(lowRow).getByRole('rowheader')).toHaveTextContent('Current comparison eligible · Award unavailable while bid is open');
+    const result = within(card).getByText(/Lowest current offer/).closest('.buyer-board-result')!;
+    expect(result).toHaveTextContent('comparison only');
+    expect(result).toHaveTextContent('Current Low · $100');
+    expect(result).toHaveTextContent('Gap to second current offer: $25 (25%)');
+    expect(result).toHaveTextContent('Awards are unavailable while the bid is open.');
+    expect(within(card).queryByText('Eligible for award')).not.toBeInTheDocument();
+  });
+
+  it('keeps cheaper inactive OPEN-bid quotes visible but excludes them from current comparison', () => {
+    const quotes = [
+      quote('Access Revoked Low', 50, { access_active: false, eligible_for_award: false }),
+      quote('Organization Inactive Low', 75, { organization_active: false, eligible_for_award: false }),
+      quote('Active Current Low', 100, { eligible_for_award: false }),
+    ];
+    const { card } = renderCard(bid(), quotes);
+    const accessRow = within(card).getByRole('rowheader', { name: /Access Revoked Low/ }).closest('tr')!;
+    const organizationRow = within(card).getByRole('rowheader', { name: /Organization Inactive Low/ }).closest('tr')!;
+    const activeRow = within(card).getByRole('rowheader', { name: /Active Current Low/ }).closest('tr')!;
+    expect(accessRow).toHaveClass('is-comparison-excluded');
+    expect(organizationRow).toHaveClass('is-comparison-excluded');
+    expect(within(accessRow).getByText('—')).toBeInTheDocument();
+    expect(within(organizationRow).getByText('—')).toBeInTheDocument();
+    expect(within(activeRow).getByText('1')).toBeInTheDocument();
+    expect(within(accessRow).getByRole('rowheader')).toHaveTextContent('Access inactive · Excluded from current comparison');
+    expect(within(organizationRow).getByRole('rowheader')).toHaveTextContent('Organization inactive · Excluded from current comparison');
+    const result = within(card).getByText(/Lowest current offer/).closest('.buyer-board-result')!;
+    expect(result).toHaveTextContent('Active Current Low · $100');
+    expect(result).not.toHaveTextContent('Access Revoked Low · $50');
+    expect(result).not.toHaveTextContent('Organization Inactive Low · $75');
   });
 
   it.each([
     { quotes: [] as Quote[], expected: null },
-    { quotes: [quote('Only Eligible', 100)], expected: 'Gap to second eligible: — (fewer than two eligible quotes)' },
-    { quotes: [quote('First Eligible', 100), quote('Second Eligible', 100)], expected: 'Gap to second eligible: $0 (0%)' },
-  ])('handles advisory gap presentation for $quotes.length eligible quotes', ({ quotes, expected }) => {
+    { quotes: [quote('Only Current', 100, { eligible_for_award: false })], expected: 'Gap to second current offer: — (fewer than two comparison-eligible quotes)' },
+    { quotes: [quote('First Current', 100, { eligible_for_award: false }), quote('Second Current', 100, { eligible_for_award: false })], expected: 'Gap to second current offer: $0 (0%)' },
+  ])('preserves current-comparison gap presentation for $quotes.length OPEN-bid quotes', ({ quotes, expected }) => {
     const { card } = renderCard(bid(), quotes);
-    if (expected === null) expect(within(card).queryByText(/Gap to second eligible/)).not.toBeInTheDocument();
+    if (expected === null) expect(within(card).queryByText(/Gap to second current offer/)).not.toBeInTheDocument();
     else expect(within(card).getByText(expected)).toBeInTheDocument();
+  });
+
+  it('uses server award eligibility for CLOSED-bid ranking and advisory comparison', () => {
+    const currentBid = bid({ raw_status: 'closed', effective_status: 'closed', closed_at: now });
+    const quotes = [
+      quote('Ineligible Closed Low', 50, { eligible_for_award: false }),
+      quote('Award Eligible Low', 100),
+      quote('Award Eligible Second', 125),
+    ];
+    const { card } = renderCard(currentBid, quotes);
+    const ineligibleRow = within(card).getByRole('rowheader', { name: /Ineligible Closed Low/ }).closest('tr')!;
+    const eligibleRow = within(card).getByRole('rowheader', { name: /Award Eligible Low/ }).closest('tr')!;
+    expect(ineligibleRow).toHaveClass('is-comparison-excluded');
+    expect(within(ineligibleRow).getByText('—')).toBeInTheDocument();
+    expect(within(eligibleRow).getByText('1')).toBeInTheDocument();
+    const result = within(card).getByText(/Lowest award-eligible offer/).closest('.buyer-board-result')!;
+    expect(result).toHaveTextContent('Award Eligible Low · $100');
+    expect(result).toHaveTextContent('Gap to second award-eligible offer: $25 (25%)');
+    expect(result).toHaveTextContent('Award actions remain exclusively in Manage bid.');
+    expect(result).not.toHaveTextContent('Ineligible Closed Low · $50');
   });
 
   it('prioritizes the authoritative awarded result without describing it as the lowest offer', () => {
@@ -83,8 +132,19 @@ describe('BuyerBidBoardCard', () => {
     const result = within(card).getByText(/Awarded result/).closest('.buyer-board-result')!;
     expect(result).toHaveTextContent('Chosen Trader · $900');
     expect(result).toHaveTextContent('not an automatic lowest-price selection');
-    expect(within(card).queryByText(/Lowest eligible offer/)).not.toBeInTheDocument();
+    expect(within(card).queryByText(/Lowest .*offer/)).not.toBeInTheDocument();
     expect(within(card).getByRole('rowheader', { name: /Chosen Trader/ }).closest('tr')).toHaveClass('is-awarded');
+  });
+
+  it('keeps CANCELLED-bid quote history visible without an award-candidate advisory result', () => {
+    const currentBid = bid({ raw_status: 'cancelled', effective_status: 'cancelled', cancelled_at: now });
+    const { card } = renderCard(currentBid, [quote('Historical Trader', 100)]);
+    const row = within(card).getByRole('rowheader', { name: /Historical Trader/ }).closest('tr')!;
+    expect(row).toHaveClass('is-comparison-excluded');
+    expect(within(row).getByText('—')).toBeInTheDocument();
+    expect(within(row).getByRole('rowheader')).toHaveTextContent('Historical quote · No award candidate');
+    expect(within(card).queryByText(/Lowest|award-eligible offer|current offer/)).not.toBeInTheDocument();
+    expect(card.querySelector('.buyer-board-result')).toBeNull();
   });
 
   it('renders compact empty, loading, and isolated unavailable quote states', () => {

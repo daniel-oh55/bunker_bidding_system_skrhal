@@ -216,6 +216,47 @@ describe('BUYER workspace', () => {
     expect(screen.queryAllByRole('option', { name: 'Target buyer' })).toHaveLength(0);
   });
 
+  it('keeps protected BUYER state cleared when late board quote successes follow a multi-bid authorization failure', async () => {
+    const bidA = bid({ id: '10000000-0000-4000-8000-000000000013', vessel_voyage: 'MV Authorization Race A' });
+    const bidB = bid({ id: '10000000-0000-4000-8000-000000000014', vessel_voyage: 'MV Authorization Race B' });
+    const bidC = bid({ id: '10000000-0000-4000-8000-000000000015', vessel_voyage: 'MV Authorization Race C' });
+    const { client } = fakeClient([bidA, bidB, bidC]);
+    const onAuthorizationFailure = vi.fn();
+    const pending = new Map<string, { promise: Promise<BiddingResult<Quote[]>>; resolve: (value: BiddingResult<Quote[]>) => void }>();
+    const listQuotesForBuyers = vi.fn<BiddingClient['listQuotesForBuyers']>((_membershipId, requestedBidId) => {
+      const request = deferred<BiddingResult<Quote[]>>();
+      pending.set(requestedBidId, request);
+      return request.promise;
+    });
+    client.listQuotesForBuyers = listQuotesForBuyers;
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
+
+    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(3));
+    const denied = pending.get(bidB.id)!;
+    await act(async () => {
+      denied.resolve({ data: null, error: { kind: 'authorization', code: '42501', message: 'Quote authorization changed during board load' } });
+      await denied.promise;
+    });
+    await waitFor(() => expect(onAuthorizationFailure).toHaveBeenCalledOnce());
+    expect(screen.getByRole('alert')).toHaveTextContent('Quote authorization changed during board load');
+    expect(screen.queryByRole('article', { name: 'MV Authorization Race A' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'MV Authorization Race B' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'MV Authorization Race C' })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('option', { name: 'Target buyer' })).toHaveLength(0);
+
+    const lateA = pending.get(bidA.id)!;
+    const lateC = pending.get(bidC.id)!;
+    await act(async () => {
+      lateA.resolve(ok([boardQuote(bidA, 'Late Authorized Trader A', '13')]));
+      lateC.resolve(ok([boardQuote(bidC, 'Late Authorized Trader C', '15')]));
+      await Promise.all([lateA.promise, lateC.promise]);
+    });
+    expect(screen.queryByText('Late Authorized Trader A')).not.toBeInTheDocument();
+    expect(screen.queryByText('Late Authorized Trader C')).not.toBeInTheDocument();
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    expect(onAuthorizationFailure).toHaveBeenCalledOnce();
+  });
+
   it('ignores a late board quote result from a superseded view generation', async () => {
     const currentBid = bid({ vessel_voyage: 'MV Generation Guard' });
     const stale = deferred<BiddingResult<Quote[]>>();
