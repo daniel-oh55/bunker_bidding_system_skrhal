@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BiddingClient, BiddingResult, BidInput } from './bidding-client';
 import { CreateBidForm } from './bid-form';
+import { BuyerBidBoardCard, type BuyerBidBoardQuoteState } from './buyer-bid-board-card';
 import { BuyerBidDetail } from './buyer-bid-detail';
 import { MailIntakeQueue } from './mail-intake-queue';
 import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, Quote, TraderOrganization, WorkflowError } from './types';
-import { StatusBadge, WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
+import { WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
 
 type View = 'all' | 'created_by_me' | 'responsible_buyer';
 type Detail = { access: BidTraderAccess[]; quotes: Quote[]; audit: BidAuditEvent[] };
@@ -16,19 +17,7 @@ const views: { value: View; label: string; description: string }[] = [
 ];
 const quoteSort = (a: Quote, b: Quote) => Number(b.is_awarded) - Number(a.is_awarded) || a.total_amount - b.total_amount || a.id.localeCompare(b.id);
 const unknownError: WorkflowError = { kind: 'unknown', code: null, message: 'The request could not be completed. Please try again.' };
-const displayDate = (value: string | null) => value ? new Date(value).toLocaleString() : 'No deadline';
-const remainingTime = (deadline: string | null, nowMs: number) => {
-  if (!deadline) return 'No deadline';
-  const remainingSeconds = Math.ceil((new Date(deadline).getTime() - nowMs) / 1000);
-  if (remainingSeconds <= 0) return 'Expired';
-  const days = Math.floor(remainingSeconds / 86_400);
-  const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
-  const minutes = Math.floor((remainingSeconds % 3_600) / 60);
-  const seconds = remainingSeconds % 60;
-  if (days > 0) return `${days}d ${hours}h remaining`;
-  if (hours > 0) return `${hours}h ${minutes}m remaining`;
-  return `${minutes}m ${seconds}s remaining`;
-};
+const quoteConcurrency = 4;
 const groupBidsByCreator = (bids: Bid[]) => {
   const groups: CreatorGroup[] = [];
   const groupIndexes = new Map<string, number>();
@@ -46,10 +35,10 @@ const groupBidsByCreator = (bids: Bid[]) => {
 
 export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; onAuthorizationFailure: () => void; reloadVersion?: number }) {
   const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null);
-  const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
+  const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [boardQuotes, setBoardQuotes] = useState<Record<string, BuyerBidBoardQuoteState>>({}); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
   const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const clearVisible = useCallback(() => { selectedRef.current = null; setBids([]); setSelected(null); setDetail(null); }, []);
+  const clearVisible = useCallback(() => { selectedRef.current = null; setBids([]); setBoardQuotes({}); setSelected(null); setDetail(null); }, []);
   const clearProtected = useCallback(() => { clearVisible(); setBuyers([]); setOrganizations([]); }, [clearVisible]);
   const invalidateOperations = useCallback(() => { ++listOperation.current; ++detailOperation.current; ++mutationOperation.current; }, []);
   const handleError = useCallback((next: WorkflowError) => {
@@ -80,6 +69,25 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
       return false;
     }
   }, [client, handleError, membershipId]);
+  const loadBoardQuotes = useCallback(async (nextBids: Bid[], listGeneration: number) => {
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < nextBids.length) {
+        const bid = nextBids[cursor++];
+        if (!bid || listGeneration !== listOperation.current) return;
+        try {
+          const result = await client.listQuotesForBuyers(membershipId, bid.id);
+          if (listGeneration !== listOperation.current) return;
+          if (result.error?.kind === 'authorization') { handleError(result.error); return; }
+          setBoardQuotes((current) => ({ ...current, [bid.id]: result.error ? { status: 'error' } : { status: 'success', quotes: [...(result.data ?? [])].sort(quoteSort) } }));
+        } catch {
+          if (listGeneration !== listOperation.current) return;
+          setBoardQuotes((current) => ({ ...current, [bid.id]: { status: 'error' } }));
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(quoteConcurrency, nextBids.length) }, () => worker()));
+  }, [client, handleError, membershipId]);
   const loadList = useCallback(async (nextView: View, target?: string, retainId?: string, errorAfterReload?: WorkflowError) => {
     const keep = retainId ?? selectedRef.current?.id;
     const operation = ++listOperation.current;
@@ -100,7 +108,9 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
       setBuyers(buyerResult.data ?? []);
       setOrganizations(orgResult.data ?? []);
       setBids(nextBids);
+      setBoardQuotes(Object.fromEntries(nextBids.map((bid) => [bid.id, { status: 'loading' } satisfies BuyerBidBoardQuoteState])));
       setLoading(false);
+      void loadBoardQuotes(nextBids, operation);
       const nextSelected = keep ? nextBids.find((bid) => bid.id === keep) : undefined;
       if (nextSelected) void loadDetail(nextSelected);
       setError(errorAfterReload ?? null);
@@ -109,7 +119,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
       if (operation === listOperation.current) { clearVisible(); handleError(unknownError); setLoading(false); }
       return false;
     }
-  }, [clearVisible, client, handleError, loadDetail, membershipId]);
+  }, [clearVisible, client, handleError, loadBoardQuotes, loadDetail, membershipId]);
   useEffect(() => { void loadList('all'); return invalidateOperations; }, [invalidateOperations, loadList]);
   useEffect(() => { const timer = window.setInterval(() => setNowMs(Date.now()), 1_000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
@@ -140,26 +150,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
   const effectiveOpenCount = bids.filter((bid) => bid.effective_status === 'open').length;
   const terminalCount = bids.length - effectiveOpenCount;
   const creatorGroups = view === 'all' ? groupBidsByCreator(bids) : [];
-  const renderBidCard = (bid: Bid) => {
-    const isSelected = selected?.id === bid.id;
-    return <button type="button" className={`bid-button buyer-bid-card${isSelected ? ' is-selected' : ''}`} aria-pressed={isSelected} key={bid.id} onClick={() => void loadDetail(bid)}>
-      <span className="buyer-bid-card-heading"><span><span className="buyer-card-label">Vessel / voyage</span><strong>{bid.vessel_voyage}</strong><span className="buyer-bid-port">{bid.port_name}</span></span><span className="buyer-bid-card-status"><span className="buyer-card-label">Effective status</span><StatusBadge status={bid.effective_status} /></span></span>
-      <span className="buyer-bid-card-attention">
-        <span><span className="buyer-card-label">Deadline</span>{displayDate(bid.deadline_at)}</span>
-        <span><span className="buyer-card-label">Remaining time</span><span className={`deadline-countdown${remainingTime(bid.deadline_at, nowMs) === 'Expired' ? ' is-expired' : ''}`}>{remainingTime(bid.deadline_at, nowMs)}</span></span>
-      </span>
-      <span className="buyer-bid-card-secondary">
-        <span><span className="buyer-card-label">Fuel request</span>{bid.fuel_items.map((item) => `${item.fuel_grade.toUpperCase()} ${item.quantity_mt} MT`).join(', ')}</span>
-        <span><span className="buyer-card-label">Responsible BUYER</span>{bid.responsible_buyer_label}</span>
-      </span>
-      {bid.awarded_trader_organization_label ? <span className="buyer-bid-award"><span className="buyer-card-label">Awarded result</span><strong>{bid.awarded_trader_organization_label}</strong><span>Authoritative total {bid.awarded_total_amount}</span></span> : null}
-      <span className="buyer-bid-card-metadata">
-        <span>Creator: {bid.created_by_label}</span>
-        <span>Raw status: {bid.raw_status}</span>
-        <span>Revision {bid.revision}</span>
-      </span>
-    </button>;
-  };
+  const renderBidCard = (bid: Bid) => <BuyerBidBoardCard key={bid.id} bid={bid} quoteState={boardQuotes[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid)} />;
   return <div className="workspace buyer-workspace">
     <WorkspaceSummary
       eyebrow="BUYER operations"
@@ -179,8 +170,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
     </section>
     <MailIntakeQueue client={client} membershipId={membershipId} onAuthorizationFailure={onAuthorizationFailure} />
     <CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} />
-    <section className="bid-layout buyer-bid-layout">
-      <section className="panel bid-list buyer-bid-list">
+    <section className="panel buyer-bid-board" aria-label="BUYER operational bid board">
         <div className="buyer-list-heading"><div><p className="eyebrow">Current view</p><h2>Bids</h2></div><span>{bids.length} loaded</span></div>
         {loading ? <WorkspaceEmptyState title="Loading bids" description="Retrieving the current bid list." /> : view === 'responsible_buyer' && !responsible ? <WorkspaceEmptyState title="Select a BUYER to load responsible bids." description="Choose an active BUYER to view their responsible bids." /> : bids.length === 0 ? <WorkspaceEmptyState title="No bids in this view" description="Try another view or refresh the current bid list." /> : view === 'all' ? <div className="buyer-creator-groups">{creatorGroups.map((group) => {
           const isCollapsed = collapsedCreators[group.creatorId] ?? false;
@@ -197,8 +187,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
             <div className="buyer-bid-cards buyer-creator-bid-cards" id={groupContentId} hidden={isCollapsed}>{group.bids.map(renderBidCard)}</div>
           </section>;
         })}</div> : <div className="buyer-bid-cards">{bids.map(renderBidCard)}</div>}
-      </section>
-      <section className="panel bid-detail buyer-bid-detail" aria-live="polite">{selected ? <BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /> : <WorkspaceEmptyState title="No bid selected" description="Select a bid to view operations, quotes, scope, and audit history." />}</section>
     </section>
+    {selected ? <section className="panel bid-detail buyer-bid-detail" aria-live="polite"><BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /></section> : null}
   </div>;
 }
