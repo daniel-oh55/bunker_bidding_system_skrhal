@@ -2,13 +2,83 @@ import { describe, expect, it } from 'vitest';
 import { parseBunkerRequest } from './bid-intake';
 
 describe('bunker request draft parser', () => {
-  it('extracts vessel and voyage only from a clear subject prefix', () => {
+  it('preserves the existing clear English BUNKER REQUEST subject extraction', () => {
     const draft = parseBunkerRequest({
       subject: 'TEST VESSEL 2601E / BUNKER REQUEST AT BUSAN',
       body: '',
     });
 
     expect(draft.vesselVoyage).toBe('TEST VESSEL 2601E');
+    expect(draft.portName).toBe('BUSAN');
+    expect(draft).not.toHaveProperty('deadlineAt');
+  });
+
+  it.each([
+    ['VSL', 'TEST STAR 2609E'],
+    ['VESSEL', 'TEST MOON 2610W'],
+    ['VSL / VOY', 'TEST SUN 2611E'],
+    ['VESSEL / VOYAGE', 'TEST CLOUD 2612W'],
+  ])('extracts an explicit %s body field without normalizing its value', (label, expected) => {
+    const draft = parseBunkerRequest({ subject: '', body: `${label} : ${expected}\nVLSFO : 10 MT` });
+
+    expect(draft.vesselVoyage).toBe(expected);
+    expect(draft).not.toHaveProperty('deadlineAt');
+  });
+
+  it.each(['-', '*', '•'])('accepts an optional %s bullet for operational body fields', (bullet) => {
+    const draft = parseBunkerRequest({
+      subject: '',
+      body: `${bullet} VSL : TEST STAR 2609E\n${bullet} PORT / TERMINAL : TEST PORT / TEST TERMINAL\n${bullet} ETA : 06th Sep 2026\nVLSFO : 10 MT`,
+    });
+
+    expect(draft).toMatchObject({
+      vesselVoyage: 'TEST STAR 2609E',
+      portName: 'TEST PORT / TEST TERMINAL',
+      deliveryWindow: 'ETA 06th Sep 2026',
+    });
+    expect(draft.warnings).toContainEqual(expect.stringContaining('ETA was used only as a delivery hint'));
+    expect(draft).not.toHaveProperty('deadlineAt');
+  });
+
+  it('prefers an explicit body vessel over both subject fallbacks', () => {
+    const draft = parseBunkerRequest({
+      subject: 'SUBJECT STAR 2609E / BUNKER REQUEST AT SUBJECT PORT (STRUCTURED STAR 2610W / 06th Sep 2026 / STRUCTURED PORT)',
+      body: 'VSL : BODY STAR 2611E\nVLSFO : 10 MT',
+    });
+
+    expect(draft.vesselVoyage).toBe('BODY STAR 2611E');
+  });
+
+  it('extracts a narrow synthetic structured subject with one delivery date', () => {
+    const draft = parseBunkerRequest({
+      subject: 'Synthetic request (TEST STAR 2609E / 06th Sep 2026 / BUSAN, KOREA)',
+      body: 'VLSFO : 10 MT',
+    });
+
+    expect(draft).toMatchObject({ vesselVoyage: 'TEST STAR 2609E', deliveryWindow: '06th Sep 2026', portName: 'BUSAN, KOREA' });
+    expect(draft).not.toHaveProperty('deadlineAt');
+  });
+
+  it('extracts a narrow synthetic structured subject with a delivery date range', () => {
+    const draft = parseBunkerRequest({
+      subject: 'Synthetic request\n(TEST STAR 2609E / 02~07th September 2026 / SHANGHAI, CHINA)',
+      body: 'VLSFO : 10 MT',
+    });
+
+    expect(draft).toMatchObject({ vesselVoyage: 'TEST STAR 2609E', deliveryWindow: '02~07th September 2026', portName: 'SHANGHAI, CHINA' });
+    expect(draft).not.toHaveProperty('deadlineAt');
+  });
+
+  it('does not parse arbitrary slash-parenthetical text without a recognized month and year', () => {
+    const draft = parseBunkerRequest({
+      subject: 'Discussion (ALPHA / status pending / internal only)',
+      body: 'VLSFO : 10 MT',
+    });
+
+    expect(draft).not.toHaveProperty('vesselVoyage');
+    expect(draft).not.toHaveProperty('portName');
+    expect(draft).not.toHaveProperty('deliveryWindow');
+    expect(draft).not.toHaveProperty('deadlineAt');
   });
 
   it('prefers an explicit body port over the subject fallback', () => {
@@ -29,6 +99,15 @@ describe('bunker request draft parser', () => {
     expect(draft.portName).toBe('BUSAN, KOREA / TEST TERMINAL');
   });
 
+  it('prefers an explicit body port over the structured subject port', () => {
+    const draft = parseBunkerRequest({
+      subject: 'Synthetic request (TEST STAR 2609E / 06th Sep 2026 / SUBJECT PORT)',
+      body: '- PORT / TERMINAL : BODY PORT / TEST TERMINAL\nVLSFO : 10 MT',
+    });
+
+    expect(draft.portName).toBe('BODY PORT / TEST TERMINAL');
+  });
+
   it('uses the subject port only when no explicit body port exists', () => {
     const draft = parseBunkerRequest({
       subject: 'TEST VESSEL 2601E / BUNKER REQUEST AT BUSAN',
@@ -46,6 +125,32 @@ describe('bunker request draft parser', () => {
 
     expect(draft.deliveryWindow).toBe('10-11 Jul 2026');
     expect(draft.warnings).not.toContainEqual(expect.stringContaining('ETA was used'));
+  });
+
+  it.each([
+    ['DELIVERY WINDOW', '05-06 Sep 2026'],
+    ['DELIVERY DATE', '05th Sep 2026'],
+    ['SUPPLY DATE', '05th September 2026'],
+  ])('prefers explicit %s over a structured subject date', (label, expected) => {
+    const draft = parseBunkerRequest({
+      subject: 'Synthetic request (TEST STAR 2609E / 06th Sep 2026 / TEST PORT)',
+      body: `${label} : ${expected}\nETA : 07th Sep 2026\nVLSFO : 10 MT`,
+    });
+
+    expect(draft.deliveryWindow).toBe(expected);
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('ETA was used'));
+    expect(draft).not.toHaveProperty('deadlineAt');
+  });
+
+  it('uses a structured subject date before ETA without an ETA-used warning', () => {
+    const draft = parseBunkerRequest({
+      subject: 'Synthetic request (TEST STAR 2609E / 06th Sep 2026 / TEST PORT)',
+      body: '- ETA : 07th Sep 2026\nVLSFO : 10 MT',
+    });
+
+    expect(draft.deliveryWindow).toBe('06th Sep 2026');
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('ETA was used'));
+    expect(draft).not.toHaveProperty('deadlineAt');
   });
 
   it('uses ETA only as a delivery hint with a verification warning and never a deadline', () => {
@@ -70,6 +175,38 @@ describe('bunker request draft parser', () => {
     const draft = parseBunkerRequest({ subject: '', body: `${sourceGrade} : 12.5 MT` });
 
     expect(draft.fuelItems).toEqual([{ grade: expectedGrade, quantity: 12.5 }]);
+  });
+
+  it('ignores supported-grade specification rows without MT/M/T and emits no false invalid-quantity warning', () => {
+    const draft = parseBunkerRequest({
+      subject: '',
+      body: 'HSHFO RMG380 : ISO 8217 specification\nLSMGO DMA : ISO 8217 specification',
+    });
+
+    expect(draft.fuelItems).toEqual([]);
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('Invalid HSHFO quantity'));
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('Invalid LSMGO quantity'));
+  });
+
+  it('uses a valid supported request row alongside a specification row without a false warning', () => {
+    const draft = parseBunkerRequest({
+      subject: '',
+      body: 'HSHFO RMG380 : ISO 8217 specification\nHSHFO RMG380 : 700 MT\nLSMGO DMA : ISO 8217 specification\nLSMGO DMA : 50 M/T',
+    });
+
+    expect(draft.fuelItems).toEqual([
+      { grade: 'hsfo', quantity: 700 },
+      { grade: 'lsmgo', quantity: 50 },
+    ]);
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('Invalid HSHFO quantity'));
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('Invalid LSMGO quantity'));
+  });
+
+  it.each(['VLSFO : many MT', 'VLSFO : -5 M/T'])('still rejects and warns for an invalid supported quantity marker: %s', (body) => {
+    const draft = parseBunkerRequest({ subject: '', body });
+
+    expect(draft.fuelItems).toEqual([]);
+    expect(draft.warnings).toContainEqual(expect.stringContaining('Invalid VLSFO quantity'));
   });
 
   it('does not silently map bare generic MGO', () => {

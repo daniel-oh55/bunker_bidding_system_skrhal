@@ -31,7 +31,7 @@ const explicitUnsupportedMtLine = /^[^:]{1,60}:\s*\S+\s*M\s*\/?\s*T\b/i;
 function firstBodyField(body: string, labels: string[]): string | undefined {
   const lines = body.split(/\r?\n/);
   for (const label of labels) {
-    const pattern = new RegExp(String.raw`^\s*${label}\s*:\s*(.+?)\s*$`, 'i');
+    const pattern = new RegExp(String.raw`^\s*(?:[-*•]\s*)?${label}\s*:\s*(.+?)\s*$`, 'i');
     for (const line of lines) {
       const value = line.match(pattern)?.[1]?.trim();
       if (value) return value;
@@ -56,6 +56,28 @@ function parseQuantityToken(token: string): number | undefined {
   return Number.isFinite(quantity) && quantity > 0 ? quantity : undefined;
 }
 
+type StructuredSubjectSummary = {
+  vesselVoyage: string;
+  deliveryWindow: string;
+  portName: string;
+};
+
+const englishMonth = String.raw`(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)`;
+
+function parseStructuredSubjectSummary(subject: string): StructuredSubjectSummary | undefined {
+  const match = subject.match(/\(\s*([^()/]+?)\s*\/\s*([^()/]+?)\s*\/\s*([^()/]+?)\s*\)\s*$/);
+  if (!match) return undefined;
+
+  const vesselVoyage = match[1]?.trim();
+  const deliveryWindow = match[2]?.trim();
+  const portName = match[3]?.trim();
+  if (!vesselVoyage || !deliveryWindow || !portName) return undefined;
+
+  const hasMonth = new RegExp(String.raw`\b${englishMonth}\b`, 'i').test(deliveryWindow);
+  const hasYear = /\b\d{4}\b/.test(deliveryWindow);
+  return hasMonth && hasYear ? { vesselVoyage, deliveryWindow, portName } : undefined;
+}
+
 function isSupportedAlias(alias: string): alias is SupportedAlias {
   return Object.hasOwn(supportedAliases, alias);
 }
@@ -78,7 +100,9 @@ function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['f
     const alias = supported[1]!.toUpperCase();
     if (!isSupportedAlias(alias)) continue;
     const grade = supportedAliases[alias];
-    const amountToken = line.match(/(\S+)\s*M\s*\/?\s*T\b/i)?.[1];
+    const quantityMarker = line.match(/(\S+)\s*M\s*\/?\s*T\b/i);
+    if (!quantityMarker) continue;
+    const amountToken = quantityMarker[1];
     const quantity = amountToken ? parseQuantityToken(amountToken) : undefined;
     if (quantity === undefined) {
       warnings.push(`Invalid ${alias} quantity was not imported.`);
@@ -108,10 +132,16 @@ function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['f
 
 export function parseBunkerRequest({ subject, body }: BunkerRequestSource): BunkerRequestDraft {
   const warnings: string[] = [];
-  const vesselVoyage = parseVesselVoyage(subject);
+  const structuredSubject = parseStructuredSubjectSummary(subject);
+  const vesselVoyage = firstBodyField(body, [String.raw`VSL\s*\/\s*VOY`, String.raw`VESSEL\s*\/\s*VOYAGE`, 'VSL', 'VESSEL'])
+    ?? parseVesselVoyage(subject)
+    ?? structuredSubject?.vesselVoyage;
   const portName = firstBodyField(body, [String.raw`PORT\s*\/\s*TERMINAL`, String.raw`BUNKER\s+PORT`, 'PORT'])
-    ?? parseSubjectPort(subject);
+    ?? parseSubjectPort(subject)
+    ?? structuredSubject?.portName;
   let deliveryWindow = firstBodyField(body, [String.raw`DELIVERY\s+WINDOW`, String.raw`DELIVERY\s+DATE`, String.raw`SUPPLY\s+DATE`]);
+
+  deliveryWindow ??= structuredSubject?.deliveryWindow;
 
   if (!deliveryWindow) {
     const eta = firstBodyField(body, ['ETA']);
