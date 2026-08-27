@@ -120,6 +120,45 @@ describe('Gmail IMAP mail intake', () => {
     expect(ingress?.p_vessel_voyage).toBe('TEST VESSEL 001E');
     expect(String(ingress?.p_vessel_voyage)).not.toContain('//SPOT//');
   });
+  it('ingests a synthetic operational exact-marker shape as normalized review-only candidates', async () => {
+    const subject = '//SPOT// Synthetic bunker request (TEST STAR 2609E / 02~07th Sep 2026 / TEST PORT, KOREA)';
+    const body = [
+      '- VSL : TEST STAR 2609E',
+      '- PORT / TERMINAL : TEST PORT, KOREA / TEST TERMINAL',
+      '- ETA : 01st Sep 2026',
+      '- HSHFO RMG380 : ISO 8217 specification',
+      '- HSHFO RMG380 : 700 MT',
+      '- LSMGO DMA : ISO 8217 specification',
+      '- LSMGO DMA : 50 M/T',
+    ].join('\n');
+    const harness = new Harness({
+      uidNext: 502,
+      uids: [501],
+      messages: { 501: message(501, subject) },
+      parts: { '1': new TextEncoder().encode(body) },
+    });
+    const response = await harness.handler()(request());
+
+    expect(await response.json()).toEqual({ status: 'completed', discovered: 1, ingested: 1, skipped_absent: 0 });
+    const ingress = harness.rpc('ingest_mail_intake_item')[0]?.body;
+    expect(ingress).toMatchObject({
+      p_subject: subject,
+      p_vessel_voyage: 'TEST STAR 2609E',
+      p_port_name: 'TEST PORT, KOREA / TEST TERMINAL',
+      p_delivery_window: '02~07th Sep 2026',
+      p_fuel_items: [
+        { grade: 'hsfo', quantity: 700 },
+        { grade: 'lsmgo', quantity: 50 },
+      ],
+      p_warnings: [],
+    });
+    expect(String(ingress?.p_subject).startsWith('//SPOT//')).toBe(true);
+    expect(ingress?.p_warnings).not.toContainEqual(expect.stringContaining('Invalid HSHFO quantity'));
+    expect(ingress?.p_warnings).not.toContainEqual(expect.stringContaining('Invalid LSMGO quantity'));
+    expect(ingress).not.toHaveProperty('p_deadline_at');
+    expect(ingress).not.toHaveProperty('p_responsible_buyer');
+    expect(ingress).not.toHaveProperty('p_raw_body');
+  });
   it('filters an ordinary subject before body download without treating it as absent', async () => {
     const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: message(501, 'BUNKER REQUEST AT BUSAN') } });
     const response = await harness.handler()(request());
