@@ -31,6 +31,14 @@ function fakeRealtime() {
 }
 
 describe('workspace context routing', () => {
+  it('propagates the server-returned BUYER role for SELLER-management presentation only', async () => {
+    const admin = { ...buyer, membership_role: 'buyer_admin' as const };
+    const view = render(<ContextWorkspace contexts={[admin]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} />);
+    expect(await screen.findByRole('button', { name: 'Manage SELLERs' })).toBeInTheDocument();
+    view.rerender(<ContextWorkspace contexts={[buyer]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Manage SELLERs' })).not.toBeInTheDocument());
+  });
+
   it('auto-selects a single server-returned context without offering a membership input', async () => {
     render(<ContextWorkspace contexts={[buyer]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} />);
     expect(await screen.findByText('BUYER operations')).toBeInTheDocument();

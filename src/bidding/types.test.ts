@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArray, parseBid, parseBidAuditEvent, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseTraderBid } from './types';
+import { parseArray, parseBid, parseBidAuditEvent, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
 
 const id = '10000000-0000-4000-8000-000000000001';
 const otherId = '10000000-0000-4000-8000-000000000002';
@@ -17,8 +17,35 @@ function quote(overrides: Record<string, unknown> = {}) {
 function mailItem(overrides: Record<string, unknown> = {}) {
   return { id, received_at: now, subject: '', vessel_voyage: null, port_name: 'Busan', delivery_window: '2026-08-04', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: ['Confirm delivery window'], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null, ...overrides };
 }
+function sellerOrganization(overrides: Record<string, unknown> = {}) {
+  return { organization_id: id, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 2, created_at: now, updated_at: now, ...overrides };
+}
 
 describe('bidding protocol parsers', () => {
+  it('accepts only the exact narrow SELLER-admin organization result', () => {
+    expect(parseSellerOrganizationAdmin(sellerOrganization())).toEqual(sellerOrganization());
+    expect(parseSellerOrganizationAdmin(sellerOrganization({ organization_status: 'inactive', active_trader_membership_count: 0 }))).not.toBeNull();
+    expect(parseSellerOrganizationAdmin(sellerOrganization({ organization_status: 'suspended' }))).not.toBeNull();
+    expect(parseSellerOrganizationAdmin({ ...sellerOrganization(), member_email: 'hidden@example.test' })).toBeNull();
+  });
+
+  it('rejects malformed SELLER-admin UUIDs, labels, statuses, counts, timestamps, and keys', () => {
+    for (const candidate of [
+      sellerOrganization({ organization_id: 'bad' }),
+      sellerOrganization({ organization_label: ' Ocean Bunker' }),
+      sellerOrganization({ organization_label: '' }),
+      sellerOrganization({ organization_label: 'x'.repeat(121) }),
+      sellerOrganization({ organization_status: 'deleted' }),
+      sellerOrganization({ active_trader_membership_count: -1 }),
+      sellerOrganization({ active_trader_membership_count: 1.5 }),
+      sellerOrganization({ active_trader_membership_count: '2' }),
+      sellerOrganization({ created_at: 'not-a-timestamp' }),
+      sellerOrganization({ updated_at: '2026-02-30T03:00:00.000Z' }),
+    ]) expect(parseSellerOrganizationAdmin(candidate)).toBeNull();
+    const missing: Record<string, unknown> = sellerOrganization(); delete missing.updated_at;
+    expect(parseSellerOrganizationAdmin(missing)).toBeNull();
+  });
+
   it('accepts valid pending and dismissed mail-intake results with only the narrow result fields', () => {
     expect(parsePendingMailIntakeItem(mailItem())).toEqual(mailItem());
     const dismissed = mailItem({ status: 'dismissed', revision: 2, dismissed_at: now });
