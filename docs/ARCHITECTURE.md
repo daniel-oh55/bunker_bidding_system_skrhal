@@ -3,7 +3,7 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: eleven repository migrations and pgTAP tests; all eleven are applied to Production, ending with `20260826010503_enable_gmail_polling_extensions`
+- Supabase access: thirteen repository migrations and pgTAP tests; all thirteen are applied to Production, ending with `20260828085523_default_seller_bid_participation`
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()`, an integrated RPC-only BUYER/TRADER workspace with isolated BUYER mail-intake list/dismiss state, and a private Realtime invalidation adapter
 - Local intake: a BUYER form-local `.msg` binary adapter validates extension, size, and CFBF signature before browser parsing; a separate pure parser converts only plain-text subject/body into advisory candidates and warnings
@@ -24,6 +24,7 @@
 - Audit events are append-only and contain server-generated before/after snapshots, actor membership/organization/role snapshots, and the resulting revision.
 - Bid/TRADER scope is a private current access relation. Quotes and quote items are private, RLS-enabled organization-owned records; public RPCs authenticate the selected membership from `auth.uid()` and database state before every access.
 - Quote mutation and award lock the bid first, use database server time for closure, calculate totals from stored bid quantities and quote prices, and append server-generated audit snapshots. The composite award foreign key proves the award quote belongs to its bid.
+- Successful new-BID creation snapshots all currently active SELLER organizations into the existing explicit BID-scope relation before the created audit; it does not backfill historical BIDs. The BUYER-only comparison RPC returns the union of current explicit scope and retained quotes, including null-quote rows needed for `Awaiting quote`, without changing TRADER authority.
 - Mail intake identity is a unique `(source_provider, source_mailbox_key, source_message_id)` tuple. The opaque mailbox/message values stay private; duplicate ingress returns the existing ID without updating candidates, status, or revision, including when the item is dismissed. Deterministic READ COMMITTED regressions cover the unique-index wait/recheck path when the first ingest commits and when it rolls back.
 - `public.list_mail_intake_items()` exposes only the shared pending queue after the existing active-BUYER actor check. `public.dismiss_mail_intake_item()` locks one row, verifies the expected revision and pending state, records the server-verified actor, and transitions it one way to dismissed.
 - `app_private.mail_connector_cursors` stores only provider, opaque mailbox key, opaque cursor, revision, and timestamps. RLS is enabled with no policies and all direct table privileges are revoked, including for the backend connector role. Fixed-search-path `public.get_mail_connector_cursor()` and `public.compare_and_swap_mail_connector_cursor()` are executable only by that role; initialization requires absence and advancement requires the exact revision, with SQLSTATE `40001` on conflict.
@@ -65,7 +66,8 @@ The browser creates separate access, bidding, and narrow Realtime invalidation a
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- eleven migrations exist in the repository and all eleven are applied to Production, including the connector cursor and restored polling-extension migrations; the canonical Vercel Production deployment remains unchanged
+- thirteen migrations exist in the repository and all thirteen are applied to Production, ending with `20260828085523_default_seller_bid_participation`; the architecture includes the explicit default SELLER BID-scope snapshot and BUYER-only SELLER comparison RPC, with no historical BID backfill
+- browser access remains RPC-only and publishable-key-only; the PR #44 frontend is merged and its merged-main Vercel deployment completed successfully, while no direct browser-authenticated Production UI smoke of the rendered `Awaiting quote` row is claimed
 - no real operational bidding data has been migrated or is in use; retained Production records are synthetic smoke records only
 - manual browser-local `.msg` draft intake, the private normalized server intake boundary, active-BUYER provider-neutral pending list/dismiss UI, active Production Gmail connector, and five-minute scheduled polling are implemented. Webhook delivery, Microsoft Graph, manual `.eml`, intake-to-bid conversion, automatic bid creation, and historical email migration/import remain outside the architecture
 - the connector tolerates unique-index lock waits and retries ingest SQLSTATE `40001` within a three-attempt bound; the unique source constraint remains the authoritative message identity boundary
