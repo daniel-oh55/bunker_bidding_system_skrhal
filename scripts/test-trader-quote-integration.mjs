@@ -21,9 +21,9 @@ async function run() {
     const { data, error } = await within(admin.auth.admin.createUser({ email, password, email_confirm: true }), `create ${label}`);
     assert(!error && data.user, `Could not create ${label} fixture user.`); state.users.push(data.user.id); await query("update app_private.user_accounts set status='active' where user_id=$1", [data.user.id]); return { id: data.user.id, email, password };
   }
-  async function membership(user, kind, role, label) {
+  async function membership(user, kind, role, label, organizationStatus = 'active') {
     const organizationId = randomUUID(); const membershipId = randomUUID(); state.orgs.push(organizationId); state.memberships.push(membershipId);
-    await query("insert into app_private.organizations(id,kind,name,status) values($1,$2,$3,'active')", [organizationId, kind, `${label}-${organizationId}`]);
+    await query("insert into app_private.organizations(id,kind,name,status) values($1,$2,$3,$4)", [organizationId, kind, `${label}-${organizationId}`, organizationStatus]);
     await query("insert into app_private.organization_memberships(id,user_id,organization_id,role,status) values($1,$2,$3,$4,'active')", [membershipId, user.id, organizationId, role]);
     return { organizationId, membershipId };
   }
@@ -32,13 +32,14 @@ async function run() {
   try {
     await within(database.connect(), 'connect local database');
     const buyerUser = await createUser('buyer'); const traderOneUser = await createUser('trader-one'); const traderTwoUser = await createUser('trader-two'); const traderOtherUser = await createUser('trader-other');
-    const buyer = await membership(buyerUser, 'buyer', 'buyer_admin', 'buyer'); const traderOne = await membership(traderOneUser, 'trader', 'trader', 'trader-one');
+    const buyer = await membership(buyerUser, 'buyer', 'buyer_admin', 'buyer'); const traderOne = await membership(traderOneUser, 'trader', 'trader', 'trader-one', 'inactive');
     const traderTwo = { organizationId: traderOne.organizationId, membershipId: randomUUID() }; state.memberships.push(traderTwo.membershipId); await query("insert into app_private.organization_memberships(id,user_id,organization_id,role,status) values($1,$2,$3,'trader','active')", [traderTwo.membershipId, traderTwoUser.id, traderTwo.organizationId]);
-    const traderOther = await membership(traderOtherUser, 'trader', 'trader', 'trader-other');
+    const traderOther = await membership(traderOtherUser, 'trader', 'trader', 'trader-other', 'inactive');
     const buyerCaller = await signedIn(buyerUser, 'buyer'); const traderOneCaller = await signedIn(traderOneUser, 'trader one'); const traderTwoCaller = await signedIn(traderTwoUser, 'trader two'); const otherCaller = await signedIn(traderOtherUser, 'other trader');
 
     const created = await rpc(buyerCaller, 'create_bid', { p_actor_membership_id: buyer.membershipId, p_vessel_voyage: 'REST vessel', p_port_name: 'Busan', p_delivery_window: 'window', p_deadline_at: new Date(Date.now() + 86_400_000).toISOString(), p_responsible_buyer_user_id: null, p_fuel_grades: ['vlsfo'], p_quantities: [10] }, 'buyer create bid');
     assert(!created.error && created.data?.id, 'BUYER could not create fixture bid.'); state.bidId = created.data.id;
+    await query("update app_private.organizations set status='active' where id=$1", [traderOne.organizationId]);
     const granted = await rpc(buyerCaller, 'grant_bid_trader_access', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 1, p_trader_organization_id: traderOne.organizationId }, 'buyer grant scope');
     assert(!granted.error && granted.data.revision === 2, 'BUYER could not grant explicit TRADER scope.');
     const listedBids = await rpc(traderOneCaller, 'list_trader_bids', { p_actor_membership_id: traderOne.membershipId }, 'allowed trader lists bids');
@@ -47,6 +48,7 @@ async function run() {
     assert(!quote.error && quote.data?.total_amount === 1005 && quote.data?.is_awarded === false, 'TRADER quote create response must include server-calculated total and boolean false is_awarded.'); state.quoteId = quote.data.id;
     const updated = await rpc(traderTwoCaller, 'update_quote', { p_actor_membership_id: traderTwo.membershipId, p_quote_id: state.quoteId, p_expected_revision: 1, p_fuel_grades: ['vlsfo'], p_unit_prices: [101], p_barge_fee: 5 }, 'same organization update');
     assert(!updated.error && updated.data.revision === 2 && updated.data.created_by === traderOneUser.id && updated.data.is_awarded === false, 'Same-organization TRADER update must preserve creator, increment revision, and return boolean false is_awarded.');
+    await query("update app_private.organizations set status='active' where id=$1", [traderOther.organizationId]);
     const otherQuotes = await rpc(otherCaller, 'list_my_quotes', { p_actor_membership_id: traderOther.membershipId }, 'other trader quote list');
     assert(!otherQuotes.error && !otherQuotes.data.some((value) => value.id === state.quoteId), 'Another TRADER organization can see a competing quote.');
     const otherUpdate = await rpc(otherCaller, 'update_quote', { p_actor_membership_id: traderOther.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'other trader quote update');

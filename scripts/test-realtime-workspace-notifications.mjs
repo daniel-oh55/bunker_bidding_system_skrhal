@@ -179,6 +179,11 @@ async function run() {
   }
 
   async function createScopedBid(buyerCaller, buyer, traderOrganizationId, suffix) {
+    await query(
+      `update app_private.organizations set status = 'inactive' where id = $1`,
+      [traderOrganizationId],
+      `deactivate TRADER organization before Bid ${suffix}`,
+    );
     const create = await rpc(buyerCaller, 'create_bid', {
       p_actor_membership_id: buyer.membershipId,
       p_vessel_voyage: `Realtime Vessel ${suffix}`,
@@ -191,6 +196,11 @@ async function run() {
     }, `create Bid ${suffix}`);
     assert(!create.error && create.data?.id && create.data.revision === 1, `Could not create Bid ${suffix}${create.error ? ` (${create.error.code}: ${create.error.message})` : ''}.`);
     state.bidIds.push(create.data.id);
+    await query(
+      `update app_private.organizations set status = 'active' where id = $1`,
+      [traderOrganizationId],
+      `reactivate TRADER organization before Bid ${suffix} grant`,
+    );
     const grant = await rpc(buyerCaller, 'grant_bid_trader_access', {
       p_actor_membership_id: buyer.membershipId,
       p_bid_id: create.data.id,
@@ -231,7 +241,7 @@ async function run() {
     const buyer = await createMembership(buyerUser, 'buyer', 'buyer_admin', 'buyer');
     const traderA = await createMembership(traderAUser, 'trader', 'trader', 'trader-a');
     const traderACollaborator = await addMembership(traderACollaboratorUser, traderA.organizationId, 'trader-a-collaborator');
-    const traderB = await createMembership(traderBUser, 'trader', 'trader', 'trader-b');
+    const traderB = await createMembership(traderBUser, 'trader', 'trader', 'trader-b', { organizationStatus: 'inactive' });
     await createMembership(suspendedAccountUser, 'buyer', 'buyer_admin', 'suspended-account');
     const suspendedMembership = await createMembership(suspendedMembershipUser, 'trader', 'trader', 'suspended-membership', { membershipStatus: 'suspended' });
     const suspendedOrganization = await createMembership(suspendedOrganizationUser, 'trader', 'trader', 'suspended-organization', { organizationStatus: 'suspended' });
@@ -249,6 +259,11 @@ async function run() {
 
     const bidX = await createScopedBid(buyerCaller, buyer, traderA.organizationId, 'X');
     const bidY = await createScopedBid(buyerCaller, buyer, traderA.organizationId, 'Y');
+    await query(
+      `update app_private.organizations set status = 'active' where id = $1`,
+      [traderB.organizationId],
+      'reactivate TRADER B after scoped Bid creation',
+    );
 
     const buyerMessages = [];
     const traderAMessages = [];
