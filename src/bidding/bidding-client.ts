@@ -1,4 +1,4 @@
-import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type MailIntakeItem, type Quote, type SellerOrganizationAdmin, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
+import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type BuyerSellerComparison, type MailIntakeItem, type Quote, type SellerOrganizationAdmin, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
 
 export type BiddingResult<T> = { data: T | null; error: WorkflowError | null };
 export type BidInput = { vesselVoyage: string; portName: string; deliveryWindow: string; deadlineAt: string | null; responsibleBuyerUserId: string | null; fuelGrades: string[]; quantities: number[] };
@@ -22,6 +22,7 @@ export interface BiddingClient {
   listBidTraderAccess(membershipId: string, bidId: string): Promise<BiddingResult<BidTraderAccess[]>>;
   grantBidTraderAccess(membershipId: string, bidId: string, expectedRevision: number, organizationId: string): Promise<BiddingResult<Bid>>;
   revokeBidTraderAccess(membershipId: string, bidId: string, expectedRevision: number, organizationId: string): Promise<BiddingResult<Bid>>;
+  listBidSellerComparisonForBuyers(membershipId: string, bidId: string): Promise<BiddingResult<BuyerSellerComparison[]>>;
   listQuotesForBuyers(membershipId: string, bidId: string): Promise<BiddingResult<Quote[]>>;
   awardBid(membershipId: string, bidId: string, expectedRevision: number, quoteId: string, expectedQuoteRevision: number): Promise<BiddingResult<Bid>>;
   listTraderBids(membershipId: string): Promise<BiddingResult<TraderBid[]>>;
@@ -63,6 +64,7 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
     listBidTraderAccess: (m, b) => rpc('list_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b }, many(parseBidTraderAccess)),
     grantBidTraderAccess: (m, b, r, o) => rpc('grant_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_trader_organization_id: o }, parseBid),
     revokeBidTraderAccess: (m, b, r, o) => rpc('revoke_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_trader_organization_id: o }, parseBid),
+    listBidSellerComparisonForBuyers: (m, b) => rpc('list_bid_seller_comparison_for_buyers', { p_actor_membership_id: m, p_bid_id: b }, many(parseBuyerSellerComparison)),
     listQuotesForBuyers: (m, b) => rpc('list_quotes_for_buyers', { p_actor_membership_id: m, p_bid_id: b }, many(parseQuote)),
     awardBid: (m, b, r, q, qr) => rpc('award_bid', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_quote_id: q, p_expected_quote_revision: qr }, parseBid),
     listTraderBids: (m) => rpc('list_trader_bids', { p_actor_membership_id: m }, many(parseTraderBid)),

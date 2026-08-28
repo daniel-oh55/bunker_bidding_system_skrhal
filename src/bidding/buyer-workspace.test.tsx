@@ -2,18 +2,19 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { describe, expect, it, vi } from 'vitest';
 import { BuyerWorkspace } from './buyer-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
-import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, Quote, TraderBid, TraderOrganization } from './types';
+import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerSellerComparison, Quote, TraderBid, TraderOrganization } from './types';
 
 const id = '10000000-0000-4000-8000-000000000001'; const target = '10000000-0000-4000-8000-000000000002'; const bidId = '10000000-0000-4000-8000-000000000003'; const now = '2026-08-03T03:00:00.000Z';
 const ok = <T,>(data: T): BiddingResult<T> => ({ data, error: null });
 const bid = (overrides: Partial<Bid> = {}): Bid => ({ id: bidId, vessel_voyage: 'MV Buyer', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: now, raw_status: 'open', effective_status: 'open', revision: 3, created_by: id, created_by_label: 'Creator', responsible_buyer_user_id: target, responsible_buyer_label: 'Target buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null, ...overrides });
 const boardQuote = (targetBid: Bid, name: string, suffix: string, total = 1000, overrides: Partial<Quote> = {}): Quote => ({ id: `20000000-0000-4000-8000-${suffix.padStart(12, '0')}`, bid_id: targetBid.id, trader_organization_id: `30000000-0000-4000-8000-${suffix.padStart(12, '0')}`, trader_organization_label: name, revision: 1, created_by: id, fuel_prices: targetBid.fuel_items.map((item) => ({ fuel_grade: item.fuel_grade, unit_price: 100 })), barge_fee: 0, total_amount: total, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides });
+const boardComparison = (currentQuote: Quote): BuyerSellerComparison => ({ bid_id: currentQuote.bid_id, trader_organization_id: currentQuote.trader_organization_id, trader_organization_label: currentQuote.trader_organization_label, access_active: currentQuote.access_active, organization_active: currentQuote.organization_active, quote: currentQuote });
 const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
 function fakeClient(bids: Bid[] = [bid()]) {
   const listBids = vi.fn(() => Promise.resolve(ok(bids)));
   const listActiveBuyers = vi.fn(() => Promise.resolve(ok<ActiveBuyer[]>([{ user_id: target, display_label: 'Target buyer', active_buyer_membership_count: 1 }])));
   const listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok<TraderOrganization[]>([])));
-  const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), createQuote: () => Promise.resolve(ok<Quote>(null as never)), updateQuote: () => Promise.resolve(ok<Quote>(null as never)) };
+  const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listBidSellerComparisonForBuyers: () => Promise.resolve(ok<BuyerSellerComparison[]>([])), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), createQuote: () => Promise.resolve(ok<Quote>(null as never)), updateQuote: () => Promise.resolve(ok<Quote>(null as never)) };
   return { client, listBids, listActiveBuyers, listActiveTraderOrganizations };
 }
 
@@ -105,9 +106,11 @@ describe('BUYER workspace', () => {
     const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
     const listQuotesForBuyers = vi.fn(() => Promise.resolve(ok<Quote[]>([])));
     const listBidAudit = vi.fn(() => Promise.resolve(ok<BidAuditEvent[]>([])));
+    const listBidSellerComparisonForBuyers = vi.fn(() => Promise.resolve(ok<BuyerSellerComparison[]>([])));
     client.listBidTraderAccess = listBidTraderAccess;
     client.listQuotesForBuyers = listQuotesForBuyers;
     client.listBidAudit = listBidAudit;
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
 
     const selectedCard = await screen.findByRole('article', { name: 'MV Selected' });
@@ -120,7 +123,8 @@ describe('BUYER workspace', () => {
     expect(screen.getByRole('heading', { name: 'MV Selected' })).toBeInTheDocument();
     expect(listBids).toHaveBeenCalledOnce();
     expect(listBidTraderAccess).toHaveBeenCalledOnce();
-    expect(listQuotesForBuyers).toHaveBeenCalledTimes(2);
+    expect(listQuotesForBuyers).toHaveBeenCalledOnce();
+    expect(listBidSellerComparisonForBuyers).toHaveBeenCalledOnce();
     expect(listBidAudit).toHaveBeenCalledOnce();
   });
 
@@ -182,36 +186,36 @@ describe('BUYER workspace', () => {
     expect(screen.queryByLabelText('Grant TRADER organization')).not.toBeInTheDocument();
   });
 
-  it('isolates a per-bid non-authorization quote failure and removes that bid stale quote data', async () => {
+  it('isolates a per-bid non-authorization SELLER-comparison failure and removes stale participant data', async () => {
     const bidA = bid({ id: '10000000-0000-4000-8000-000000000010', vessel_voyage: 'MV Quote A' });
     const bidB = bid({ id: '10000000-0000-4000-8000-000000000011', vessel_voyage: 'MV Quote B' });
     const { client } = fakeClient([bidA, bidB]);
     let refreshed = false;
-    client.listQuotesForBuyers = vi.fn((_membershipId, requestedBidId) => {
-      if (!refreshed) return Promise.resolve(ok([boardQuote(requestedBidId === bidA.id ? bidA : bidB, requestedBidId === bidA.id ? 'Stale Trader A' : 'Stable Trader B', requestedBidId === bidA.id ? '10' : '11')]));
+    client.listBidSellerComparisonForBuyers = vi.fn((_membershipId, requestedBidId) => {
+      if (!refreshed) return Promise.resolve(ok([boardComparison(boardQuote(requestedBidId === bidA.id ? bidA : bidB, requestedBidId === bidA.id ? 'Stale Seller A' : 'Stable Seller B', requestedBidId === bidA.id ? '10' : '11'))]));
       if (requestedBidId === bidA.id) return Promise.resolve({ data: null, error: { kind: 'unknown' as const, code: null, message: 'isolated failure' } });
-      return Promise.resolve(ok([boardQuote(bidB, 'Fresh Trader B', '12')]));
+      return Promise.resolve(ok([boardComparison(boardQuote(bidB, 'Fresh Seller B', '12'))]));
     });
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
 
-    await screen.findByText('Stale Trader A');
+    await screen.findByText('Stale Seller A');
     refreshed = true;
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     const cardA = await screen.findByRole('article', { name: 'MV Quote A' });
     const cardB = screen.getByRole('article', { name: 'MV Quote B' });
-    expect(await within(cardA).findByText('Quotes temporarily unavailable. Refresh to try again.')).toBeInTheDocument();
-    expect(within(cardA).queryByText('Stale Trader A')).not.toBeInTheDocument();
-    expect(await within(cardB).findByText('Fresh Trader B')).toBeInTheDocument();
+    expect(await within(cardA).findByText('SELLER comparison temporarily unavailable. Refresh to try again.')).toBeInTheDocument();
+    expect(within(cardA).queryByText('Stale Seller A')).not.toBeInTheDocument();
+    expect(await within(cardB).findByText('Fresh Seller B')).toBeInTheDocument();
   });
 
-  it('fails closed when any board quote request returns an authorization failure', async () => {
+  it('fails closed when any board SELLER-comparison request returns an authorization failure', async () => {
     const { client } = fakeClient();
     const onAuthorizationFailure = vi.fn();
-    client.listQuotesForBuyers = vi.fn(() => Promise.resolve({ data: null, error: { kind: 'authorization' as const, code: '42501', message: 'Quote authorization changed' } }));
+    client.listBidSellerComparisonForBuyers = vi.fn(() => Promise.resolve({ data: null, error: { kind: 'authorization' as const, code: '42501', message: 'SELLER comparison authorization changed' } }));
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
 
     await waitFor(() => expect(onAuthorizationFailure).toHaveBeenCalledOnce());
-    expect(screen.getByRole('alert')).toHaveTextContent('Quote authorization changed');
+    expect(screen.getByRole('alert')).toHaveTextContent('SELLER comparison authorization changed');
     expect(screen.queryByRole('article', { name: 'MV Buyer' })).not.toBeInTheDocument();
     expect(screen.queryAllByRole('option', { name: 'Target buyer' })).toHaveLength(0);
   });
@@ -222,16 +226,16 @@ describe('BUYER workspace', () => {
     const bidC = bid({ id: '10000000-0000-4000-8000-000000000015', vessel_voyage: 'MV Authorization Race C' });
     const { client } = fakeClient([bidA, bidB, bidC]);
     const onAuthorizationFailure = vi.fn();
-    const pending = new Map<string, { promise: Promise<BiddingResult<Quote[]>>; resolve: (value: BiddingResult<Quote[]>) => void }>();
-    const listQuotesForBuyers = vi.fn<BiddingClient['listQuotesForBuyers']>((_membershipId, requestedBidId) => {
-      const request = deferred<BiddingResult<Quote[]>>();
+    const pending = new Map<string, { promise: Promise<BiddingResult<BuyerSellerComparison[]>>; resolve: (value: BiddingResult<BuyerSellerComparison[]>) => void }>();
+    const listBidSellerComparisonForBuyers = vi.fn<BiddingClient['listBidSellerComparisonForBuyers']>((_membershipId, requestedBidId) => {
+      const request = deferred<BiddingResult<BuyerSellerComparison[]>>();
       pending.set(requestedBidId, request);
       return request.promise;
     });
-    client.listQuotesForBuyers = listQuotesForBuyers;
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
 
-    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(3));
     const denied = pending.get(bidB.id)!;
     await act(async () => {
       denied.resolve({ data: null, error: { kind: 'authorization', code: '42501', message: 'Quote authorization changed during board load' } });
@@ -247,75 +251,78 @@ describe('BUYER workspace', () => {
     const lateA = pending.get(bidA.id)!;
     const lateC = pending.get(bidC.id)!;
     await act(async () => {
-      lateA.resolve(ok([boardQuote(bidA, 'Late Authorized Trader A', '13')]));
-      lateC.resolve(ok([boardQuote(bidC, 'Late Authorized Trader C', '15')]));
+      lateA.resolve(ok([boardComparison(boardQuote(bidA, 'Late Authorized Seller A', '13'))]));
+      lateC.resolve(ok([boardComparison(boardQuote(bidC, 'Late Authorized Seller C', '15'))]));
       await Promise.all([lateA.promise, lateC.promise]);
     });
-    expect(screen.queryByText('Late Authorized Trader A')).not.toBeInTheDocument();
-    expect(screen.queryByText('Late Authorized Trader C')).not.toBeInTheDocument();
+    expect(screen.queryByText('Late Authorized Seller A')).not.toBeInTheDocument();
+    expect(screen.queryByText('Late Authorized Seller C')).not.toBeInTheDocument();
     expect(screen.queryByRole('article')).not.toBeInTheDocument();
     expect(onAuthorizationFailure).toHaveBeenCalledOnce();
   });
 
   it('ignores a late board quote result from a superseded view generation', async () => {
     const currentBid = bid({ vessel_voyage: 'MV Generation Guard' });
-    const stale = deferred<BiddingResult<Quote[]>>();
+    const stale = deferred<BiddingResult<BuyerSellerComparison[]>>();
     const { client } = fakeClient([currentBid]);
-    client.listQuotesForBuyers = vi.fn()
+    client.listBidSellerComparisonForBuyers = vi.fn()
       .mockImplementationOnce(() => stale.promise)
-      .mockResolvedValue(ok([boardQuote(currentBid, 'Current View Trader', '20')]));
+      .mockResolvedValue(ok([boardComparison(boardQuote(currentBid, 'Current View Seller', '20'))]));
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
 
     await screen.findByRole('article', { name: 'MV Generation Guard' });
     fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
-    await screen.findByText('Current View Trader');
-    await act(async () => { stale.resolve(ok([boardQuote(currentBid, 'Stale All View Trader', '21')])); await stale.promise; });
-    expect(screen.getByText('Current View Trader')).toBeInTheDocument();
-    expect(screen.queryByText('Stale All View Trader')).not.toBeInTheDocument();
+    await screen.findByText('Current View Seller');
+    await act(async () => { stale.resolve(ok([boardComparison(boardQuote(currentBid, 'Stale All View Seller', '21'))])); await stale.promise; });
+    expect(screen.getByText('Current View Seller')).toBeInTheDocument();
+    expect(screen.queryByText('Stale All View Seller')).not.toBeInTheDocument();
   });
 
-  it('bounds board quote loading to four concurrent requests', async () => {
+  it('bounds board SELLER-comparison loading to four concurrent requests', async () => {
     const bids = Array.from({ length: 6 }, (_, index) => bid({ id: `10000000-0000-4000-8000-${String(index + 30).padStart(12, '0')}`, vessel_voyage: `MV Concurrency ${index + 1}` }));
     const { client } = fakeClient(bids);
-    const pending: ((value: BiddingResult<Quote[]>) => void)[] = [];
+    const pending: ((value: BiddingResult<BuyerSellerComparison[]>) => void)[] = [];
     let active = 0; let maximumActive = 0;
-    const listQuotesForBuyers = vi.fn<BiddingClient['listQuotesForBuyers']>(() => new Promise<BiddingResult<Quote[]>>((resolve) => {
+    const listBidSellerComparisonForBuyers = vi.fn<BiddingClient['listBidSellerComparisonForBuyers']>(() => new Promise<BiddingResult<BuyerSellerComparison[]>>((resolve) => {
       active += 1; maximumActive = Math.max(maximumActive, active);
       pending.push((value) => { active -= 1; resolve(value); });
     }));
-    client.listQuotesForBuyers = listQuotesForBuyers;
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
 
-    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(4));
     expect(maximumActive).toBe(4);
     await act(async () => { pending.shift()!(ok([])); await Promise.resolve(); });
-    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(5));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(5));
     expect(maximumActive).toBe(4);
     await act(async () => { while (pending.length > 0) pending.shift()!(ok([])); await Promise.resolve(); });
-    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(6));
     await act(async () => { while (pending.length > 0) pending.shift()!(ok([])); await Promise.resolve(); });
   });
 
-  it('reloadVersion refreshes both the authoritative bid list and board quotes', async () => {
+  it('reloadVersion refreshes both the authoritative bid list and board SELLER comparison', async () => {
     const { client, listBids } = fakeClient();
-    const listQuotesForBuyers = vi.fn(() => Promise.resolve(ok<Quote[]>([])));
-    client.listQuotesForBuyers = listQuotesForBuyers;
+    const listBidSellerComparisonForBuyers = vi.fn(() => Promise.resolve(ok<BuyerSellerComparison[]>([])));
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
     const onAuthorizationFailure = vi.fn();
     const { rerender } = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} reloadVersion={0} />);
-    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledOnce());
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledOnce());
 
     rerender(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} reloadVersion={1} />);
     await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(2));
   });
 
-  it('keeps Manage bid neutral and refreshes board quotes after a successful existing mutation', async () => {
+  it('keeps Manage bid detail on existing access/quote RPCs and refreshes one board comparison after mutation', async () => {
     const initial = bid({ vessel_voyage: 'MV Mutation' });
     const closed = bid({ vessel_voyage: 'MV Mutation', raw_status: 'closed', effective_status: 'closed', revision: 4, closed_at: now });
     const { client, listBids } = fakeClient([initial]);
-    const listQuotesForBuyers = vi.fn(() => Promise.resolve(ok([boardQuote(initial, 'Mutation Trader', '40')])));
+    const mutationQuote = boardQuote(initial, 'Mutation Seller', '40');
+    const listBidSellerComparisonForBuyers = vi.fn(() => Promise.resolve(ok([boardComparison(mutationQuote)])));
+    const listQuotesForBuyers = vi.fn(() => Promise.resolve(ok([mutationQuote])));
     const awardBid = vi.fn<BiddingClient['awardBid']>();
     client.listQuotesForBuyers = listQuotesForBuyers;
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
     client.listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
     client.listBidAudit = vi.fn(() => Promise.resolve(ok<BidAuditEvent[]>([])));
     client.closeBid = vi.fn(() => Promise.resolve(ok(closed)));
@@ -329,7 +336,8 @@ describe('BUYER workspace', () => {
     listBids.mockResolvedValueOnce(ok([closed]));
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(listQuotesForBuyers).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(2));
     expect(screen.getByRole('article', { name: 'MV Mutation' })).toHaveClass('status-closed');
     expect(awardBid).not.toHaveBeenCalled();
   });
@@ -466,11 +474,13 @@ describe('BUYER workspace', () => {
     const { client, listBids } = fakeClient([initial]);
     const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
     const listQuotesForBuyers = vi.fn(() => Promise.resolve(ok<Quote[]>([])));
+    const listBidSellerComparisonForBuyers = vi.fn(() => Promise.resolve(ok<BuyerSellerComparison[]>([])));
     const listBidAudit = vi.fn(() => Promise.resolve(ok<BidAuditEvent[]>([])));
     const closeBid = vi.fn<BiddingClient['closeBid']>();
     const error = { kind: code === '40001' ? 'conflict' : code === '55000' ? 'lifecycle' : 'not_found', code, message: 'Safe BUYER state error' } as const;
     client.listBidTraderAccess = listBidTraderAccess;
     client.listQuotesForBuyers = listQuotesForBuyers;
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
     client.listBidAudit = listBidAudit;
     client.closeBid = closeBid;
     closeBid.mockResolvedValueOnce({ data: null, error });
@@ -486,7 +496,8 @@ describe('BUYER workspace', () => {
       expect(closeBid).toHaveBeenCalledOnce();
       expect(listBids).toHaveBeenCalledTimes(2);
       expect(listBidTraderAccess).toHaveBeenCalledTimes(2);
-      expect(listQuotesForBuyers).toHaveBeenCalledTimes(4);
+      expect(listQuotesForBuyers).toHaveBeenCalledTimes(2);
+      expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(2);
       expect(listBidAudit).toHaveBeenCalledTimes(2);
     });
     expect(screen.getByRole('alert')).toHaveTextContent('Safe BUYER state error');

@@ -1,9 +1,9 @@
-import type { Bid, Quote } from './types';
+import type { Bid, BuyerSellerComparison, Quote } from './types';
 import { StatusBadge } from '../ui/workspace-ui';
 
-export type BuyerBidBoardQuoteState =
+export type BuyerBidBoardSellerState =
   | { status: 'loading' }
-  | { status: 'success'; quotes: Quote[] }
+  | { status: 'success'; sellers: BuyerSellerComparison[] }
   | { status: 'error' };
 
 const number = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
@@ -47,6 +47,13 @@ const quoteMetadata = (bid: Bid, quote: Quote, comparisonEligible: boolean) => {
   }
   return metadata.join(' · ');
 };
+const sellerMetadata = (bid: Bid, seller: BuyerSellerComparison, comparisonEligible: boolean) => {
+  if (seller.quote) return quoteMetadata(bid, seller.quote, comparisonEligible);
+  const metadata = ['Current scope'];
+  if (!seller.organization_active) metadata.push('Organization inactive');
+  metadata.push('Excluded from current comparison');
+  return metadata.join(' · ');
+};
 
 function AdvisoryComparison({ bid, quotes }: { bid: Bid; quotes: Quote[] }) {
   if (bid.effective_status !== 'open' && bid.effective_status !== 'closed') return null;
@@ -69,18 +76,23 @@ function AdvisoryComparison({ bid, quotes }: { bid: Bid; quotes: Quote[] }) {
   </div>;
 }
 
-export function BuyerBidBoardCard({ bid, quoteState, currentTimeMs, selected, onManage }: {
+export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, onManage }: {
   bid: Bid;
-  quoteState: BuyerBidBoardQuoteState;
+  sellerState: BuyerBidBoardSellerState;
   currentTimeMs: number;
   selected: boolean;
   onManage: () => void;
 }) {
   const headingId = `buyer-board-card-${bid.id}`;
   const remaining = remainingTime(bid.deadline_at, currentTimeMs);
-  const quotes = quoteState.status === 'success'
-    ? [...quoteState.quotes].sort((a, b) => Number(b.is_awarded) - Number(a.is_awarded) || a.total_amount - b.total_amount || a.id.localeCompare(b.id))
+  const sellers = sellerState.status === 'success'
+    ? [...sellerState.sellers].sort((a, b) => Number(Boolean(b.quote?.is_awarded)) - Number(Boolean(a.quote?.is_awarded))
+      || Number(Boolean(b.quote)) - Number(Boolean(a.quote))
+      || (a.quote?.total_amount ?? 0) - (b.quote?.total_amount ?? 0)
+      || a.trader_organization_label.localeCompare(b.trader_organization_label)
+      || a.trader_organization_id.localeCompare(b.trader_organization_id))
     : [];
+  const quotes = sellers.flatMap((seller) => seller.quote ? [seller.quote] : []);
   const comparisonRanks = new Map(
     quotes.filter((quote) => isComparisonEligible(bid, quote)).sort((a, b) => a.total_amount - b.total_amount || a.id.localeCompare(b.id)).map((quote, index) => [quote.id, index + 1]),
   );
@@ -97,28 +109,32 @@ export function BuyerBidBoardCard({ bid, quoteState, currentTimeMs, selected, on
       <div><dt>Responsible BUYER</dt><dd>{bid.responsible_buyer_label}</dd></div>
       <div className="buyer-board-fuels"><dt>Fuel request</dt><dd>{bid.fuel_items.map((item) => <span key={item.fuel_grade}><strong>{item.fuel_grade.toUpperCase()}</strong> {number(item.quantity_mt)} MT</span>)}</dd></div>
     </dl>
-    <section className="buyer-board-quotes" aria-label={`Quote comparison for ${bid.vessel_voyage}`}>
-      <div className="buyer-board-quotes-heading"><div><p className="eyebrow">BUYER-visible comparison</p><h4>TRADER quotes</h4></div>{quoteState.status === 'success' ? <span>{quotes.length} received</span> : null}</div>
-      {quoteState.status === 'loading' ? <p className="buyer-board-quote-state" role="status">Loading quotes…</p>
-        : quoteState.status === 'error' ? <p className="buyer-board-quote-state is-error" role="status">Quotes temporarily unavailable. Refresh to try again.</p>
-          : quotes.length === 0 ? <p className="buyer-board-quote-state">No quotes received yet</p>
-            : <div className="buyer-board-quote-scroll" tabIndex={0} role="region" aria-label={`Scrollable quote table for ${bid.vessel_voyage}`}>
+    <section className="buyer-board-quotes" aria-label={`SELLER comparison for ${bid.vessel_voyage}`}>
+      <div className="buyer-board-quotes-heading"><div><p className="eyebrow">BUYER-visible comparison</p><h4>SELLER comparison</h4></div>{sellerState.status === 'success' ? <span>{sellers.length} SELLER{sellers.length === 1 ? '' : 's'} · {quotes.length} quote{quotes.length === 1 ? '' : 's'} received</span> : null}</div>
+      {sellerState.status === 'loading' ? <p className="buyer-board-quote-state" role="status">Loading SELLER comparison…</p>
+        : sellerState.status === 'error' ? <p className="buyer-board-quote-state is-error" role="status">SELLER comparison temporarily unavailable. Refresh to try again.</p>
+          : sellers.length === 0 ? <p className="buyer-board-quote-state">No SELLER participants</p>
+            : <div className="buyer-board-quote-scroll" tabIndex={0} role="region" aria-label={`Scrollable SELLER comparison table for ${bid.vessel_voyage}`}>
               <table>
-                <thead><tr><th scope="col">Rank</th><th scope="col">TRADER organization</th>{bid.fuel_items.map((item) => <th scope="col" key={item.fuel_grade}>{item.fuel_grade.toUpperCase()} ($/MT)</th>)}<th scope="col">Barge fee ($)</th><th scope="col">Authoritative total ($)</th></tr></thead>
-                <tbody>{quotes.map((quote) => {
-                  const comparisonEligible = isComparisonEligible(bid, quote);
-                  return <tr className={`${quote.is_awarded ? 'is-awarded ' : ''}${!quote.is_awarded && !comparisonEligible ? 'is-comparison-excluded' : ''}`.trim()} key={quote.id}>
-                  <td className="buyer-board-rank">{quote.is_awarded ? 'Awarded' : comparisonRanks.get(quote.id) ?? '—'}</td>
-                  <th scope="row"><strong>{quote.trader_organization_label}</strong><small>{quoteMetadata(bid, quote, comparisonEligible)}</small></th>
-                  {bid.fuel_items.map((item) => <td key={item.fuel_grade}>{quotePrice(quote, item.fuel_grade)}</td>)}
-                  <td>{money(quote.barge_fee)}</td><td className="buyer-board-total">{money(quote.total_amount)}<small>Server total</small></td>
-                </tr>})}</tbody>
+                <thead><tr><th scope="col">Rank</th><th scope="col">SELLER</th><th scope="col">Status</th>{bid.fuel_items.map((item) => <th scope="col" key={item.fuel_grade}>{item.fuel_grade.toUpperCase()} ($/MT)</th>)}<th scope="col">Barge fee ($)</th><th scope="col">Authoritative total ($)</th></tr></thead>
+                <tbody>{sellers.map((seller) => {
+                  const quote = seller.quote;
+                  const comparisonEligible = quote ? isComparisonEligible(bid, quote) : false;
+                  const status = quote?.is_awarded ? 'Awarded' : quote ? 'Quoted' : 'Awaiting quote';
+                  return <tr className={`${quote?.is_awarded ? 'is-awarded ' : ''}${!quote?.is_awarded && !comparisonEligible ? 'is-comparison-excluded' : ''}`.trim()} key={seller.trader_organization_id}>
+                  <td className="buyer-board-rank">{quote?.is_awarded ? 'Awarded' : quote ? comparisonRanks.get(quote.id) ?? '—' : '—'}</td>
+                  <th scope="row"><strong>{seller.trader_organization_label}</strong><small>{sellerMetadata(bid, seller, comparisonEligible)}</small></th>
+                  <td className="buyer-board-seller-status">{status}</td>
+                  {bid.fuel_items.map((item) => <td key={item.fuel_grade}>{quote ? quotePrice(quote, item.fuel_grade) : '—'}</td>)}
+                  <td>{quote ? money(quote.barge_fee) : '—'}</td><td className="buyer-board-total">{quote ? <>{money(quote.total_amount)}<small>Server total</small></> : '—'}</td>
+                </tr>;
+                })}</tbody>
               </table>
             </div>}
     </section>
     {bid.effective_status === 'awarded' && bid.awarded_trader_organization_label && bid.awarded_total_amount !== null
       ? <div className="buyer-board-result is-awarded"><span>Awarded result · authoritative</span><strong>{bid.awarded_trader_organization_label} · {money(bid.awarded_total_amount)}</strong><small>Manual server-authorized award; not an automatic lowest-price selection.</small></div>
-      : quoteState.status === 'success' && quotes.length > 0 ? <AdvisoryComparison bid={bid} quotes={quotes} /> : null}
+      : sellerState.status === 'success' && sellers.length > 0 ? <AdvisoryComparison bid={bid} quotes={quotes} /> : null}
     <footer className="buyer-board-card-footer">
       <span>Creator: {bid.created_by_label} · Revision {bid.revision}</span>
       <button type="button" aria-pressed={selected} onClick={onManage}>{selected ? 'Managing bid' : 'Manage bid'}</button>

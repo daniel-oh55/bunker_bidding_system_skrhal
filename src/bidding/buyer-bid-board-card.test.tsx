@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BuyerBidBoardCard } from './buyer-bid-board-card';
-import type { Bid, Quote } from './types';
+import type { Bid, BuyerSellerComparison, Quote } from './types';
 
 const now = '2026-08-26T03:00:00.000Z';
 const bidId = '10000000-0000-4000-8000-000000000001';
@@ -17,9 +17,30 @@ const quote = (name: string, total: number, overrides: Partial<Quote> = {}): Quo
   trader_organization_label: name, revision: 1, created_by: '10000000-0000-4000-8000-000000000004', fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 100 }],
   barge_fee: 7, total_amount: total, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides,
 });
+const comparison = (currentQuote: Quote): BuyerSellerComparison => ({
+  bid_id: currentQuote.bid_id,
+  trader_organization_id: currentQuote.trader_organization_id,
+  trader_organization_label: currentQuote.trader_organization_label,
+  access_active: currentQuote.access_active,
+  organization_active: currentQuote.organization_active,
+  quote: currentQuote,
+});
+const awaiting = (name: string, suffix: string, overrides: Partial<BuyerSellerComparison> = {}): BuyerSellerComparison => ({
+  bid_id: bidId,
+  trader_organization_id: `30000000-0000-4000-8000-${suffix.padStart(12, '0')}`,
+  trader_organization_label: name,
+  access_active: true,
+  organization_active: true,
+  quote: null,
+  ...overrides,
+});
 const renderCard = (currentBid = bid(), quotes: Quote[] = [], onManage = vi.fn()) => {
-  render(<BuyerBidBoardCard bid={currentBid} quoteState={{ status: 'success', quotes }} currentTimeMs={Date.parse(now)} selected={false} onManage={onManage} />);
+  render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: quotes.map(comparison) }} currentTimeMs={Date.parse(now)} selected={false} onManage={onManage} />);
   return { card: screen.getByRole('article', { name: currentBid.vessel_voyage }), onManage };
+};
+const renderSellers = (currentBid: Bid, sellers: BuyerSellerComparison[]) => {
+  render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} />);
+  return screen.getByRole('article', { name: currentBid.vessel_voyage });
 };
 
 describe('BuyerBidBoardCard', () => {
@@ -30,7 +51,7 @@ describe('BuyerBidBoardCard', () => {
     expect(within(card).getByText('Buyer Operator')).toBeInTheDocument();
     expect(within(card).getByText('VLSFO')).toBeInTheDocument();
     expect(within(card).getByRole('table')).toBeInTheDocument();
-    expect(within(card).getByRole('region', { name: /Scrollable quote table/ })).toHaveAttribute('tabindex', '0');
+    expect(within(card).getByRole('region', { name: /Scrollable SELLER comparison table/ })).toHaveAttribute('tabindex', '0');
     fireEvent.click(within(card).getByRole('button', { name: 'Manage bid' }));
     expect(onManage).toHaveBeenCalledOnce();
   });
@@ -40,7 +61,7 @@ describe('BuyerBidBoardCard', () => {
     const prices = [{ fuel_grade: 'hsfo' as const, unit_price: 80 }, { fuel_grade: 'lsfo' as const, unit_price: 90 }, { fuel_grade: 'ulsfo' as const, unit_price: 70 }];
     const { card } = renderCard(currentBid, [quote('Dynamic Trader', 999, { fuel_prices: prices })]);
     expect(within(card).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
-      'Rank', 'TRADER organization', 'ULSFO ($/MT)', 'HSFO ($/MT)', 'LSFO ($/MT)', 'Barge fee ($)', 'Authoritative total ($)',
+      'Rank', 'SELLER', 'Status', 'ULSFO ($/MT)', 'HSFO ($/MT)', 'LSFO ($/MT)', 'Barge fee ($)', 'Authoritative total ($)',
     ]);
   });
 
@@ -134,6 +155,34 @@ describe('BuyerBidBoardCard', () => {
     expect(result).toHaveTextContent('not an automatic lowest-price selection');
     expect(within(card).queryByText(/Lowest .*offer/)).not.toBeInTheDocument();
     expect(within(card).getByRole('rowheader', { name: /Chosen Trader/ }).closest('tr')).toHaveClass('is-awarded');
+    expect(within(within(card).getByRole('rowheader', { name: /Chosen Trader/ }).closest('tr')!).getAllByText('Awarded')).toHaveLength(2);
+  });
+
+  it('renders a scoped unquoted SELLER as Awaiting quote with no rank or commercial values', () => {
+    const card = renderSellers(bid(), [awaiting('Waiting Seller', '71')]);
+    const row = within(card).getByRole('rowheader', { name: /Waiting Seller/ }).closest('tr')!;
+    expect(within(row).getByText('Awaiting quote')).toBeInTheDocument();
+    expect(within(row).getAllByText('—')).toHaveLength(4);
+    expect(row).toHaveClass('is-comparison-excluded');
+    expect(within(card).getByText('No current comparison offers')).toBeInTheDocument();
+    expect(within(card).getByText('1 SELLER · 0 quotes received')).toBeInTheDocument();
+  });
+
+  it('excludes awaiting rows from mixed ranking and the lowest-price result', () => {
+    const quoted = quote('Quoted Seller', 100, { eligible_for_award: false });
+    const card = renderSellers(bid(), [awaiting('Waiting Seller', '72'), comparison(quoted)]);
+    const waitingRow = within(card).getByRole('rowheader', { name: /Waiting Seller/ }).closest('tr')!;
+    const quotedRow = within(card).getByRole('rowheader', { name: /Quoted Seller/ }).closest('tr')!;
+    expect(within(waitingRow).getAllByText('—')).toHaveLength(4);
+    expect(within(quotedRow).getByText('1')).toBeInTheDocument();
+    expect(within(quotedRow).getByText('Quoted')).toBeInTheDocument();
+    expect(within(card).getByText(/Quoted Seller · \$100/)).toBeInTheDocument();
+    expect(within(card).getByText('2 SELLERs · 1 quote received')).toBeInTheDocument();
+  });
+
+  it('shows inactive organization metadata for an awaiting participant', () => {
+    const card = renderSellers(bid(), [awaiting('Inactive Waiting Seller', '73', { organization_active: false })]);
+    expect(within(card).getByRole('rowheader', { name: /Inactive Waiting Seller/ })).toHaveTextContent('Organization inactive');
   });
 
   it('keeps CANCELLED-bid quote history visible without an award-candidate advisory result', () => {
@@ -149,12 +198,13 @@ describe('BuyerBidBoardCard', () => {
 
   it('renders compact empty, loading, and isolated unavailable quote states', () => {
     const currentBid = bid();
-    const { rerender } = render(<BuyerBidBoardCard bid={currentBid} quoteState={{ status: 'success', quotes: [] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} />);
-    expect(screen.getByText('No quotes received yet')).toBeInTheDocument();
-    rerender(<BuyerBidBoardCard bid={currentBid} quoteState={{ status: 'loading' }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Loading quotes');
-    rerender(<BuyerBidBoardCard bid={currentBid} quoteState={{ status: 'error' }} currentTimeMs={Date.parse(now)} selected onManage={vi.fn()} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Quotes temporarily unavailable');
+    const { rerender } = render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} />);
+    expect(screen.getByText('No SELLER participants')).toBeInTheDocument();
+    expect(screen.getByText('0 SELLERs · 0 quotes received')).toBeInTheDocument();
+    rerender(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'loading' }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading SELLER comparison');
+    rerender(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'error' }} currentTimeMs={Date.parse(now)} selected onManage={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('SELLER comparison temporarily unavailable');
     expect(screen.getByRole('button', { name: 'Managing bid' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
