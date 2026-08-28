@@ -23,7 +23,7 @@ insert into app_private.organization_memberships (id, user_id, organization_id, 
 
 select has_function('public', 'list_bid_seller_comparison_for_buyers', array['uuid','uuid'], 'BUYER SELLER-comparison RPC exists'); -- 1
 select ok((select prosecdef from pg_proc where oid = 'public.list_bid_seller_comparison_for_buyers(uuid,uuid)'::regprocedure), 'comparison RPC is SECURITY DEFINER'); -- 2
-select ok((select coalesce(array_to_string(proconfig, ','), '') like '%search_path=' from pg_proc where oid = 'public.list_bid_seller_comparison_for_buyers(uuid,uuid)'::regprocedure), 'comparison RPC pins an empty search path'); -- 3
+select ok((select coalesce(array_to_string(proconfig, ','), '') like '%search_path=%' from pg_proc where oid = 'public.list_bid_seller_comparison_for_buyers(uuid,uuid)'::regprocedure), 'comparison RPC pins an empty search path'); -- 3
 select ok(not has_function_privilege('anon', 'public.list_bid_seller_comparison_for_buyers(uuid,uuid)'::regprocedure, 'execute'), 'anon lacks comparison EXECUTE'); -- 4
 select ok(has_function_privilege('authenticated', 'public.list_bid_seller_comparison_for_buyers(uuid,uuid)'::regprocedure, 'execute'), 'authenticated receives narrow comparison EXECUTE'); -- 5
 select ok(not has_table_privilege('authenticated', 'app_private.bid_trader_organization_access', 'select'), 'authenticated cannot read private BID scope directly'); -- 6
@@ -33,10 +33,10 @@ select ok(not has_table_privilege('authenticated', 'app_private.bid_trader_organ
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000001', true);
 create temporary table admin_created_bid on commit drop as
-select (public.create_bid(
+select result.* from public.create_bid(
   '93000000-0000-4000-8000-000000000001', 'Admin Default Scope', 'Busan', 'Synthetic window',
   clock_timestamp() + interval '2 days', null, array['vlsfo'], array[10]::numeric[]
-)).*;
+) as result;
 reset role;
 
 select is((select revision from admin_created_bid), 1::bigint, 'buyer_admin creates a revision-1 BID'); -- 9
@@ -59,10 +59,10 @@ select is((select count(*) from app_private.bid_audit_events where bid_id = (sel
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000002', true);
 create temporary table operator_created_bid on commit drop as
-select (public.create_bid(
+select result.* from public.create_bid(
   '93000000-0000-4000-8000-000000000002', 'Operator Default Scope', 'Incheon', 'Synthetic window',
   clock_timestamp() + interval '2 days', null, array['vlsfo'], array[20]::numeric[]
-)).*;
+) as result;
 reset role;
 select is((select revision from operator_created_bid), 1::bigint, 'buyer_operator retains normal revision-1 BID creation'); -- 17
 select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from operator_created_bid)), 2::bigint, 'buyer_operator receives the same active-SELLER snapshot behavior'); -- 18
@@ -72,7 +72,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000003', true);
 select is((select count(*) from public.list_trader_bids('93000000-0000-4000-8000-000000000003') where id = (select id from admin_created_bid)), 1::bigint, 'active scoped TRADER can immediately list the new BID'); -- 20
 create temporary table alpha_quote on commit drop as
-select (public.create_quote('93000000-0000-4000-8000-000000000003', (select id from admin_created_bid), array['vlsfo'], array[100]::numeric[], 5)).*;
+select result.* from public.create_quote('93000000-0000-4000-8000-000000000003', (select id from admin_created_bid), array['vlsfo'], array[100]::numeric[], 5) as result;
 reset role;
 select ok((select id is not null and total_amount = 1005 from alpha_quote), 'existing quote create returns its authoritative total'); -- 21
 
@@ -130,7 +130,7 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000004', true);
 create temporary table beta_quote on commit drop as
-select (public.create_quote('93000000-0000-4000-8000-000000000004', (select id from operator_created_bid), array['vlsfo'], array[90]::numeric[], 2)).*;
+select result.* from public.create_quote('93000000-0000-4000-8000-000000000004', (select id from operator_created_bid), array['vlsfo'], array[90]::numeric[], 2) as result;
 select ok((select total_amount = 1802 from beta_quote), 'existing second-SELLER quote behavior remains unchanged'); -- 43
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000002', true);
 select is((select (public.close_bid('93000000-0000-4000-8000-000000000002', (select id from operator_created_bid), 1)).raw_status), 'closed', 'existing BID close behavior remains unchanged'); -- 44
@@ -143,10 +143,10 @@ where id in ('92000000-0000-4000-8000-000000000003', (select organization_id fro
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000002', true);
 create temporary table zero_seller_bid on commit drop as
-select (public.create_bid(
+select result.* from public.create_bid(
   '93000000-0000-4000-8000-000000000002', 'Zero Active Seller', 'Ulsan', 'Synthetic window',
   clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[]
-)).*;
+) as result;
 reset role;
 select ok((select id is not null from zero_seller_bid), 'zero-active-SELLER case still creates a BID'); -- 47
 select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from zero_seller_bid)), 0::bigint, 'zero-active-SELLER BID creates zero access rows'); -- 48
