@@ -35,6 +35,14 @@ export type Bid = {
 export type TraderBid = Omit<Bid, 'created_by' | 'created_by_label' | 'responsible_buyer_user_id' | 'responsible_buyer_label' | 'awarded_quote_id' | 'awarded_trader_organization_id' | 'awarded_trader_organization_label' | 'awarded_total_amount' | 'awarded_at'>;
 export type ActiveBuyer = { user_id: string; display_label: string; active_buyer_membership_count: number };
 export type TraderOrganization = { organization_id: string; organization_label: string };
+export type SellerOrganizationAdmin = {
+  organization_id: string;
+  organization_label: string;
+  organization_status: 'active' | 'inactive' | 'suspended';
+  active_trader_membership_count: number;
+  created_at: string;
+  updated_at: string;
+};
 export type BidTraderAccess = { bid_id: string; trader_organization_id: string; trader_organization_label: string; granted_at: string; granted_by_user_id: string; granted_by_membership_id: string };
 export type Quote = { id: string; bid_id: string; trader_organization_id: string; trader_organization_label: string; revision: number; created_by: string; fuel_prices: QuoteFuelPrice[]; barge_fee: number; total_amount: number; created_at: string; updated_at: string; access_active: boolean; organization_active: boolean; eligible_for_award: boolean; is_awarded: boolean };
 export type BidAuditEvent = { id: string; bid_id: string; event_type: string; actor_user_id: string; actor_membership_id: string; actor_organization_id: string; actor_role: 'buyer_admin' | 'buyer_operator' | 'trader'; occurred_at: string; prior_revision: number | null; resulting_revision: number; prior_status: BidStatus | null; resulting_status: BidStatus; prior_responsible_buyer_user_id: string | null; resulting_responsible_buyer_user_id: string; before_snapshot: Record<string, unknown> | null; after_snapshot: Record<string, unknown> };
@@ -61,6 +69,10 @@ function bool(value: unknown): boolean | null { return typeof value === 'boolean
 const mailIntakeKeys = new Set([
   'id', 'received_at', 'subject', 'vessel_voyage', 'port_name', 'delivery_window',
   'fuel_items', 'warnings', 'status', 'revision', 'created_at', 'updated_at', 'dismissed_at',
+]);
+const sellerOrganizationAdminKeys = new Set([
+  'organization_id', 'organization_label', 'organization_status',
+  'active_trader_membership_count', 'created_at', 'updated_at',
 ]);
 function exactKeys(value: Record<string, unknown>, allowed: Set<string>): boolean { return Object.keys(value).length === allowed.size && Object.keys(value).every((key) => allowed.has(key)); }
 function boundedText(value: unknown, maximum: number, allowEmpty = false): string | null {
@@ -122,6 +134,29 @@ function parseMailIntakeItem(value: unknown, expectedStatus: MailIntakeItem['sta
 }
 export function parsePendingMailIntakeItem(value: unknown): MailIntakeItem | null { return parseMailIntakeItem(value, 'pending'); }
 export function parseDismissedMailIntakeItem(value: unknown): MailIntakeItem | null { return parseMailIntakeItem(value, 'dismissed'); }
+export function parseSellerOrganizationAdmin(value: unknown): SellerOrganizationAdmin | null {
+  const r = record(value);
+  if (
+    !r
+    || !exactKeys(r, sellerOrganizationAdminKeys)
+    || !id(r.organization_id)
+    || boundedText(r.organization_label, 120) === null
+    || !['active', 'inactive', 'suspended'].includes(r.organization_status as string)
+    || typeof r.active_trader_membership_count !== 'number'
+    || !Number.isSafeInteger(r.active_trader_membership_count)
+    || r.active_trader_membership_count < 0
+    || !mailIntakeTimestamp(r.created_at)
+    || !mailIntakeTimestamp(r.updated_at)
+  ) return null;
+  return {
+    organization_id: r.organization_id as string,
+    organization_label: r.organization_label as string,
+    organization_status: r.organization_status as SellerOrganizationAdmin['organization_status'],
+    active_trader_membership_count: r.active_trader_membership_count,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+  };
+}
 
 function fuelItems(value: unknown): BidFuelItem[] | null {
   if (!Array.isArray(value) || value.length < 1 || value.length > 5) return null;

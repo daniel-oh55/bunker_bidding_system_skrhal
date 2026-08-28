@@ -4,6 +4,7 @@ import { CreateBidForm } from './bid-form';
 import { BuyerBidBoardCard, type BuyerBidBoardQuoteState } from './buyer-bid-board-card';
 import { BuyerBidDetail } from './buyer-bid-detail';
 import { MailIntakeQueue } from './mail-intake-queue';
+import { SellerManagement } from './seller-management';
 import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, Quote, TraderOrganization, WorkflowError } from './types';
 import { WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
 
@@ -33,7 +34,7 @@ const groupBidsByCreator = (bids: Bid[]) => {
   return groups;
 };
 
-export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; onAuthorizationFailure: () => void; reloadVersion?: number }) {
+export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_operator', onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; membershipRole?: 'buyer_admin' | 'buyer_operator'; onAuthorizationFailure: () => void; reloadVersion?: number }) {
   const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null);
   const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [boardQuotes, setBoardQuotes] = useState<Record<string, BuyerBidBoardQuoteState>>({}); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
   const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({});
@@ -168,6 +169,7 @@ export function BuyerWorkspace({ client, membershipId, onAuthorizationFailure, r
       </fieldset>
       {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
     </section>
+    {membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, responsible || undefined, selectedRef.current?.id)} /> : null}
     <MailIntakeQueue client={client} membershipId={membershipId} onAuthorizationFailure={onAuthorizationFailure} />
     <CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} />
     <section className="panel buyer-bid-board" aria-label="BUYER operational bid board">

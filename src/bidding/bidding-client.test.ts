@@ -7,10 +7,34 @@ const traderBid = { id, vessel_voyage: 'MV Test', port_name: 'Busan', delivery_w
 const quote = { id, bid_id: other, trader_organization_id: id, trader_organization_label: 'Trader', revision: 1, created_by: other, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 1 }], barge_fee: 0, total_amount: 1, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false };
 const pendingMail = { id, received_at: now, subject: 'Request', vessel_voyage: null, port_name: 'Busan', delivery_window: null, fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null };
 const dismissedMail = { ...pendingMail, status: 'dismissed', revision: 2, dismissed_at: now };
+const sellerOrganization = { organization_id: other, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 0, created_at: now, updated_at: now };
 type Rpc = BiddingRpcClient['rpc'];
 function harness(data: unknown = bid, error: { code?: string | null } | null = null) { const rpc = vi.fn<Rpc>(() => Promise.resolve({ data, error })); return { rpc, client: createSupabaseBiddingClient({ rpc }) }; }
 
 describe('BiddingClient RPC adapter', () => {
+  it('maps exact SELLER-admin RPC names and arguments and requires one mutation result row', async () => {
+    const list = harness([sellerOrganization]);
+    expect(await list.client.listTraderOrganizationsForAdmin!(id)).toMatchObject({ data: [sellerOrganization], error: null });
+    expect(list.rpc).toHaveBeenCalledWith('list_trader_organizations_for_admin', { p_actor_membership_id: id });
+
+    const create = harness([sellerOrganization]);
+    expect(await create.client.createTraderOrganization!(id, 'Ocean Bunker')).toMatchObject({ data: sellerOrganization, error: null });
+    expect(create.rpc).toHaveBeenCalledWith('create_trader_organization', { p_actor_membership_id: id, p_organization_name: 'Ocean Bunker' });
+
+    const deactivate = harness([{ ...sellerOrganization, organization_status: 'inactive' }]);
+    expect(await deactivate.client.deactivateTraderOrganization!(id, other)).toMatchObject({ data: { organization_status: 'inactive' }, error: null });
+    expect(deactivate.rpc).toHaveBeenCalledWith('deactivate_trader_organization', { p_actor_membership_id: id, p_trader_organization_id: other });
+
+    expect((await harness([]).client.createTraderOrganization!(id, 'Missing')).error?.kind).toBe('protocol');
+    expect((await harness([sellerOrganization, sellerOrganization]).client.deactivateTraderOrganization!(id, other)).error?.kind).toBe('protocol');
+  });
+
+  it('rejects malformed SELLER-admin list and mutation results as protocol failures', async () => {
+    expect((await harness([{ ...sellerOrganization, organization_status: 'deleted' }]).client.listTraderOrganizationsForAdmin!(id)).error?.kind).toBe('protocol');
+    expect((await harness([{ ...sellerOrganization, active_trader_membership_count: '0' }]).client.createTraderOrganization!(id, 'Ocean Bunker')).error?.kind).toBe('protocol');
+    expect((await harness([{ ...sellerOrganization, actor_user_id: id }]).client.deactivateTraderOrganization!(id, other)).error?.kind).toBe('protocol');
+  });
+
   it('maps the exact mail-intake list and dismiss RPC names and arguments without an ingest surface', async () => {
     const list = harness([pendingMail]);
     expect(await list.client.listMailIntakeItems(id)).toMatchObject({ data: [pendingMail], error: null });
