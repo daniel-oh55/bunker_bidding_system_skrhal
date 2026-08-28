@@ -11,8 +11,8 @@ update app_private.user_accounts set status='active' where user_id::text like '1
 insert into app_private.organizations (id,kind,name,status) values
   ('20000000-0000-0000-0000-000000000001','buyer','Quote Buyer A','active'),
   ('20000000-0000-0000-0000-000000000002','buyer','Quote Buyer B','active'),
-  ('20000000-0000-0000-0000-000000000003','trader','Quote Trader A','active'),
-  ('20000000-0000-0000-0000-000000000004','trader','Quote Trader Other','active'),
+  ('20000000-0000-0000-0000-000000000003','trader','Quote Trader A','inactive'),
+  ('20000000-0000-0000-0000-000000000004','trader','Quote Trader Other','inactive'),
   ('20000000-0000-0000-0000-000000000005','trader','Quote Trader Inactive','inactive');
 insert into app_private.organization_memberships (id,user_id,organization_id,role,status) values
   ('30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','buyer_admin','active'),
@@ -52,6 +52,15 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 create temporary table quote_test_ids (bid_id uuid, quote_id uuid) on commit drop;
 insert into quote_test_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Quote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id;
+reset role;
+update app_private.organizations
+set status='active'
+where id in (
+  '20000000-0000-0000-0000-000000000003',
+  '20000000-0000-0000-0000-000000000004'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',bid_id,1,'20000000-0000-0000-0000-000000000003')).revision from quote_test_ids),2::bigint,'BUYER grants active TRADER organization'); -- 20
 reset role;
 select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_granted'),1::bigint,'scope grant creates exactly one corresponding bid audit event');
@@ -136,8 +145,16 @@ select throws_ok($$select public.cancel_bid('30000000-0000-0000-0000-00000000000
 select ok(to_regprocedure('public.unaward_bid(uuid,uuid,bigint)') is null,'no public unaward API exists'); -- 48
 
 create temporary table post_quote_bid_ids (bid_id uuid, deadline_at timestamptz) on commit drop;
+reset role;
+update app_private.organizations set status='inactive' where id='20000000-0000-0000-0000-000000000003';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 insert into post_quote_bid_ids(bid_id,deadline_at)
 select (public.create_bid('30000000-0000-0000-0000-000000000001','Prequote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id, clock_timestamp()+interval '2 days';
+reset role;
+update app_private.organizations set status='active' where id='20000000-0000-0000-0000-000000000003';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select (public.update_bid('30000000-0000-0000-0000-000000000001',bid_id,1,'Updated vessel','Incheon','Updated window',deadline_at,array['lsmgo','vlsfo'],array[3,12]::numeric[])).revision from post_quote_bid_ids),2::bigint,'full commercial update is allowed before the first quote');
 select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',bid_id,2,'20000000-0000-0000-0000-000000000003')).revision from post_quote_bid_ids;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
@@ -149,12 +166,14 @@ select throws_ok($$select public.update_bid('30000000-0000-0000-0000-00000000000
 reset role;
 select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from post_quote_bid_ids)),4::bigint,'failed post-quote bid changes create no audit event');
 
+update app_private.organizations set status='inactive' where id='20000000-0000-0000-0000-000000000003';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 create temporary table pre_quote_replacement_bid_ids (bid_id uuid) on commit drop;
 insert into pre_quote_replacement_bid_ids(bid_id)
 select (public.create_bid('30000000-0000-0000-0000-000000000001','Replacement vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id;
 reset role;
+update app_private.organizations set status='active' where id='20000000-0000-0000-0000-000000000003';
 select is((select array_agg(fuel_grade order by display_order) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),array['vlsfo','lsmgo']::text[],'replacement bid initially has VLSFO and LSMGO');
 
 set local role authenticated;
@@ -205,10 +224,15 @@ select throws_ok($$select public.update_bid('30000000-0000-0000-0000-00000000000
 reset role;
 select ok((select bid.revision=state.revision and (select jsonb_agg(jsonb_build_object('fuel_grade',item.fuel_grade,'quantity_mt',item.quantity_mt,'display_order',item.display_order) order by item.display_order) from app_private.bid_items item where item.bid_id=bid.id)=state.fuel_items and (select count(*) from app_private.bid_audit_events event where event.bid_id=bid.id)=state.audit_count from app_private.bids bid cross join post_quote_replacement_state state where bid.id=(select bid_id from pre_quote_replacement_bid_ids)),'failed post-quote grade replacement preserves revision, rows, and audit count');
 
+update app_private.organizations set status='inactive' where id='20000000-0000-0000-0000-000000000003';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 create temporary table terminal_cancel_bid_ids (bid_id uuid, quote_id uuid) on commit drop;
 insert into terminal_cancel_bid_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Cancelled scope vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo'],array[10]::numeric[])).id;
+reset role;
+update app_private.organizations set status='active' where id='20000000-0000-0000-0000-000000000003';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from terminal_cancel_bid_ids),1,'20000000-0000-0000-0000-000000000003');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 update terminal_cancel_bid_ids set quote_id=(select (public.create_quote('30000000-0000-0000-0000-000000000003',bid_id,array['vlsfo'],array[100]::numeric[],0)).id from terminal_cancel_bid_ids);
