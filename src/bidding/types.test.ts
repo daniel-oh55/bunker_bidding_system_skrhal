@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArray, parseBid, parseBidAuditEvent, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
+import { parseArray, parseBid, parseBidAuditEvent, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
 
 const id = '10000000-0000-4000-8000-000000000001';
 const otherId = '10000000-0000-4000-8000-000000000002';
@@ -16,6 +16,9 @@ function quote(overrides: Record<string, unknown> = {}) {
 }
 function mailItem(overrides: Record<string, unknown> = {}) {
   return { id, received_at: now, subject: '', vessel_voyage: null, port_name: 'Busan', delivery_window: '2026-08-04', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: ['Confirm delivery window'], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null, ...overrides };
+}
+function sellerComparison(overrides: Record<string, unknown> = {}) {
+  return { bid_id: otherId, trader_organization_id: id, trader_organization_label: 'Trader', access_active: true, organization_active: true, quote: null, ...overrides };
 }
 function sellerOrganization(overrides: Record<string, unknown> = {}) {
   return { organization_id: id, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 2, created_at: now, updated_at: now, ...overrides };
@@ -110,6 +113,24 @@ describe('bidding protocol parsers', () => {
   it('rejects impossible quote totals and award flags', () => {
     expect(parseQuote(quote({ total_amount: 0 }))).toBeNull();
     expect(parseQuote(quote({ eligible_for_award: true, is_awarded: true }))).toBeNull();
+  });
+
+  it('strictly parses unquoted and quoted BUYER SELLER comparison rows', () => {
+    expect(parseBuyerSellerComparison(sellerComparison())).toEqual(sellerComparison());
+    expect(parseBuyerSellerComparison(sellerComparison({ quote: quote() }))).toEqual(sellerComparison({ quote: quote() }));
+    expect(parseBuyerSellerComparison({ ...sellerComparison(), member_email: 'hidden@example.test' })).toBeNull();
+    expect(parseBuyerSellerComparison(sellerComparison({ access_active: false, quote: null }))).toBeNull();
+    expect(parseBuyerSellerComparison(sellerComparison({ quote: { ...quote(), secret: true } }))).toBeNull();
+  });
+
+  it('rejects nested quote identity and outer metadata mismatches', () => {
+    for (const candidate of [
+      sellerComparison({ quote: quote({ bid_id: id }) }),
+      sellerComparison({ quote: quote({ trader_organization_id: otherId }) }),
+      sellerComparison({ quote: quote({ trader_organization_label: 'Other label' }) }),
+      sellerComparison({ quote: quote({ access_active: false }) }),
+      sellerComparison({ quote: quote({ organization_active: false }) }),
+    ]) expect(parseBuyerSellerComparison(candidate)).toBeNull();
   });
 
   it('rejects malformed dates, revisions, effective statuses, and nested members atomically', () => {
