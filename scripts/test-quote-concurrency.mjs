@@ -50,13 +50,15 @@ async function fixture(client) {
   const ids = { buyer: randomUUID(), buyerOrg: randomUUID(), buyerMembership: randomUUID(), trader: randomUUID(), traderOrg: randomUUID(), traderMembership: randomUUID(), bids: [], quotes: [] };
   for (const [userId, email] of [[ids.buyer, 'buyer'], [ids.trader, 'trader']]) await client.query('insert into auth.users(id,email) values($1,$2)', [userId, `${email}-${userId}@quote-race.test`]);
   await client.query("update app_private.user_accounts set status='active' where user_id=any($1::uuid[])", [[ids.buyer, ids.trader]]);
-  await client.query("insert into app_private.organizations(id,kind,name,status) values($1,'buyer',$2,'active'),($3,'trader',$4,'active')", [ids.buyerOrg, `buyer-${ids.buyerOrg}`, ids.traderOrg, `trader-${ids.traderOrg}`]);
+  await client.query("insert into app_private.organizations(id,kind,name,status) values($1,'buyer',$2,'active'),($3,'trader',$4,'inactive')", [ids.buyerOrg, `buyer-${ids.buyerOrg}`, ids.traderOrg, `trader-${ids.traderOrg}`]);
   await client.query("insert into app_private.organization_memberships(id,user_id,organization_id,role,status) values($1,$2,$3,'buyer_admin','active'),($4,$5,$6,'trader','active')", [ids.buyerMembership, ids.buyer, ids.buyerOrg, ids.traderMembership, ids.trader, ids.traderOrg]);
   return ids;
 }
 async function bidWithQuote(observer, ids, label, deadline = "clock_timestamp() + interval '1 day'") {
+  await observer.query("update app_private.organizations set status='inactive' where id=$1", [ids.traderOrg]);
   const { rows: bidRows } = await caller(observer, ids.buyer, () => observer.query(`select (public.create_bid($1,$2,'Busan','window',${deadline},null,array['vlsfo'],array[10]::numeric[])).id id`, [ids.buyerMembership, label]));
   const bidId = bidRows[0].id; ids.bids.push(bidId);
+  await observer.query("update app_private.organizations set status='active' where id=$1", [ids.traderOrg]);
   await caller(observer, ids.buyer, () => observer.query('select public.grant_bid_trader_access($1,$2,1,$3)', [ids.buyerMembership, bidId, ids.traderOrg]));
   const { rows: quoteRows } = await caller(observer, ids.trader, () => observer.query("select (public.create_quote($1,$2,array['vlsfo'],array[100]::numeric[],5)).id id", [ids.traderMembership, bidId]));
   ids.quotes.push(quoteRows[0].id);
