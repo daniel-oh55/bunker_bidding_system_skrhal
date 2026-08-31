@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BiddingClient } from './bidding-client';
 import type { MailIntakeItem, WorkflowError } from './types';
 import { WorkspaceEmptyState } from '../ui/workspace-ui';
+import { seoulDateFromInstant } from './datetime';
 
 type DismissTarget = { id: string; revision: number };
 
@@ -17,7 +18,7 @@ const displayError = (error: WorkflowError) => {
   return 'The mail intake request could not be completed. Please try again.';
 };
 
-export function MailIntakeQueue({ client, membershipId, onAuthorizationFailure }: { client: BiddingClient; membershipId: string; onAuthorizationFailure: () => void }) {
+export function MailIntakeQueue({ client, membershipId, selectedBidDate, onAuthorizationFailure }: { client: BiddingClient; membershipId: string; selectedBidDate: string; onAuthorizationFailure: () => void }) {
   const operation = useRef(0);
   const [items, setItems] = useState<MailIntakeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +59,7 @@ export function MailIntakeQueue({ client, membershipId, onAuthorizationFailure }
   }, [client, failAuthorization, membershipId]);
 
   useEffect(() => { void load(); return invalidate; }, [invalidate, load]);
+  useEffect(() => { setDismissTarget(null); }, [selectedBidDate]);
 
   const dismiss = async (target: DismissTarget) => {
     const item = items.find((candidate) => candidate.id === target.id && candidate.revision === target.revision);
@@ -79,18 +81,20 @@ export function MailIntakeQueue({ client, membershipId, onAuthorizationFailure }
     await load();
   };
 
+  const visibleItems = items.filter((item) => seoulDateFromInstant(item.received_at) === selectedBidDate);
+
   return <section className="panel mail-intake-queue" aria-labelledby="mail-intake-heading">
     <header className="mail-intake-heading">
       <div><p className="eyebrow">Review queue</p><h2 id="mail-intake-heading">Mail intake</h2></div>
-      <div className="mail-intake-heading-actions"><span>{items.length} pending</span><button type="button" className="secondary" disabled={loading || pending} onClick={() => void load()}>Refresh mail intake</button></div>
+      <div className="mail-intake-heading-actions"><span>{visibleItems.length} pending for {selectedBidDate}</span><button type="button" className="secondary" disabled={loading || pending} onClick={() => void load()}>Refresh mail intake</button></div>
     </header>
     <div className="mail-intake-boundary">
       <p>Items are review-only candidates. They do not create or update bids.</p>
       <p>Received time is source metadata, not the bidding deadline.</p>
     </div>
     {error ? <p className="notice error" role="alert">{displayError(error)}</p> : null}
-    {loading ? <WorkspaceEmptyState title="Loading mail intake" description="Retrieving the shared pending queue." /> : items.length === 0 ? <WorkspaceEmptyState title="No pending mail intake" description="The shared BUYER review queue is empty." /> : <ol className="mail-intake-items">
-      {items.map((item) => {
+    {loading ? <WorkspaceEmptyState title="Loading mail intake" description="Retrieving the shared pending queue." /> : visibleItems.length === 0 ? <WorkspaceEmptyState title="No pending mail intake for this operational date" description="Pending rows for other Seoul dates remain stored and appear when that date is selected." /> : <ol className="mail-intake-items">
+      {visibleItems.map((item) => {
         const confirming = dismissTarget?.id === item.id && dismissTarget.revision === item.revision;
         return <li className="mail-intake-item" key={`${item.id}:${item.revision}`}>
           <article>

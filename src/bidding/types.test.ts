@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseArray, parseBid, parseBidAuditEvent, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
+import { parseArray, parseBid, parseBidAuditEvent, parseBidDate, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
 
 const id = '10000000-0000-4000-8000-000000000001';
 const otherId = '10000000-0000-4000-8000-000000000002';
 const now = '2026-08-03T03:00:00.000Z';
 
 function bid(overrides: Record<string, unknown> = {}) {
-  return { id, vessel_voyage: 'MV Test / 001', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: null, raw_status: 'open', effective_status: 'open', revision: 1, created_by: id, created_by_label: 'Creator', responsible_buyer_user_id: otherId, responsible_buyer_label: 'Buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null, ...overrides };
+  return { id, bid_date: '2026-08-03', vessel_voyage: 'MV Test / 001', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: null, raw_status: 'open', effective_status: 'open', revision: 1, created_by: id, created_by_label: 'Creator', responsible_buyer_user_id: otherId, responsible_buyer_label: 'Buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null, ...overrides };
 }
 function audit(overrides: Record<string, unknown> = {}) {
   return { id, bid_id: otherId, event_type: 'created', actor_user_id: id, actor_membership_id: id, actor_organization_id: id, actor_role: 'buyer_operator', occurred_at: now, prior_revision: null, resulting_revision: 1, prior_status: null, resulting_status: 'open', prior_responsible_buyer_user_id: null, resulting_responsible_buyer_user_id: otherId, before_snapshot: null, after_snapshot: {}, ...overrides };
@@ -25,6 +25,15 @@ function sellerOrganization(overrides: Record<string, unknown> = {}) {
 }
 
 describe('bidding protocol parsers', () => {
+  it('requires an exact valid YYYY-MM-DD BID operational date', () => {
+    expect(parseBidDate('2026-08-03')).toBe('2026-08-03');
+    expect(parseBidDate('0001-01-01')).toBe('0001-01-01');
+    expect(parseBidDate('2028-02-29')).toBe('2028-02-29');
+    for (const value of ['2026-8-03', '2026-02-29', '2026-13-01', '2026-04-31', '2026-08-03T00:00:00Z', null]) {
+      expect(parseBidDate(value)).toBeNull();
+      expect(parseBid(bid({ bid_date: value }))).toBeNull();
+    }
+  });
   it('accepts only the exact narrow SELLER-admin organization result', () => {
     expect(parseSellerOrganizationAdmin(sellerOrganization())).toEqual(sellerOrganization());
     expect(parseSellerOrganizationAdmin(sellerOrganization({ organization_status: 'inactive', active_trader_membership_count: 0 }))).not.toBeNull();

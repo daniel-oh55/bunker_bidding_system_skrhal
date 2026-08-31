@@ -15,6 +15,7 @@ const buyers = [
   { user_id: responsibleBuyerId, display_label: 'Responsible BUYER', active_buyer_membership_count: 1 },
 ];
 const bid = (overrides: Partial<Bid> = {}): Bid => ({
+  bid_date: '2026-08-03',
   id: bidId, vessel_voyage: 'MV Detail', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: now,
   raw_status: 'open', effective_status: 'open', revision: 3, created_by: currentBuyerId, created_by_label: 'Creator',
   responsible_buyer_user_id: responsibleBuyerId, responsible_buyer_label: 'Responsible BUYER', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }],

@@ -23,6 +23,7 @@ export type MailIntakeItem = {
 };
 export type Bid = {
   id: string; vessel_voyage: string; port_name: string; delivery_window: string;
+  bid_date: string;
   deadline_at: string | null; raw_status: BidStatus; effective_status: EffectiveBidStatus;
   revision: number; created_by: string; created_by_label: string;
   responsible_buyer_user_id: string; responsible_buyer_label: string;
@@ -32,7 +33,7 @@ export type Bid = {
   awarded_trader_organization_label: string | null; awarded_total_amount: number | null;
   awarded_at: string | null;
 };
-export type TraderBid = Omit<Bid, 'created_by' | 'created_by_label' | 'responsible_buyer_user_id' | 'responsible_buyer_label' | 'awarded_quote_id' | 'awarded_trader_organization_id' | 'awarded_trader_organization_label' | 'awarded_total_amount' | 'awarded_at'>;
+export type TraderBid = Omit<Bid, 'bid_date' | 'created_by' | 'created_by_label' | 'responsible_buyer_user_id' | 'responsible_buyer_label' | 'awarded_quote_id' | 'awarded_trader_organization_id' | 'awarded_trader_organization_label' | 'awarded_total_amount' | 'awarded_at'>;
 export type ActiveBuyer = { user_id: string; display_label: string; active_buyer_membership_count: number };
 export type TraderOrganization = { organization_id: string; organization_label: string };
 export type SellerOrganizationAdmin = {
@@ -66,6 +67,17 @@ function nullableId(value: unknown): string | null | undefined { if (value === n
 function nullableNumber(value: unknown): number | null | undefined { if (value === null) return null; return finite(value) ?? undefined; }
 function nullableDate(value: unknown): string | null | undefined { return date(value, true); }
 function bool(value: unknown): boolean | null { return typeof value === 'boolean' ? value : null; }
+
+export function parseBidDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]); const month = Number(match[2]); const day = Number(match[3]);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return null;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1]! ? value : null;
+}
 
 const mailIntakeKeys = new Set([
   'id', 'received_at', 'subject', 'vessel_voyage', 'port_name', 'delivery_window',
@@ -185,7 +197,7 @@ function objectOrNull(value: unknown): Record<string, unknown> | null | undefine
 export function parseBid(value: unknown): Bid | null {
   const r = record(value); if (!r) return null;
   const raw = text(r.raw_status); const effective = text(r.effective_status);
-  const parsed = r && id(r.id) && text(r.vessel_voyage) && text(r.port_name) && text(r.delivery_window) && nullableDate(r.deadline_at) !== undefined && raw && statuses.has(raw as BidStatus) && effective && statuses.has(effective as BidStatus) && revision(r.revision) !== null && id(r.created_by) && text(r.created_by_label) && id(r.responsible_buyer_user_id) && text(r.responsible_buyer_label) && fuelItems(r.fuel_items) && date(r.created_at) !== undefined && date(r.updated_at) !== undefined && nullableDate(r.closed_at) !== undefined && nullableDate(r.cancelled_at) !== undefined && nullableId(r.awarded_quote_id) !== undefined && nullableId(r.awarded_trader_organization_id) !== undefined && (r.awarded_trader_organization_label === null || text(r.awarded_trader_organization_label)) && nullableNumber(r.awarded_total_amount) !== undefined && nullableDate(r.awarded_at) !== undefined;
+  const parsed = r && id(r.id) && parseBidDate(r.bid_date) && text(r.vessel_voyage) && text(r.port_name) && text(r.delivery_window) && nullableDate(r.deadline_at) !== undefined && raw && statuses.has(raw as BidStatus) && effective && statuses.has(effective as BidStatus) && revision(r.revision) !== null && id(r.created_by) && text(r.created_by_label) && id(r.responsible_buyer_user_id) && text(r.responsible_buyer_label) && fuelItems(r.fuel_items) && date(r.created_at) !== undefined && date(r.updated_at) !== undefined && nullableDate(r.closed_at) !== undefined && nullableDate(r.cancelled_at) !== undefined && nullableId(r.awarded_quote_id) !== undefined && nullableId(r.awarded_trader_organization_id) !== undefined && (r.awarded_trader_organization_label === null || text(r.awarded_trader_organization_label)) && nullableNumber(r.awarded_total_amount) !== undefined && nullableDate(r.awarded_at) !== undefined;
   if (!parsed) return null;
   const closed = r.closed_at; const cancelled = r.cancelled_at;
   const awardValues = [r.awarded_quote_id, r.awarded_trader_organization_id, r.awarded_trader_organization_label, r.awarded_total_amount, r.awarded_at];
@@ -198,7 +210,7 @@ export function parseBid(value: unknown): Bid | null {
     || (raw === 'cancelled' && effective === 'cancelled' && !!cancelled && noAward)
     || (raw === 'awarded' && effective === 'awarded' && !!closed && !cancelled && hasAward && (nullableNumber(r.awarded_total_amount) as number) > 0);
   if (!legal) return null;
-  return { id: r.id as string, vessel_voyage: r.vessel_voyage as string, port_name: r.port_name as string, delivery_window: r.delivery_window as string, deadline_at: r.deadline_at as string | null, raw_status: raw, effective_status: effective, revision: revision(r.revision)!, created_by: r.created_by as string, created_by_label: r.created_by_label as string, responsible_buyer_user_id: r.responsible_buyer_user_id as string, responsible_buyer_label: r.responsible_buyer_label as string, fuel_items: fuelItems(r.fuel_items)!, created_at: r.created_at as string, updated_at: r.updated_at as string, closed_at: r.closed_at as string | null, cancelled_at: r.cancelled_at as string | null, awarded_quote_id: r.awarded_quote_id as string | null, awarded_trader_organization_id: r.awarded_trader_organization_id as string | null, awarded_trader_organization_label: r.awarded_trader_organization_label as string | null, awarded_total_amount: nullableNumber(r.awarded_total_amount)!, awarded_at: r.awarded_at as string | null };
+  return { id: r.id as string, bid_date: r.bid_date as string, vessel_voyage: r.vessel_voyage as string, port_name: r.port_name as string, delivery_window: r.delivery_window as string, deadline_at: r.deadline_at as string | null, raw_status: raw, effective_status: effective, revision: revision(r.revision)!, created_by: r.created_by as string, created_by_label: r.created_by_label as string, responsible_buyer_user_id: r.responsible_buyer_user_id as string, responsible_buyer_label: r.responsible_buyer_label as string, fuel_items: fuelItems(r.fuel_items)!, created_at: r.created_at as string, updated_at: r.updated_at as string, closed_at: r.closed_at as string | null, cancelled_at: r.cancelled_at as string | null, awarded_quote_id: r.awarded_quote_id as string | null, awarded_trader_organization_id: r.awarded_trader_organization_id as string | null, awarded_trader_organization_label: r.awarded_trader_organization_label as string | null, awarded_total_amount: nullableNumber(r.awarded_total_amount)!, awarded_at: r.awarded_at as string | null };
 }
 export function parseTraderBid(value: unknown): TraderBid | null {
   const r = record(value); if (!r) return null; const raw = text(r.raw_status); const effective = text(r.effective_status);
