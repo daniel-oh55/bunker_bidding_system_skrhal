@@ -177,6 +177,54 @@ describe('bunker request draft parser', () => {
     expect(draft.fuelItems).toEqual([{ grade: expectedGrade, quantity: 12.5 }]);
   });
 
+  it.each([
+    ['hyphen compact', '40-50 MT', 40],
+    ['tilde compact', '40~50 MT', 40],
+    ['spaced hyphen', '40 - 50 MT', 40],
+    ['en dash', '40\u201350 MT', 40],
+    ['em dash', '40\u201450 MT', 40],
+    ['full-width tilde', '40\uFF5E50 MT', 40],
+    ['case-insensitive marker', '100-150mt', 100],
+    ['M/T marker', '100 ~ 150 M/T', 100],
+    ['comma-formatted range', '1,000-1,200 MT', 1000],
+    ['decimal range', '12.5-15 MT', 12.5],
+    ['equal bounds', '40-40 MT', 40],
+  ])('imports the lower bound for a valid %s quantity range', (_label, range, expected) => {
+    const draft = parseBunkerRequest({ subject: '', body: `VLSFO : ${range}` });
+
+    expect(draft.fuelItems).toEqual([{ grade: 'vlsfo', quantity: expected }]);
+    expect(draft.warnings).toEqual([
+      'VLSFO quantity range was imported using its lower bound; verify before creating the bid.',
+    ]);
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('Invalid VLSFO quantity'));
+  });
+
+  it.each([
+    ['zero lower bound', '0-50 MT'],
+    ['negative lower bound', '-5-50 MT'],
+    ['zero upper bound', '40-0 MT'],
+    ['negative upper bound', '40--5 MT'],
+    ['reversed range', '50-40 MT'],
+    ['malformed upper bound', '40-many MT'],
+    ['ordinary invalid token', 'many MT'],
+  ])('rejects a %s through the existing invalid-quantity path', (_label, quantity) => {
+    const draft = parseBunkerRequest({ subject: '', body: `VLSFO : ${quantity}` });
+
+    expect(draft.fuelItems).toEqual([]);
+    expect(draft.warnings).toContain('Invalid VLSFO quantity was not imported.');
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('using its lower bound'));
+  });
+
+  it.each([
+    ['12.5 MT', 12.5],
+    ['1,000 MT', 1000],
+  ])('preserves the existing single-quantity grammar for %s', (quantity, expected) => {
+    const draft = parseBunkerRequest({ subject: '', body: `VLSFO : ${quantity}` });
+
+    expect(draft.fuelItems).toEqual([{ grade: 'vlsfo', quantity: expected }]);
+    expect(draft.warnings).not.toContainEqual(expect.stringContaining('quantity range'));
+  });
+
   it('ignores supported-grade specification rows without MT/M/T and emits no false invalid-quantity warning', () => {
     const draft = parseBunkerRequest({
       subject: '',

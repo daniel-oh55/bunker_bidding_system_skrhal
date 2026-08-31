@@ -50,10 +50,38 @@ function parseSubjectPort(subject: string): string | undefined {
   return match?.[1]?.replace(/^[-/\s]+|[-/\s]+$/g, '').trim() || undefined;
 }
 
+const quantityTokenPattern = String.raw`[+-]?(?:\d+(?:,\d{3})*(?:\.\d+)?|\d*\.\d+)`;
+const quantityToken = new RegExp(String.raw`^${quantityTokenPattern}$`);
+
 function parseQuantityToken(token: string): number | undefined {
-  if (!/^[+-]?(?:\d+(?:,\d{3})*(?:\.\d+)?|\d*\.\d+)$/.test(token)) return undefined;
+  if (!quantityToken.test(token)) return undefined;
   const quantity = Number(token.replaceAll(',', ''));
   return Number.isFinite(quantity) && quantity > 0 ? quantity : undefined;
+}
+
+type ParsedQuantity = {
+  quantity: number;
+  usedRangeLowerBound: boolean;
+};
+
+const quantityRangeSeparatorPattern = String.raw`[-~\u2013\u2014\uFF5E]`;
+
+function parseQuantityBeforeMarker(line: string): ParsedQuantity | undefined {
+  const range = line.match(new RegExp(
+    String.raw`(?:^|[\s:])(${quantityTokenPattern})\s*${quantityRangeSeparatorPattern}\s*(${quantityTokenPattern})\s*M\s*\/?\s*T\b`,
+    'i',
+  ));
+  if (range) {
+    const lower = parseQuantityToken(range[1]!);
+    const upper = parseQuantityToken(range[2]!);
+    return lower !== undefined && upper !== undefined && upper >= lower
+      ? { quantity: lower, usedRangeLowerBound: true }
+      : undefined;
+  }
+
+  const single = line.match(/(\S+)\s*M\s*\/?\s*T\b/i);
+  const quantity = single?.[1] ? parseQuantityToken(single[1]) : undefined;
+  return quantity === undefined ? undefined : { quantity, usedRangeLowerBound: false };
 }
 
 type StructuredSubjectSummary = {
@@ -84,6 +112,7 @@ function isSupportedAlias(alias: string): alias is SupportedAlias {
 
 function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['fuelItems'] {
   const candidates = new Map<FuelGrade, Set<number>>();
+  const rangeWarnings = new Map<FuelGrade, string[]>();
 
   for (const sourceLine of body.split(/\r?\n/)) {
     const line = sourceLine.replace(/^\s*[-*•]\s*/, '').trim();
@@ -100,18 +129,21 @@ function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['f
     const alias = supported[1]!.toUpperCase();
     if (!isSupportedAlias(alias)) continue;
     const grade = supportedAliases[alias];
-    const quantityMarker = line.match(/(\S+)\s*M\s*\/?\s*T\b/i);
-    if (!quantityMarker) continue;
-    const amountToken = quantityMarker[1];
-    const quantity = amountToken ? parseQuantityToken(amountToken) : undefined;
-    if (quantity === undefined) {
+    if (!/M\s*\/?\s*T\b/i.test(line)) continue;
+    const parsedQuantity = parseQuantityBeforeMarker(line);
+    if (!parsedQuantity) {
       warnings.push(`Invalid ${alias} quantity was not imported.`);
       continue;
     }
 
     const quantities = candidates.get(grade) ?? new Set<number>();
-    quantities.add(quantity);
+    quantities.add(parsedQuantity.quantity);
     candidates.set(grade, quantities);
+    if (parsedQuantity.usedRangeLowerBound) {
+      const gradeWarnings = rangeWarnings.get(grade) ?? [];
+      gradeWarnings.push(`${alias} quantity range was imported using its lower bound; verify before creating the bid.`);
+      rangeWarnings.set(grade, gradeWarnings);
+    }
   }
 
   const fuelItems: BunkerRequestDraft['fuelItems'] = [];
@@ -121,7 +153,10 @@ function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['f
       continue;
     }
     const quantity = quantities.values().next().value;
-    if (quantity !== undefined) fuelItems.push({ grade, quantity });
+    if (quantity !== undefined) {
+      fuelItems.push({ grade, quantity });
+      warnings.push(...(rangeWarnings.get(grade) ?? []));
+    }
   }
 
   if (fuelItems.length === 0) {
