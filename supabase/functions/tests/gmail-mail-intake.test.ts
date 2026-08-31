@@ -159,6 +159,33 @@ describe('Gmail IMAP mail intake', () => {
     expect(ingress).not.toHaveProperty('p_responsible_buyer');
     expect(ingress).not.toHaveProperty('p_raw_body');
   });
+  it('ingests supported quantity ranges with lower-bound candidates and verification warnings', async () => {
+    const subject = '//SPOT// TEST RANGE VESSEL / BUNKER REQUEST AT TEST PORT';
+    const body = [
+      'VLSFO : 40-50 MT',
+      'LSMGO : 100 ~ 150 M/T',
+    ].join('\n');
+    const harness = new Harness({
+      uidNext: 502,
+      uids: [501],
+      messages: { 501: message(501, subject) },
+      parts: { '1': new TextEncoder().encode(body) },
+    });
+    const response = await harness.handler()(request());
+
+    expect(await response.json()).toEqual({ status: 'completed', discovered: 1, ingested: 1, skipped_absent: 0 });
+    const ingress = harness.rpc('ingest_mail_intake_item')[0]?.body;
+    expect(ingress?.p_fuel_items).toEqual([
+      { grade: 'vlsfo', quantity: 40 },
+      { grade: 'lsmgo', quantity: 100 },
+    ]);
+    expect(ingress?.p_warnings).toEqual([
+      'VLSFO quantity range was imported using its lower bound; verify before creating the bid.',
+      'LSMGO quantity range was imported using its lower bound; verify before creating the bid.',
+    ]);
+    expect(ingress?.p_warnings).not.toContainEqual(expect.stringContaining('Invalid VLSFO quantity was not imported'));
+    expect(ingress?.p_warnings).not.toContainEqual(expect.stringContaining('Invalid LSMGO quantity was not imported'));
+  });
   it('filters an ordinary subject before body download without treating it as absent', async () => {
     const harness = new Harness({ uidNext: 502, uids: [501], messages: { 501: message(501, 'BUNKER REQUEST AT BUSAN') } });
     const response = await harness.handler()(request());
