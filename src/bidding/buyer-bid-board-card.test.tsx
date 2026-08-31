@@ -6,6 +6,7 @@ import type { Bid, BuyerSellerComparison, Quote } from './types';
 const now = '2026-08-26T03:00:00.000Z';
 const bidId = '10000000-0000-4000-8000-000000000001';
 const bid = (overrides: Partial<Bid> = {}): Bid => ({
+  bid_date: '2026-08-26',
   id: bidId, vessel_voyage: 'MV Synthetic 01 / V001', port_name: 'Test Port', delivery_window: '1–2 September', deadline_at: '2099-08-26T03:00:00.000Z',
   raw_status: 'open', effective_status: 'open', revision: 2, created_by: '10000000-0000-4000-8000-000000000002', created_by_label: 'Buyer Creator',
   responsible_buyer_user_id: '10000000-0000-4000-8000-000000000003', responsible_buyer_label: 'Buyer Operator', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }],

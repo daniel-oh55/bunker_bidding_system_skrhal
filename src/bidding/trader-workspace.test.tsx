@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TraderWorkspace } from './trader-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
@@ -24,6 +24,23 @@ function clientWith(bids: TraderBid[] = [traderBid()], quotes: Quote[] = []) {
 }
 
 describe('TRADER workspace', () => {
+  it('has no date selector and reloads the authoritative feeds at Seoul date rollover', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-30T14:59:59.900Z'));
+    const { client, listTraderBids, listMyQuotes } = clientWith();
+    const view = render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.queryByLabelText('Operational date')).not.toBeInTheDocument();
+    expect(listTraderBids).toHaveBeenCalledOnce();
+    expect(listMyQuotes).toHaveBeenCalledOnce();
+    await act(async () => { vi.advanceTimersByTime(150); await Promise.resolve(); await Promise.resolve(); });
+    expect(listTraderBids).toHaveBeenCalledTimes(2);
+    expect(listMyQuotes).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('2026-08-31')).toBeInTheDocument();
+    view.unmount();
+    vi.useRealTimers();
+  });
+
   it('shows a clear empty state after the accessible bid feed loads empty', async () => {
     const { client } = clientWith([]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);

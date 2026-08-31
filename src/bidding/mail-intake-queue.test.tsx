@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { MailIntakeQueue } from './mail-intake-queue';
+import { MailIntakeQueue as OperationalDateMailIntakeQueue } from './mail-intake-queue';
 import type { BiddingClient, BiddingResult } from './bidding-client';
 import type { MailIntakeItem, WorkflowErrorKind } from './types';
 
@@ -8,6 +9,7 @@ const membershipId = '10000000-0000-4000-8000-000000000001';
 const nextMembershipId = '10000000-0000-4000-8000-000000000002';
 const itemId = '20000000-0000-4000-8000-000000000001';
 const now = '2026-08-21T03:00:00.000Z';
+const MailIntakeQueue = (props: Omit<ComponentProps<typeof OperationalDateMailIntakeQueue>, 'selectedBidDate'>) => <OperationalDateMailIntakeQueue {...props} selectedBidDate="2026-08-21" />;
 const ok = <T,>(data: T): BiddingResult<T> => ({ data, error: null });
 const failure = <T,>(kind: WorkflowErrorKind, code: string | null = null): BiddingResult<T> => ({ data: null, error: { kind, code, message: 'raw server detail must not render' } });
 const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
@@ -33,14 +35,24 @@ function queueClient(listMailIntakeItems: BiddingClient['listMailIntakeItems'], 
 }
 
 describe('BUYER mail intake queue', () => {
+  it('classifies pending received_at instants by the selected Asia/Seoul date', async () => {
+    const boundary = item({ id: itemId, received_at: '2026-08-30T15:00:00Z', subject: 'Seoul next day' });
+    const prior = item({ id: nextMembershipId, received_at: '2026-08-30T14:59:59Z', subject: 'Seoul prior day' });
+    const { client } = queueClient(vi.fn(() => Promise.resolve(ok([prior, boundary]))));
+    render(<OperationalDateMailIntakeQueue client={client} membershipId={membershipId} selectedBidDate="2026-08-31" onAuthorizationFailure={vi.fn()} />);
+    expect(await screen.findByText('Seoul next day')).toBeInTheDocument();
+    expect(screen.queryByText('Seoul prior day')).not.toBeInTheDocument();
+    expect(screen.getByText('1 pending for 2026-08-31')).toBeInTheDocument();
+  });
+
   it('shows isolated loading and empty states', async () => {
     const pending = deferred<BiddingResult<MailIntakeItem[]>>();
     const { client } = queueClient(vi.fn(() => pending.promise));
     render(<MailIntakeQueue client={client} membershipId={membershipId} onAuthorizationFailure={vi.fn()} />);
     expect(screen.getByText('Loading mail intake')).toBeInTheDocument();
     await act(async () => { pending.resolve(ok([])); await pending.promise; });
-    expect(await screen.findByText('No pending mail intake')).toBeInTheDocument();
-    expect(screen.getByText('0 pending')).toBeInTheDocument();
+    expect(await screen.findByText('No pending mail intake for this operational date')).toBeInTheDocument();
+    expect(screen.getByText('0 pending for 2026-08-21')).toBeInTheDocument();
   });
 
   it('renders bounded candidates and warnings as text without provider identity or deadline authority', async () => {
@@ -94,7 +106,7 @@ describe('BUYER mail intake queue', () => {
     render(<MailIntakeQueue client={client} membershipId={membershipId} onAuthorizationFailure={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm dismiss for all BUYERs' }));
-    expect(await screen.findByText('No pending mail intake')).toBeInTheDocument();
+    expect(await screen.findByText('No pending mail intake for this operational date')).toBeInTheDocument();
     expect(dismissMailIntakeItem).toHaveBeenCalledWith(membershipId, itemId, 1);
     expect(listMailIntakeItems).toHaveBeenCalledTimes(2);
     expect(createBid).not.toHaveBeenCalled();

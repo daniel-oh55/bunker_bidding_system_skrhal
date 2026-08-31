@@ -4,14 +4,19 @@ import { BuyerWorkspace } from './buyer-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
 import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerSellerComparison, Quote, TraderBid, TraderOrganization } from './types';
 
+vi.mock('./datetime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./datetime')>()),
+  currentSeoulDate: () => '2026-08-03',
+}));
+
 const id = '10000000-0000-4000-8000-000000000001'; const target = '10000000-0000-4000-8000-000000000002'; const bidId = '10000000-0000-4000-8000-000000000003'; const now = '2026-08-03T03:00:00.000Z';
 const ok = <T,>(data: T): BiddingResult<T> => ({ data, error: null });
-const bid = (overrides: Partial<Bid> = {}): Bid => ({ id: bidId, vessel_voyage: 'MV Buyer', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: now, raw_status: 'open', effective_status: 'open', revision: 3, created_by: id, created_by_label: 'Creator', responsible_buyer_user_id: target, responsible_buyer_label: 'Target buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null, ...overrides });
+const bid = (overrides: Partial<Bid> = {}): Bid => ({ id: bidId, bid_date: '2026-08-03', vessel_voyage: 'MV Buyer', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: now, raw_status: 'open', effective_status: 'open', revision: 3, created_by: id, created_by_label: 'Creator', responsible_buyer_user_id: target, responsible_buyer_label: 'Target buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null, ...overrides });
 const boardQuote = (targetBid: Bid, name: string, suffix: string, total = 1000, overrides: Partial<Quote> = {}): Quote => ({ id: `20000000-0000-4000-8000-${suffix.padStart(12, '0')}`, bid_id: targetBid.id, trader_organization_id: `30000000-0000-4000-8000-${suffix.padStart(12, '0')}`, trader_organization_label: name, revision: 1, created_by: id, fuel_prices: targetBid.fuel_items.map((item) => ({ fuel_grade: item.fuel_grade, unit_price: 100 })), barge_fee: 0, total_amount: total, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides });
 const boardComparison = (currentQuote: Quote): BuyerSellerComparison => ({ bid_id: currentQuote.bid_id, trader_organization_id: currentQuote.trader_organization_id, trader_organization_label: currentQuote.trader_organization_label, access_active: currentQuote.access_active, organization_active: currentQuote.organization_active, quote: currentQuote });
 const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
 function fakeClient(bids: Bid[] = [bid()]) {
-  const listBids = vi.fn(() => Promise.resolve(ok(bids)));
+  const listBids = vi.fn<BiddingClient['listBids']>(() => Promise.resolve(ok(bids)));
   const listActiveBuyers = vi.fn(() => Promise.resolve(ok<ActiveBuyer[]>([{ user_id: target, display_label: 'Target buyer', active_buyer_membership_count: 1 }])));
   const listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok<TraderOrganization[]>([])));
   const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listBidSellerComparisonForBuyers: () => Promise.resolve(ok<BuyerSellerComparison[]>([])), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), createQuote: () => Promise.resolve(ok<Quote>(null as never)), updateQuote: () => Promise.resolve(ok<Quote>(null as never)) };
@@ -19,6 +24,55 @@ function fakeClient(bids: Bid[] = [bid()]) {
 }
 
 describe('BUYER workspace', () => {
+  it('defaults to Seoul today and retains the selected date across view, Refresh, and Realtime reloads', async () => {
+    const { client, listBids } = fakeClient();
+    const view = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    const dateInput = screen.getByLabelText('Operational date');
+    expect(dateInput).toHaveValue('2026-08-03');
+    fireEvent.change(dateInput, { target: { value: '2026-08-02' } });
+    await waitFor(() => expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-02', 'all', undefined));
+    fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
+    await waitFor(() => expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-02', 'created_by_me', undefined));
+    fireEvent.change(dateInput, { target: { value: '2026-08-03' } });
+    await waitFor(() => expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-03', 'created_by_me', undefined));
+    fireEvent.change(dateInput, { target: { value: '2026-08-02' } });
+    await waitFor(() => expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-02', 'created_by_me', undefined));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(listBids.mock.calls.at(-1)?.[1]).toBe('2026-08-02'));
+    view.rerender(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} reloadVersion={1} />);
+    await waitFor(() => expect(listBids.mock.calls.at(-1)?.[1]).toBe('2026-08-02'));
+    expect(dateInput).toHaveValue('2026-08-02');
+  });
+
+  it('retains the responsible BUYER target when the operational date changes', async () => {
+    const { client, listBids } = fakeClient();
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByRole('article', { name: 'MV Buyer' });
+    fireEvent.click(screen.getByRole('radio', { name: 'By BUYER' }));
+    fireEvent.change(screen.getByLabelText('Responsible BUYER filter'), { target: { value: target } });
+    await waitFor(() => expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-03', 'responsible_buyer', target));
+    fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
+    await waitFor(() => expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-02', 'responsible_buyer', target));
+    expect(screen.getByLabelText('Responsible BUYER filter')).toHaveValue(target);
+  });
+
+  it('shows only BIDs matching the selected date and disables historical creation with an explanation', async () => {
+    const { client } = fakeClient([
+      bid({ id: bidId, bid_date: '2026-08-03', vessel_voyage: 'MV Today' }),
+      bid({ id: target, bid_date: '2026-08-02', vessel_voyage: 'MV Historical' }),
+    ]);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    expect(await screen.findByRole('article', { name: 'MV Today' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'MV Historical' })).not.toBeInTheDocument();
+    expect(screen.getByText('Create new bid')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
+    expect(await screen.findByRole('article', { name: 'MV Historical' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'MV Today' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Create new bid unavailable' })).toBeInTheDocument();
+    expect(screen.getByText(/created only for today’s Seoul operational date/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create bid' })).not.toBeInTheDocument();
+  });
+
   it('keeps normal bid operations available when the isolated mail queue has a non-authorization failure', async () => {
     const { client, listBids } = fakeClient();
     client.listMailIntakeItems = vi.fn<BiddingClient['listMailIntakeItems']>(() => Promise.resolve({ data: null, error: { kind: 'unknown', code: null, message: 'raw queue failure' } }));
@@ -27,7 +81,7 @@ describe('BUYER workspace', () => {
     expect(await screen.findByRole('article', { name: 'MV Buyer' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('The mail intake request could not be completed. Please try again.');
     expect(screen.getByText('Create new bid')).toBeInTheDocument();
-    expect(listBids).toHaveBeenCalledWith(id, 'all', undefined);
+    expect(listBids).toHaveBeenCalledWith(id, '2026-08-03', 'all', undefined);
     expect(screen.queryByText('No bid selected')).not.toBeInTheDocument();
   });
 
@@ -41,11 +95,11 @@ describe('BUYER workspace', () => {
     expect(screen.getByRole('radio', { name: 'By BUYER' })).not.toBeChecked();
     expect(screen.getByText('Grouped by creator')).toBeInTheDocument();
     expect(screen.getByText('Filter by responsibility')).toBeInTheDocument();
-    expect(listBids).toHaveBeenLastCalledWith(id, 'all', undefined);
+    expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-03', 'all', undefined);
 
     fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
     await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
-    expect(listBids).toHaveBeenLastCalledWith(id, 'created_by_me', undefined);
+    expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-03', 'created_by_me', undefined);
     expect(screen.queryByRole('region', { name: 'Bids created by Creator' })).not.toBeInTheDocument();
   });
 
@@ -147,7 +201,7 @@ describe('BUYER workspace', () => {
     expect(listBids).toHaveBeenCalledTimes(1);
     fireEvent.change(screen.getByRole('combobox', { name: /responsible buyer filter/i }), { target: { value: target } });
     await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
-    expect(listBids).toHaveBeenLastCalledWith(id, 'responsible_buyer', target);
+    expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-03', 'responsible_buyer', target);
     expect(screen.queryByRole('region', { name: 'Bids created by Creator' })).not.toBeInTheDocument();
   });
 

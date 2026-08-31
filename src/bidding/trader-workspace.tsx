@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import type { BiddingClient, QuoteInput } from './bidding-client';
 import type { Quote, TraderBid, WorkflowError } from './types';
 import { StatusBadge, WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
+import { currentSeoulDate, millisecondsUntilNextSeoulDate } from './datetime';
 
 const amount = (value: number) =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
@@ -115,6 +116,19 @@ export function TraderWorkspace({
   const reloadRef = useRef<() => void>(() => {});
   reloadRef.current = () => { void load(); };
   useEffect(() => { if (reloadVersion > 0) reloadRef.current(); }, [reloadVersion]);
+  useEffect(() => {
+    let timer: number;
+    const scheduleRollover = () => {
+      timer = window.setTimeout(() => {
+        clear();
+        setNowMs(Date.now());
+        void load();
+        scheduleRollover();
+      }, millisecondsUntilNextSeoulDate() + 25);
+    };
+    scheduleRollover();
+    return () => window.clearTimeout(timer);
+  }, [clear, load]);
 
   const save = async (bid: TraderBid, quote: Quote | undefined, input: QuoteInput) => {
     const operation = ++operationRef.current;
@@ -165,6 +179,7 @@ export function TraderWorkspace({
         title="Quote workspace"
         summary={
           <span className="trader-summary-metrics">
+            <span><strong>{currentSeoulDate(nowMs)}</strong> Seoul date</span>
             <span><strong>{openBidCount}</strong> open for quoting</span>
             <span><strong>{ownQuoteCount}</strong> own-organization {ownQuoteCount === 1 ? 'quote' : 'quotes'}</span>
             <span><strong>{bids.length}</strong> accessible {bids.length === 1 ? 'bid' : 'bids'}</span>

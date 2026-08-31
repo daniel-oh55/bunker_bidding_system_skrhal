@@ -23,28 +23,28 @@ insert into app_private.organization_memberships (id, user_id, organization_id, 
   ('00000000-0000-0000-0000-000000000215', '00000000-0000-0000-0000-000000000015', '00000000-0000-0000-0000-000000000115', 'buyer_admin', 'active');
 
 set local role anon;
-select throws_like($$select * from public.list_bids('00000000-0000-0000-0000-000000000211')$$, '%permission denied%', 'anon cannot execute bid APIs');
+select throws_like($$select * from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '%permission denied%', 'anon cannot execute bid APIs');
 select throws_like($$select * from app_private.bids$$, '%permission denied%', 'anon cannot select private bids');
 reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000014', true);
-select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000214')$$, '42501', 'An active BUYER membership is required', 'TRADER cannot list bids');
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000214', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '42501', 'An active BUYER membership is required', 'TRADER cannot list bids');
 select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000214', 'V', 'P', 'W', null, null, array['vlsfo'], array[1]::numeric[])$$, '42501', 'An active BUYER membership is required', 'TRADER cannot create bids despite forged metadata');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000015', true);
-select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000215')$$, '42501', 'An active BUYER membership is required', 'inactive BUYER account or organization is denied');
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000215', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '42501', 'An active BUYER membership is required', 'inactive BUYER account or organization is denied');
 reset role;
 update app_private.organizations set status = 'suspended' where id = '00000000-0000-0000-0000-000000000111';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000011', true);
-select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000211')$$, '42501', 'An active BUYER membership is required', 'suspended BUYER organization is denied');
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '42501', 'An active BUYER membership is required', 'suspended BUYER organization is denied');
 reset role;
 update app_private.organizations set status = 'active' where id = '00000000-0000-0000-0000-000000000111';
 update auth.users set raw_user_meta_data = '{"role":"buyer_admin"}'::jsonb, raw_app_meta_data = '{"role":"buyer_admin"}'::jsonb where id = '00000000-0000-0000-0000-000000000011';
 update app_private.organization_memberships set status = 'suspended' where id = '00000000-0000-0000-0000-000000000211';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000011', true);
-select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000211')$$, '42501', 'An active BUYER membership is required', 'forged BUYER claims cannot bypass a suspended BUYER membership');
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '42501', 'An active BUYER membership is required', 'forged BUYER claims cannot bypass a suspended BUYER membership');
 reset role;
 update app_private.organization_memberships set status = 'active' where id = '00000000-0000-0000-0000-000000000211';
 set local role authenticated;
@@ -60,9 +60,9 @@ select throws_like($$delete from app_private.bid_audit_events$$, '%permission de
 create temporary table bid_test_ids (name text primary key, id uuid not null) on commit drop;
 insert into bid_test_ids (name, id)
 select 'main', (public.create_bid('00000000-0000-0000-0000-000000000211', ' Vessel A ', ' Busan ', ' 1-3 Aug ', clock_timestamp() + interval '1 day', null, array['vlsfo', 'lsmgo'], array[100, 25]::numeric[])).id;
-select is((select raw_status from public.list_bids('00000000-0000-0000-0000-000000000211') where id = (select id from bid_test_ids where name = 'main')), 'open', 'create returns an expanded result with raw status');
-select is((select pg_typeof(id)::text from public.list_bids('00000000-0000-0000-0000-000000000211') where id = (select id from bid_test_ids where name = 'main')), 'uuid', 'list_bids returns expanded typed id fields');
-select is((select pg_typeof(fuel_items)::text from public.list_bids('00000000-0000-0000-0000-000000000211') where id = (select id from bid_test_ids where name = 'main')), 'jsonb', 'list_bids returns expanded typed fuel item fields');
+select is((select raw_status from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'main')), 'open', 'create returns an expanded result with raw status');
+select is((select pg_typeof(id)::text from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'main')), 'uuid', 'list_bids returns expanded typed id fields');
+select is((select pg_typeof(fuel_items)::text from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'main')), 'jsonb', 'list_bids returns expanded typed fuel item fields');
 select is((select count(*) from public.list_active_buyers('00000000-0000-0000-0000-000000000211')), 3::bigint, 'active BUYER selection returns all and only active BUYER users');
 reset role;
 select is((select created_by from app_private.bids where id = (select id from bid_test_ids where name = 'main')), '00000000-0000-0000-0000-000000000011'::uuid, 'creator is the actual authenticated user');
@@ -74,12 +74,12 @@ select throws_like($$insert into app_private.bid_audit_events (bid_id, event_typ
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000012', true);
-select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000211')$$, '42501', 'An active BUYER membership is required', 'a BUYER cannot use another user''s active BUYER membership ID');
-select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', 'all')), 1::bigint, 'BUYER B in another organization sees all bids');
-select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', 'created_by_me')), 0::bigint, 'created_by_me uses immutable creator');
-select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', 'responsible_buyer', '00000000-0000-0000-0000-000000000011')), 1::bigint, 'responsible_buyer view filters responsibility');
-select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000212', 'invalid')$$, '22023', 'Unknown bid view', 'unknown bid view is rejected');
-select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000212', 'responsible_buyer')$$, '22023', 'responsible_buyer view requires a target user', 'responsible view requires a target');
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '42501', 'An active BUYER membership is required', 'a BUYER cannot use another user''s active BUYER membership ID');
+select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)), 1::bigint, 'BUYER B in another organization sees all bids');
+select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'created_by_me', null)), 0::bigint, 'created_by_me uses immutable creator');
+select is((select count(*) from public.list_bids('00000000-0000-0000-0000-000000000212', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'responsible_buyer', '00000000-0000-0000-0000-000000000011')), 1::bigint, 'responsible_buyer view filters responsibility');
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000212', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'invalid', null)$$, '22023', 'Unknown bid view', 'unknown bid view is rejected');
+select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000212', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'responsible_buyer', null)$$, '22023', 'responsible_buyer view requires a target user', 'responsible view requires a target');
 select is((select (public.update_bid('00000000-0000-0000-0000-000000000212', (select id from bid_test_ids where name = 'main'), 1, 'Vessel B', 'Incheon', '4-5 Aug', clock_timestamp() + interval '2 days', array['hsfo'], array[200]::numeric[])).revision), 2::bigint, 'update returns an expanded revision');
 reset role;
 select is((select actor_user_id from app_private.bid_audit_events where bid_id = (select id from bid_test_ids where name = 'main') and resulting_revision = 2), '00000000-0000-0000-0000-000000000012'::uuid, 'cross-BUYER audit records actual actor');
@@ -120,7 +120,7 @@ reset role;
 update app_private.bids set deadline_at = clock_timestamp() - interval '1 second' where id = (select id from bid_test_ids where name = 'expired');
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000012', true);
-select is((select effective_status from public.list_bids('00000000-0000-0000-0000-000000000212') where id = (select id from bid_test_ids where name = 'expired')), 'closed', 'expired raw open bid is effective closed');
+select is((select effective_status from public.list_bids('00000000-0000-0000-0000-000000000212', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'expired')), 'closed', 'expired raw open bid is effective closed');
 select throws_ok($$select public.update_bid('00000000-0000-0000-0000-000000000212', (select id from bid_test_ids where name = 'expired'), 1, 'V', 'P', 'W', clock_timestamp() + interval '1 hour', array['vlsfo'], array[1]::numeric[])$$, '55000', 'Bid details are editable only while effective-open', 'expired open bid cannot extend deadline with normal update');
 select is((select (public.reopen_bid('00000000-0000-0000-0000-000000000212', (select id from bid_test_ids where name = 'expired'), 1, clock_timestamp() + interval '1 day')).revision), 2::bigint, 'expired raw open bid can reopen');
 select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', ' ', 'P', 'W', null, null, array['vlsfo'], array[1]::numeric[])$$, '22023', 'vessel_voyage is required', 'blank required field is rejected');
