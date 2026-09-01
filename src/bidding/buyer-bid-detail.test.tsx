@@ -25,7 +25,7 @@ const bid = (overrides: Partial<Bid> = {}): Bid => ({
 const quote = (overrides: Partial<Quote> = {}): Quote => ({
   id: '10000000-0000-4000-8000-000000000004', bid_id: bidId, trader_organization_id: '20000000-0000-4000-8000-000000000001', trader_organization_label: 'Trader A',
   revision: 1, created_by: currentBuyerId, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 10 }], barge_fee: 2, total_amount: 102,
-  created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides,
+  created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides, response_status: overrides.response_status ?? 'quoted',
 });
 const client = {} as BiddingClient;
 const access = (organizationId = '20000000-0000-4000-8000-000000000001', label = 'Trader A'): BidTraderAccess => ({

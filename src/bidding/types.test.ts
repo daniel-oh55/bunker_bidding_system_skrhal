@@ -12,13 +12,13 @@ function audit(overrides: Record<string, unknown> = {}) {
   return { id, bid_id: otherId, event_type: 'created', actor_user_id: id, actor_membership_id: id, actor_organization_id: id, actor_role: 'buyer_operator', occurred_at: now, prior_revision: null, resulting_revision: 1, prior_status: null, resulting_status: 'open', prior_responsible_buyer_user_id: null, resulting_responsible_buyer_user_id: otherId, before_snapshot: null, after_snapshot: {}, ...overrides };
 }
 function quote(overrides: Record<string, unknown> = {}) {
-  return { id, bid_id: otherId, trader_organization_id: id, trader_organization_label: 'Trader', revision: 1, created_by: otherId, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 1 }], barge_fee: 0, total_amount: 1, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides };
+  return { id, bid_id: otherId, trader_organization_id: id, trader_organization_label: 'Trader', revision: 1, created_by: otherId, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 1 }], barge_fee: 0, total_amount: 1, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, response_status: 'quoted', ...overrides };
 }
 function mailItem(overrides: Record<string, unknown> = {}) {
   return { id, received_at: now, subject: '', vessel_voyage: null, port_name: 'Busan', delivery_window: '2026-08-04', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: ['Confirm delivery window'], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null, ...overrides };
 }
 function sellerComparison(overrides: Record<string, unknown> = {}) {
-  return { bid_id: otherId, trader_organization_id: id, trader_organization_label: 'Trader', access_active: true, organization_active: true, quote: null, ...overrides };
+  return { bid_id: otherId, trader_organization_id: id, trader_organization_label: 'Trader', access_active: true, organization_active: true, response_status: 'awaiting', quote: null, ...overrides };
 }
 function sellerOrganization(overrides: Record<string, unknown> = {}) {
   return { organization_id: id, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 2, created_at: now, updated_at: now, ...overrides };
@@ -105,7 +105,7 @@ describe('bidding protocol parsers', () => {
   });
 
   it('accepts only coherent deadline-derived open states in both bid parsers', () => {
-    const trader = (value: Record<string, unknown>) => parseTraderBid({ ...value, created_by: undefined, created_by_label: undefined, responsible_buyer_user_id: undefined, responsible_buyer_label: undefined, awarded_quote_id: undefined, awarded_trader_organization_id: undefined, awarded_trader_organization_label: undefined, awarded_total_amount: undefined, awarded_at: undefined });
+    const trader = (value: Record<string, unknown>) => parseTraderBid({ ...value, created_by: undefined, created_by_label: undefined, responsible_buyer_user_id: undefined, responsible_buyer_label: undefined, awarded_quote_id: undefined, awarded_trader_organization_id: undefined, awarded_trader_organization_label: undefined, awarded_total_amount: undefined, awarded_at: undefined, response_status: 'awaiting', response_revision: 1 });
     expect(parseBid(bid({ raw_status: 'open', effective_status: 'closed', deadline_at: null }))).toBeNull();
     expect(trader(bid({ raw_status: 'open', effective_status: 'closed', deadline_at: null }))).toBeNull();
     expect(parseBid(bid({ raw_status: 'open', effective_status: 'closed', deadline_at: now }))).not.toBeNull();
@@ -126,19 +126,19 @@ describe('bidding protocol parsers', () => {
 
   it('strictly parses unquoted and quoted BUYER SELLER comparison rows', () => {
     expect(parseBuyerSellerComparison(sellerComparison())).toEqual(sellerComparison());
-    expect(parseBuyerSellerComparison(sellerComparison({ quote: quote() }))).toEqual(sellerComparison({ quote: quote() }));
+    expect(parseBuyerSellerComparison(sellerComparison({ response_status: 'quoted', quote: quote() }))).toEqual(sellerComparison({ response_status: 'quoted', quote: quote() }));
     expect(parseBuyerSellerComparison({ ...sellerComparison(), member_email: 'hidden@example.test' })).toBeNull();
-    expect(parseBuyerSellerComparison(sellerComparison({ access_active: false, quote: null }))).toBeNull();
+    expect(parseBuyerSellerComparison(sellerComparison({ access_active: false, quote: null }))).toEqual(sellerComparison({ access_active: false, quote: null }));
     expect(parseBuyerSellerComparison(sellerComparison({ quote: { ...quote(), secret: true } }))).toBeNull();
   });
 
   it('rejects nested quote identity and outer metadata mismatches', () => {
     for (const candidate of [
-      sellerComparison({ quote: quote({ bid_id: id }) }),
-      sellerComparison({ quote: quote({ trader_organization_id: otherId }) }),
-      sellerComparison({ quote: quote({ trader_organization_label: 'Other label' }) }),
-      sellerComparison({ quote: quote({ access_active: false }) }),
-      sellerComparison({ quote: quote({ organization_active: false }) }),
+      sellerComparison({ response_status: 'quoted', quote: quote({ bid_id: id }) }),
+      sellerComparison({ response_status: 'quoted', quote: quote({ trader_organization_id: otherId }) }),
+      sellerComparison({ response_status: 'quoted', quote: quote({ trader_organization_label: 'Other label' }) }),
+      sellerComparison({ response_status: 'quoted', quote: quote({ access_active: false }) }),
+      sellerComparison({ response_status: 'quoted', quote: quote({ organization_active: false }) }),
     ]) expect(parseBuyerSellerComparison(candidate)).toBeNull();
   });
 

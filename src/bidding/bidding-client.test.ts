@@ -3,9 +3,9 @@ import { createSupabaseBiddingClient, type BiddingRpcClient } from './bidding-cl
 
 const id = '10000000-0000-4000-8000-000000000001'; const other = '10000000-0000-4000-8000-000000000002'; const now = '2026-08-03T03:00:00.000Z';
 const bid = { id, bid_date: '2026-08-03', vessel_voyage: 'MV Test', port_name: 'Busan', delivery_window: 'Today', deadline_at: null, raw_status: 'open', effective_status: 'open', revision: 1, created_by: id, created_by_label: 'Creator', responsible_buyer_user_id: other, responsible_buyer_label: 'Buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null };
-const traderBid = { id, vessel_voyage: 'MV Test', port_name: 'Busan', delivery_window: 'Today', deadline_at: null, raw_status: 'open', effective_status: 'open', revision: 1, fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null };
-const quote = { id, bid_id: other, trader_organization_id: id, trader_organization_label: 'Trader', revision: 1, created_by: other, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 1 }], barge_fee: 0, total_amount: 1, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false };
-const sellerComparison = { bid_id: other, trader_organization_id: id, trader_organization_label: 'Trader', access_active: true, organization_active: true, quote };
+const traderBid = { id, vessel_voyage: 'MV Test', port_name: 'Busan', delivery_window: 'Today', deadline_at: null, raw_status: 'open', effective_status: 'open', revision: 1, fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, response_status: 'quoted', response_revision: 2 };
+const quote = { id, bid_id: other, trader_organization_id: id, trader_organization_label: 'Trader', revision: 1, created_by: other, fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 1 }], barge_fee: 0, total_amount: 1, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, response_status: 'quoted' };
+const sellerComparison = { bid_id: other, trader_organization_id: id, trader_organization_label: 'Trader', access_active: true, organization_active: true, response_status: 'quoted', quote };
 const pendingMail = { id, received_at: now, subject: 'Request', vessel_voyage: null, port_name: 'Busan', delivery_window: null, fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null };
 const dismissedMail = { ...pendingMail, status: 'dismissed', revision: 2, dismissed_at: now };
 const sellerOrganization = { organization_id: other, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 0, created_at: now, updated_at: now };
@@ -86,14 +86,14 @@ describe('BiddingClient RPC adapter', () => {
     const malformed = harness([{ ...sellerComparison, quote: { ...quote, bid_id: id } }]);
     expect((await malformed.client.listBidSellerComparisonForBuyers(id, other)).error?.kind).toBe('protocol');
   });
-  it('maps TRADER calls and never sends calculated or identity fields with quote mutations', async () => {
-    const { rpc, client } = harness(traderBid); await client.listTraderBids(id); const quotes = harness([quote]); await quotes.client.listMyQuotes(id); await quotes.client.createQuote(id, other, { fuelGrades: ['vlsfo'], unitPrices: [3], bargeFee: 2 }); await quotes.client.updateQuote(id, other, 2, { fuelGrades: ['vlsfo'], unitPrices: [3], bargeFee: 2 });
-    expect(rpc).toHaveBeenCalledWith('list_trader_bids', { p_actor_membership_id: id }); expect(quotes.rpc.mock.calls.map(([name]) => name)).toEqual(['list_my_quotes', 'create_quote', 'update_quote']);
+  it('maps response-oriented TRADER calls and never sends calculated or identity fields', async () => {
+    const { rpc, client } = harness(traderBid); await client.listTraderBids(id); const quotes = harness([quote]); await quotes.client.listMyQuotes(id); await quotes.client.submitQuoteResponse(id, other, 2, 1, { fuelGrades: ['vlsfo'], unitPrices: [3], bargeFee: 2 }); await quotes.client.giveUpQuoteResponse(id, other, 3);
+    expect(rpc).toHaveBeenCalledWith('list_trader_bids', { p_actor_membership_id: id }); expect(quotes.rpc.mock.calls.map(([name]) => name)).toEqual(['list_my_quotes', 'submit_quote_response', 'give_up_quote_response']);
     for (const [, args] of quotes.rpc.mock.calls.slice(1)) { expect(args).not.toHaveProperty('p_total_amount'); expect(args).not.toHaveProperty('p_created_by'); expect(args).not.toHaveProperty('p_trader_organization_id'); expect(args).not.toHaveProperty('p_actor_user_id'); expect(args).not.toHaveProperty('p_role'); }
     expect(quotes.rpc.mock.calls.map(([, args]) => args)).toEqual([
       { p_actor_membership_id: id },
-      { p_actor_membership_id: id, p_bid_id: other, p_fuel_grades: ['vlsfo'], p_unit_prices: [3], p_barge_fee: 2 },
-      { p_actor_membership_id: id, p_quote_id: other, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [3], p_barge_fee: 2 },
+      { p_actor_membership_id: id, p_bid_id: other, p_expected_response_revision: 2, p_expected_quote_revision: 1, p_fuel_grades: ['vlsfo'], p_unit_prices: [3], p_barge_fee: 2 },
+      { p_actor_membership_id: id, p_bid_id: other, p_expected_response_revision: 3 },
     ]);
   });
   it('maps RPC errors, malformed responses, and thrown transport failures without exposing data', async () => {

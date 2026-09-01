@@ -72,7 +72,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000003', true);
 select is((select count(*) from public.list_trader_bids('93000000-0000-4000-8000-000000000003') where id = (select id from admin_created_bid)), 1::bigint, 'active scoped TRADER can immediately list the new BID'); -- 20
 create temporary table alpha_quote on commit drop as
-select result.* from public.create_quote('93000000-0000-4000-8000-000000000003', (select id from admin_created_bid), array['vlsfo'], array[100]::numeric[], 5) as result;
+select result.* from public.submit_quote_response('93000000-0000-4000-8000-000000000003', (select id from admin_created_bid), 1, null, array['vlsfo'], array[100]::numeric[], 5) as result;
 reset role;
 select ok((select id is not null and total_amount = 1005 from alpha_quote), 'existing quote create returns its authoritative total'); -- 21
 
@@ -83,10 +83,10 @@ select * from public.list_bid_seller_comparison_for_buyers('93000000-0000-4000-8
 create temporary table admin_actual_quotes on commit drop as
 select * from public.list_quotes_for_buyers('93000000-0000-4000-8000-000000000001', (select id from admin_created_bid));
 reset role;
-select is((select count(*) from admin_comparison), 2::bigint, 'buyer_admin comparison returns access union retained quotes'); -- 22
+select is((select count(*) from admin_comparison), 2::bigint, 'buyer_admin comparison returns access union retained responses and quotes'); -- 22
 select ok((select quote is null and access_active and organization_active from admin_comparison where trader_organization_id = '92000000-0000-4000-8000-000000000003'), 'scoped SELLER without quote returns quote=null and active metadata'); -- 23
 select ok((select quote = to_jsonb(app_private.quote_result((select id from alpha_quote))) from admin_comparison where trader_organization_id = '92000000-0000-4000-8000-000000000002'), 'quoted SELLER embeds the authoritative quote_result payload'); -- 24
-select is((select array_agg(key order by key) from (select distinct jsonb_object_keys(to_jsonb(result)) as key from admin_comparison as result) keys), array['access_active','bid_id','organization_active','quote','trader_organization_id','trader_organization_label']::text[], 'comparison exposes only six narrow outer fields'); -- 25
+select is((select array_agg(key order by key) from (select distinct jsonb_object_keys(to_jsonb(result)) as key from admin_comparison as result) keys), array['access_active','bid_id','organization_active','quote','response_status','trader_organization_id','trader_organization_label']::text[], 'comparison exposes only seven narrow outer fields'); -- 25
 select is((select array_agg(trader_organization_label) from admin_comparison), array['Alpha Seller','beta Seller']::text[], 'comparison order is deterministic by normalized label then ID'); -- 26
 select is((select count(*) from admin_actual_quotes), 1::bigint, 'existing BUYER quote list remains actual-quote-only'); -- 27
 set local role authenticated;
@@ -124,13 +124,13 @@ select is((select count(*) from public.list_bid_seller_comparison_for_buyers('93
 select is((select (public.grant_bid_trader_access('93000000-0000-4000-8000-000000000001', (select id from admin_created_bid), 2, (select organization_id from late_seller))).revision), 3::bigint, 'manual later Grant scope remains available'); -- 39
 select ok((select quote is null and access_active from public.list_bid_seller_comparison_for_buyers('93000000-0000-4000-8000-000000000001', (select id from admin_created_bid)) where trader_organization_id = (select organization_id from late_seller)), 'manually scoped unquoted later SELLER appears as an active participant'); -- 40
 select is((select (public.revoke_bid_trader_access('93000000-0000-4000-8000-000000000001', (select id from admin_created_bid), 3, (select organization_id from late_seller))).revision), 4::bigint, 'manual later Revoke scope remains available'); -- 41
-select is((select count(*) from public.list_bid_seller_comparison_for_buyers('93000000-0000-4000-8000-000000000001', (select id from admin_created_bid)) where trader_organization_id = (select organization_id from late_seller)), 0::bigint, 'revoked unquoted SELLER disappears when neither current scope nor retained quote exists'); -- 42
+select ok((select not access_active and response_status = 'awaiting' and quote is null from public.list_bid_seller_comparison_for_buyers('93000000-0000-4000-8000-000000000001', (select id from admin_created_bid)) where trader_organization_id = (select organization_id from late_seller)), 'revoked unquoted SELLER retains awaiting response history without current scope'); -- 42
 reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000004', true);
 create temporary table beta_quote on commit drop as
-select result.* from public.create_quote('93000000-0000-4000-8000-000000000004', (select id from operator_created_bid), array['vlsfo'], array[90]::numeric[], 2) as result;
+select result.* from public.submit_quote_response('93000000-0000-4000-8000-000000000004', (select id from operator_created_bid), 1, null, array['vlsfo'], array[90]::numeric[], 2) as result;
 select ok((select total_amount = 1802 from beta_quote), 'existing second-SELLER quote behavior remains unchanged'); -- 43
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000002', true);
 select is((select (public.close_bid('93000000-0000-4000-8000-000000000002', (select id from operator_created_bid), 1)).raw_status), 'closed', 'existing BID close behavior remains unchanged'); -- 44

@@ -16,7 +16,7 @@ const bid = (overrides: Partial<Bid> = {}): Bid => ({
 const quote = (name: string, total: number, overrides: Partial<Quote> = {}): Quote => ({
   id: `20000000-0000-4000-8000-${String(Math.round(total * 100) + name.length).padStart(12, '0')}`, bid_id: bidId, trader_organization_id: `30000000-0000-4000-8000-${String(Math.round(total * 100) + name.length).padStart(12, '0')}`,
   trader_organization_label: name, revision: 1, created_by: '10000000-0000-4000-8000-000000000004', fuel_prices: [{ fuel_grade: 'vlsfo', unit_price: 100 }],
-  barge_fee: 7, total_amount: total, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides,
+  barge_fee: 7, total_amount: total, created_at: now, updated_at: now, access_active: true, organization_active: true, eligible_for_award: true, is_awarded: false, ...overrides, response_status: overrides.response_status ?? 'quoted',
 });
 const comparison = (currentQuote: Quote): BuyerSellerComparison => ({
   bid_id: currentQuote.bid_id,
@@ -24,6 +24,7 @@ const comparison = (currentQuote: Quote): BuyerSellerComparison => ({
   trader_organization_label: currentQuote.trader_organization_label,
   access_active: currentQuote.access_active,
   organization_active: currentQuote.organization_active,
+  response_status: currentQuote.response_status,
   quote: currentQuote,
 });
 const awaiting = (name: string, suffix: string, overrides: Partial<BuyerSellerComparison> = {}): BuyerSellerComparison => ({
@@ -33,7 +34,7 @@ const awaiting = (name: string, suffix: string, overrides: Partial<BuyerSellerCo
   access_active: true,
   organization_active: true,
   quote: null,
-  ...overrides,
+  ...overrides, response_status: overrides.response_status ?? 'awaiting',
 });
 const renderCard = (currentBid = bid(), quotes: Quote[] = [], onManage = vi.fn()) => {
   render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: quotes.map(comparison) }} currentTimeMs={Date.parse(now)} selected={false} onManage={onManage} />);
@@ -179,6 +180,18 @@ describe('BuyerBidBoardCard', () => {
     expect(within(quotedRow).getByText('Quoted')).toBeInTheDocument();
     expect(within(card).getByText(/Quoted Seller · \$100/)).toBeInTheDocument();
     expect(within(card).getByText('2 SELLERs · 1 quote received')).toBeInTheDocument();
+  });
+
+  it('keeps a gave-up quote as history while hiding its price and excluding it from rank', () => {
+    const gaveUp = quote('Gave Up Seller', 50, { response_status: 'gave_up', eligible_for_award: false });
+    const active = quote('Active Seller', 100, { eligible_for_award: false });
+    const card = renderSellers(bid(), [comparison(gaveUp), comparison(active)]);
+    const gaveUpRow = within(card).getByRole('rowheader', { name: /Gave Up Seller/ }).closest('tr')!;
+    expect(within(gaveUpRow).getByText('Gave up')).toBeInTheDocument();
+    expect(within(gaveUpRow).getAllByText('—')).toHaveLength(4);
+    expect(gaveUpRow).toHaveClass('is-comparison-excluded');
+    expect(within(card).getByText(/Active Seller · \$100/)).toBeInTheDocument();
+    expect(within(card).queryByText(/Gave Up Seller · \$50/)).not.toBeInTheDocument();
   });
 
   it('shows inactive organization metadata for an awaiting participant', () => {

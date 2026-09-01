@@ -130,16 +130,20 @@ export function TraderWorkspace({
     return () => window.clearTimeout(timer);
   }, [clear, load]);
 
-  const save = async (bid: TraderBid, quote: Quote | undefined, input: QuoteInput) => {
+  const submitResponse = async (bid: TraderBid, quote: Quote | undefined, input: QuoteInput) => {
     const operation = ++operationRef.current;
     setPending(true);
     setError(null);
 
     let result: { data: Quote | null; error: WorkflowError | null };
     try {
-      result = quote
-        ? await client.updateQuote(membershipId, quote.id, quote.revision, input)
-        : await client.createQuote(membershipId, bid.id, input);
+      result = await client.submitQuoteResponse(
+        membershipId,
+        bid.id,
+        bid.response_revision,
+        quote?.revision ?? null,
+        input,
+      );
     } catch {
       result = { data: null, error: unknownError };
     }
@@ -169,8 +173,26 @@ export function TraderWorkspace({
     await load();
   };
 
+  const giveUp = async (bid: TraderBid) => {
+    const operation = ++operationRef.current;
+    setPending(true);
+    setError(null);
+    let result;
+    try { result = await client.giveUpQuoteResponse(membershipId, bid.id, bid.response_revision); }
+    catch { result = { data: null, error: unknownError }; }
+    if (operation !== operationRef.current) return;
+    setPending(false);
+    if (result.error) {
+      if (result.error.kind === 'authorization') { authorizationFailure(result.error); return; }
+      if (result.error.code === '40001' || result.error.code === '55000' || result.error.code === 'P0002') { await load(result.error); return; }
+      setError(result.error);
+      return;
+    }
+    await load();
+  };
+
   const openBidCount = bids.filter((bid) => bid.effective_status === 'open').length;
-  const ownQuoteCount = quotes.length;
+  const ownQuoteCount = bids.filter((bid) => bid.response_status === 'quoted').length;
 
   return (
     <div className="workspace trader-workspace">
@@ -210,11 +232,12 @@ export function TraderWorkspace({
 
             return (
               <TraderBidCard
-                key={`${bid.id}:${bid.revision}:${quote?.id ?? 'new'}:${quote?.revision ?? 0}`}
+                key={`${bid.id}:${bid.revision}:${bid.response_revision}:${quote?.id ?? 'new'}:${quote?.revision ?? 0}`}
                 bid={bid}
                 quote={quote}
                 pending={pending}
-                onSave={save}
+                onSave={submitResponse}
+                onGiveUp={giveUp}
                 currentTimeMs={nowMs}
               />
             );
@@ -230,14 +253,17 @@ function TraderBidCard({
   quote,
   pending,
   onSave,
+  onGiveUp,
   currentTimeMs,
 }: {
   bid: TraderBid;
   quote?: Quote;
   pending: boolean;
   onSave: (bid: TraderBid, quote: Quote | undefined, input: QuoteInput) => Promise<void>;
+  onGiveUp: (bid: TraderBid) => Promise<void>;
   currentTimeMs: number;
 }) {
+  const [confirmGiveUp, setConfirmGiveUp] = useState(false);
   const [prices, setPrices] = useState(() =>
     Object.fromEntries(
       bid.fuel_items.map((item) => [
@@ -333,26 +359,28 @@ function TraderBidCard({
       </section>
 
       <section
-        className={`trader-quote-state ${quote ? 'has-own-quote' : 'no-own-quote'}`}
-        aria-label="Own quote state"
+        className={`trader-quote-state response-${bid.response_status}`}
+        aria-label="Own response state"
       >
         <div>
-          <p className="eyebrow">Own quote status</p>
-          <h3>{quote ? 'Own quote submitted' : 'No own quote submitted'}</h3>
+          <p className="eyebrow">Quote status</p>
+          <h3>{bid.response_status === 'awaiting' ? 'Awaiting your response' : bid.response_status === 'quoted' ? 'Submitted' : 'Gave up'}</h3>
           <p>
-            {quote
-              ? 'Your organization has a quote on this bid.'
-              : 'Your organization has not submitted a quote for this bid.'}
+            {bid.response_status === 'gave_up'
+              ? 'No current price offer is active.'
+              : bid.response_status === 'quoted'
+                ? 'Your organization has an active price response on this bid.'
+                : 'Submit prices or give up while this bid remains open.'}
           </p>
         </div>
         {quote ? (
           <dl>
             <div>
-              <dt>Own quote revision</dt>
-              <dd>{quote.revision}</dd>
+              <dt>Response revision</dt>
+              <dd>{bid.response_revision}</dd>
             </div>
             <div>
-              <dt>Authoritative server total</dt>
+              <dt>Retained server total</dt>
               <dd className="server-value">{amount(quote.total_amount)}</dd>
             </div>
           </dl>
@@ -364,7 +392,7 @@ function TraderBidCard({
           <header className="trader-quote-editor-heading">
             <div>
               <p className="eyebrow">Quote editor</p>
-              <h3>{quote ? 'Update your quote' : 'Create quote'}</h3>
+              <h3>{bid.response_status === 'quoted' ? 'Update price' : bid.response_status === 'gave_up' ? 'Resume / Submit price' : 'Submit price'}</h3>
             </div>
             <p>Enter a unit price for each requested fuel, then add the barge fee.</p>
           </header>
@@ -428,8 +456,13 @@ function TraderBidCard({
           </dl>
           <div className="trader-quote-actions">
             <button type="submit" disabled={!canSave || pending}>
-              {quote ? 'Update quote' : 'Save quote'}
+              {bid.response_status === 'quoted' ? 'Update price' : bid.response_status === 'gave_up' ? 'Resume / Submit price' : 'Submit price'}
             </button>
+            {bid.response_status !== 'gave_up' ? (
+              confirmGiveUp ? <button type="button" className="danger" disabled={pending} onClick={() => void onGiveUp(bid)}>Confirm GIVE UP</button>
+                : <button type="button" className="secondary" disabled={pending} onClick={() => setConfirmGiveUp(true)}>GIVE UP</button>
+            ) : null}
+            {confirmGiveUp ? <button type="button" className="secondary" disabled={pending} onClick={() => setConfirmGiveUp(false)}>Keep responding</button> : null}
           </div>
         </form>
       ) : (
