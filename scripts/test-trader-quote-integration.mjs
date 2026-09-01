@@ -44,14 +44,14 @@ async function run() {
     assert(!granted.error && granted.data.revision === 2, 'BUYER could not grant explicit TRADER scope.');
     const listedBids = await rpc(traderOneCaller, 'list_trader_bids', { p_actor_membership_id: traderOne.membershipId }, 'allowed trader lists bids');
     assert(!listedBids.error && listedBids.data.some((bid) => bid.id === state.bidId), 'Allowed TRADER cannot list explicitly scoped bid.');
-    const quote = await rpc(traderOneCaller, 'create_quote', { p_actor_membership_id: traderOne.membershipId, p_bid_id: state.bidId, p_fuel_grades: ['vlsfo'], p_unit_prices: [100], p_barge_fee: 5 }, 'allowed trader creates quote');
-    assert(!quote.error && quote.data?.total_amount === 1005 && quote.data?.is_awarded === false, 'TRADER quote create response must include server-calculated total and boolean false is_awarded.'); state.quoteId = quote.data.id;
-    const updated = await rpc(traderTwoCaller, 'update_quote', { p_actor_membership_id: traderTwo.membershipId, p_quote_id: state.quoteId, p_expected_revision: 1, p_fuel_grades: ['vlsfo'], p_unit_prices: [101], p_barge_fee: 5 }, 'same organization update');
+    const quote = await rpc(traderOneCaller, 'submit_quote_response', { p_actor_membership_id: traderOne.membershipId, p_bid_id: state.bidId, p_expected_response_revision: 1, p_expected_quote_revision: null, p_fuel_grades: ['vlsfo'], p_unit_prices: [100], p_barge_fee: 5 }, 'allowed trader submits quote response');
+    assert(!quote.error && quote.data?.total_amount === 1005 && quote.data?.response_status === 'quoted' && quote.data?.is_awarded === false, 'TRADER quote submission must include server-calculated total, quoted status, and boolean false is_awarded.'); state.quoteId = quote.data.id;
+    const updated = await rpc(traderTwoCaller, 'submit_quote_response', { p_actor_membership_id: traderTwo.membershipId, p_bid_id: state.bidId, p_expected_response_revision: 2, p_expected_quote_revision: 1, p_fuel_grades: ['vlsfo'], p_unit_prices: [101], p_barge_fee: 5 }, 'same organization response update');
     assert(!updated.error && updated.data.revision === 2 && updated.data.created_by === traderOneUser.id && updated.data.is_awarded === false, 'Same-organization TRADER update must preserve creator, increment revision, and return boolean false is_awarded.');
     await query("update app_private.organizations set status='active' where id=$1", [traderOther.organizationId]);
     const otherQuotes = await rpc(otherCaller, 'list_my_quotes', { p_actor_membership_id: traderOther.membershipId }, 'other trader quote list');
     assert(!otherQuotes.error && !otherQuotes.data.some((value) => value.id === state.quoteId), 'Another TRADER organization can see a competing quote.');
-    const otherUpdate = await rpc(otherCaller, 'update_quote', { p_actor_membership_id: traderOther.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'other trader quote update');
+    const otherUpdate = await rpc(otherCaller, 'submit_quote_response', { p_actor_membership_id: traderOther.membershipId, p_bid_id: state.bidId, p_expected_response_revision: 1, p_expected_quote_revision: null, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'other trader response update');
     assert(otherUpdate.error?.code === '42501', 'Another TRADER organization update must return 42501.');
     const buyerQuotes = await rpc(buyerCaller, 'list_quotes_for_buyers', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId }, 'buyer quote list');
     assert(!buyerQuotes.error && buyerQuotes.data.length === 1 && buyerQuotes.data[0].total_amount === 1015 && buyerQuotes.data[0].is_awarded === false, 'BUYER quote list must include the authoritative total and boolean false is_awarded before award.');
@@ -59,13 +59,13 @@ async function run() {
     assert(!revoked.error && revoked.data.revision === 3, 'BUYER could not revoke current TRADER scope.');
     const revokedQuotes = await rpc(traderOneCaller, 'list_my_quotes', { p_actor_membership_id: traderOne.membershipId }, 'revoked trader quote list');
     assert(!revokedQuotes.error && !revokedQuotes.data.some((value) => value.id === state.quoteId), 'Revoked TRADER retains quote visibility.');
-    const revokedUpdate = await rpc(traderOneCaller, 'update_quote', { p_actor_membership_id: traderOne.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'revoked trader quote update');
+    const revokedUpdate = await rpc(traderOneCaller, 'submit_quote_response', { p_actor_membership_id: traderOne.membershipId, p_bid_id: state.bidId, p_expected_response_revision: 3, p_expected_quote_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'revoked trader response update');
     assert(revokedUpdate.error?.code === '42501', 'Revoked TRADER quote mutation must return 42501.');
     const regranted = await rpc(buyerCaller, 'grant_bid_trader_access', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 3, p_trader_organization_id: traderOne.organizationId }, 'buyer regrants scope');
     assert(!regranted.error && regranted.data.revision === 4, 'BUYER could not regrant scope while effective-open.');
     const closed = await rpc(buyerCaller, 'close_bid', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 4 }, 'buyer closes bid');
     assert(!closed.error && closed.data.raw_status === 'closed', 'BUYER could not close quote bid.');
-    const afterClose = await rpc(traderOneCaller, 'update_quote', { p_actor_membership_id: traderOne.membershipId, p_quote_id: state.quoteId, p_expected_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'post-close quote update');
+    const afterClose = await rpc(traderOneCaller, 'submit_quote_response', { p_actor_membership_id: traderOne.membershipId, p_bid_id: state.bidId, p_expected_response_revision: 3, p_expected_quote_revision: 2, p_fuel_grades: ['vlsfo'], p_unit_prices: [102], p_barge_fee: 5 }, 'post-close response update');
     assert(afterClose.error?.code === '55000', 'Closed bid quote update must return 55000.');
     const awarded = await rpc(buyerCaller, 'award_bid', { p_actor_membership_id: buyer.membershipId, p_bid_id: state.bidId, p_expected_revision: 5, p_quote_id: state.quoteId, p_expected_quote_revision: 2 }, 'buyer awards quote');
     assert(!awarded.error && awarded.data.raw_status === 'awarded' && awarded.data.awarded_quote_id === state.quoteId && awarded.data.awarded_total_amount === 1015, 'BUYER did not receive authoritative final award result.');
@@ -76,10 +76,25 @@ async function run() {
   finally {
     for (const caller of callers) await within(caller.auth.signOut({ scope: 'local' }), 'sign out').catch((error) => cleanupErrors.push(error));
     if (state.bidId) {
-      await query("update app_private.bids set status='closed', awarded_quote_id=null, awarded_at=null, closed_at=coalesce(closed_at,clock_timestamp()) where id=$1 and status='awarded'", [state.bidId]).catch((error) => cleanupErrors.push(error));
-      await query('delete from app_private.quote_audit_events where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.quote_items where quote_id in (select id from app_private.quotes where bid_id=$1)', [state.bidId]).catch((error) => cleanupErrors.push(error));
-      await query('delete from app_private.bid_trader_organization_access where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.quotes where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error));
-      await query('delete from app_private.bid_audit_events where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.bid_items where bid_id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error)); await query('delete from app_private.bids where id=$1', [state.bidId]).catch((error) => cleanupErrors.push(error));
+      try {
+        await query('begin');
+        await query('alter table app_private.bid_trader_organization_response_audit_events disable trigger reject_response_audit_delete');
+        await query("update app_private.bids set status='closed', awarded_quote_id=null, awarded_at=null, closed_at=coalesce(closed_at,clock_timestamp()) where id=$1 and status='awarded'", [state.bidId]);
+        await query('delete from app_private.bid_trader_organization_response_audit_events where bid_id=$1', [state.bidId]);
+        await query('delete from app_private.quote_audit_events where bid_id=$1', [state.bidId]);
+        await query('delete from app_private.quote_items where quote_id in (select id from app_private.quotes where bid_id=$1)', [state.bidId]);
+        await query('delete from app_private.bid_trader_organization_access where bid_id=$1', [state.bidId]);
+        await query('delete from app_private.quotes where bid_id=$1', [state.bidId]);
+        await query('delete from app_private.bid_trader_organization_responses where bid_id=$1', [state.bidId]);
+        await query('delete from app_private.bid_audit_events where bid_id=$1', [state.bidId]);
+        await query('delete from app_private.bid_items where bid_id=$1', [state.bidId]);
+        await query('delete from app_private.bids where id=$1', [state.bidId]);
+        await query('alter table app_private.bid_trader_organization_response_audit_events enable trigger reject_response_audit_delete');
+        await query('commit');
+      } catch (error) {
+        await query('rollback').catch(() => {});
+        cleanupErrors.push(error);
+      }
     }
     if (state.memberships.length) await query('delete from app_private.organization_memberships where id=any($1::uuid[])', [state.memberships]).catch((error) => cleanupErrors.push(error));
     if (state.orgs.length) await query('delete from app_private.organizations where id=any($1::uuid[])', [state.orgs]).catch((error) => cleanupErrors.push(error));

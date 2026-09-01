@@ -324,9 +324,11 @@ async function run() {
 
     const refetch = await rpc(traderACaller, 'list_trader_bids', { p_actor_membership_id: traderA.membershipId }, 'TRADER A authoritative Bid X refetch');
     assert(!refetch.error && !refetch.data.some((bid) => bid.id === bidX.id) && refetch.data.some((bid) => bid.id === bidY.id), 'Authoritative TRADER refetch did not hide revoked Bid X while retaining Bid Y.');
-    const deniedMutation = await rpc(traderACaller, 'create_quote', {
+    const deniedMutation = await rpc(traderACaller, 'submit_quote_response', {
       p_actor_membership_id: traderA.membershipId,
       p_bid_id: bidX.id,
+      p_expected_response_revision: 1,
+      p_expected_quote_revision: null,
       p_fuel_grades: ['vlsfo'],
       p_unit_prices: [100],
       p_barge_fee: 1,
@@ -376,6 +378,7 @@ async function run() {
       await query('delete from app_private.quote_items where quote_id in (select id from app_private.quotes where bid_id = $1)', [bidId], 'delete quote item fixture').catch((error) => cleanupErrors.push(error));
       await query('delete from app_private.bid_trader_organization_access where bid_id = $1', [bidId], 'delete bid scope fixture').catch((error) => cleanupErrors.push(error));
       await query('delete from app_private.quotes where bid_id = $1', [bidId], 'delete quote fixture').catch((error) => cleanupErrors.push(error));
+      await query('delete from app_private.bid_trader_organization_responses where bid_id = $1', [bidId], 'delete response fixture').catch((error) => cleanupErrors.push(error));
       await query('delete from app_private.bid_audit_events where bid_id = $1', [bidId], 'delete bid audit fixture').catch((error) => cleanupErrors.push(error));
       await query('delete from app_private.bid_items where bid_id = $1', [bidId], 'delete bid item fixture').catch((error) => cleanupErrors.push(error));
       await query('delete from app_private.bids where id = $1', [bidId], 'delete bid fixture').catch((error) => cleanupErrors.push(error));

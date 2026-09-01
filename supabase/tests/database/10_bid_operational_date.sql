@@ -127,6 +127,8 @@ insert into app_private.quotes (id, bid_id, trader_organization_id, created_by, 
 values ('55000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000002', '51000000-0000-4000-8000-000000000003', 5);
 insert into app_private.quote_items (quote_id, fuel_grade, unit_price, display_order)
 values ('55000000-0000-4000-8000-000000000001', 'vlsfo', 100, 1);
+insert into app_private.bid_trader_organization_responses (bid_id, trader_organization_id, response_status)
+values ('54000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000002', 'quoted');
 insert into app_private.quote_audit_events (
   quote_id, bid_id, trader_organization_id, event_type, actor_user_id, actor_membership_id,
   actor_organization_id, actor_role, prior_revision, resulting_revision, before_snapshot, after_snapshot
@@ -143,22 +145,22 @@ select is((select count(*) from public.list_trader_bids('53000000-0000-4000-8000
 select is((select count(*) from public.list_trader_bids('53000000-0000-4000-8000-000000000003') where id = '54000000-0000-4000-8000-000000000001'), 0::bigint, 'historical scoped BID is not returned to TRADER'); -- 31
 select is((select count(*) from public.list_my_quotes('53000000-0000-4000-8000-000000000003')), 0::bigint, 'historical own quote is excluded before a current quote exists'); -- 32
 select throws_ok(
-  $$select * from public.create_quote('53000000-0000-4000-8000-000000000003', '54000000-0000-4000-8000-000000000001', array['vlsfo'], array[101]::numeric[], 5)$$,
-  '55000', 'Quotes are editable only for today''s Seoul operational date', 'past BID create_quote is rejected despite retained scope and future deadline'
+  $$select * from public.submit_quote_response('53000000-0000-4000-8000-000000000003', '54000000-0000-4000-8000-000000000001', 1, 1, array['vlsfo'], array[101]::numeric[], 5)$$,
+  '55000', 'Quote responses are editable only for today''s Seoul operational date', 'past BID quote-response update is rejected despite retained scope and future deadline'
 ); -- 33
 select throws_ok(
-  $$select * from public.update_quote('53000000-0000-4000-8000-000000000003', '55000000-0000-4000-8000-000000000001', 1, array['vlsfo'], array[102]::numeric[], 6)$$,
-  '55000', 'Quotes are editable only for today''s Seoul operational date', 'past BID update_quote is rejected'
+  $$select * from public.give_up_quote_response('53000000-0000-4000-8000-000000000003', '54000000-0000-4000-8000-000000000001', 1)$$,
+  '55000', 'Quote responses are editable only for today''s Seoul operational date', 'past BID give-up is rejected'
 ); -- 34
 create temporary table bid_date_current_quote on commit drop as
-select result.* from public.create_quote(
+select result.* from public.submit_quote_response(
   '53000000-0000-4000-8000-000000000003', (select id from bid_date_admin_bid),
-  array['vlsfo'], array[100]::numeric[], 5
+  1, null, array['vlsfo'], array[100]::numeric[], 5
 ) as result;
 select is((select revision from bid_date_current_quote), 1::bigint, 'current-date quote creation still works'); -- 35
 create temporary table bid_date_updated_quote on commit drop as
-select result.* from public.update_quote(
-  '53000000-0000-4000-8000-000000000003', (select id from bid_date_current_quote), 1,
+select result.* from public.submit_quote_response(
+  '53000000-0000-4000-8000-000000000003', (select id from bid_date_admin_bid), 2, 1,
   array['vlsfo'], array[101]::numeric[], 6
 ) as result;
 select is((select revision from bid_date_updated_quote), 2::bigint, 'current-date quote update still works'); -- 36
@@ -183,8 +185,8 @@ select ok(not exists (
 select ok(has_function_privilege('authenticated', 'public.list_bids(uuid,date,text,uuid)'::regprocedure, 'execute'), 'authenticated has narrow date-scoped BUYER list EXECUTE'); -- 45
 select ok(has_function_privilege('authenticated', 'public.list_trader_bids(uuid)'::regprocedure, 'execute'), 'authenticated retains narrow TRADER list EXECUTE'); -- 46
 select ok(has_function_privilege('authenticated', 'public.list_my_quotes(uuid)'::regprocedure, 'execute'), 'authenticated retains narrow own-quote list EXECUTE'); -- 47
-select ok(not has_function_privilege('anon', 'public.create_quote(uuid,uuid,text[],numeric[],numeric)'::regprocedure, 'execute'), 'anon cannot create quotes'); -- 48
-select ok(has_function_privilege('authenticated', 'public.update_quote(uuid,uuid,bigint,text[],numeric[],numeric)'::regprocedure, 'execute'), 'authenticated retains narrow quote-update EXECUTE'); -- 49
+select ok(not has_function_privilege('anon', 'public.submit_quote_response(uuid,uuid,bigint,bigint,text[],numeric[],numeric)'::regprocedure, 'execute'), 'anon cannot submit quote responses'); -- 48
+select ok(has_function_privilege('authenticated', 'public.give_up_quote_response(uuid,uuid,bigint)'::regprocedure, 'execute'), 'authenticated has narrow give-up EXECUTE'); -- 49
 
 select * from finish();
 rollback;

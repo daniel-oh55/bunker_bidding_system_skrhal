@@ -140,6 +140,8 @@ insert into app_private.bids (id, vessel_voyage, port_name, delivery_window, sta
 values ('00000000-0000-0000-0000-000000000431', 'Realtime Vessel', 'Busan', 'Window', 'open', '00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000401');
 insert into app_private.bid_trader_organization_access (bid_id, trader_organization_id, granted_by_user_id, granted_by_membership_id)
 values ('00000000-0000-0000-0000-000000000431', '00000000-0000-0000-0000-000000000412', '00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000421');
+insert into app_private.bid_trader_organization_responses (bid_id, trader_organization_id, response_status)
+values ('00000000-0000-0000-0000-000000000431', '00000000-0000-0000-0000-000000000412', 'awaiting');
 delete from realtime.messages;
 update app_private.bids set port_name = 'Incheon' where id = '00000000-0000-0000-0000-000000000431';
 select is((select count(*) from realtime.messages where event = 'workspace_changed' and topic in ('workspace:buyer', 'workspace:trader:00000000-0000-0000-0000-000000000412')), 2::bigint, 'bid mutation fans out to BUYER and each current scoped TRADER organization');
@@ -163,7 +165,7 @@ select set_config('realtime.topic', 'workspace:trader:00000000-0000-0000-0000-00
 select is((select count(*) from realtime.messages), 1::bigint, 'a revoked but active TRADER can still receive its organization-wide topic');
 select is((select count(*) from public.list_trader_bids('00000000-0000-0000-0000-000000000422') where id = '00000000-0000-0000-0000-000000000431'), 0::bigint, 'authoritative TRADER bid RPC hides the revoked bid');
 select throws_ok(
-  $$select public.create_quote('00000000-0000-0000-0000-000000000422', '00000000-0000-0000-0000-000000000431', array['VLSFO'], array[1::numeric], 1::numeric)$$,
+  $$select public.submit_quote_response('00000000-0000-0000-0000-000000000422', '00000000-0000-0000-0000-000000000431', 1, null, array['VLSFO'], array[1::numeric], 1::numeric)$$,
   '42501',
   'Current TRADER bid access is required',
   'authoritative TRADER mutation remains denied after scope revocation'
@@ -178,6 +180,8 @@ insert into app_private.bids (id, vessel_voyage, port_name, delivery_window, sta
 values ('00000000-0000-0000-0000-000000000433', 'Realtime Vessel Y', 'Busan', 'Window', 'open', '00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000401');
 insert into app_private.bid_trader_organization_access (bid_id, trader_organization_id, granted_by_user_id, granted_by_membership_id)
 values ('00000000-0000-0000-0000-000000000433', '00000000-0000-0000-0000-000000000412', '00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000421');
+insert into app_private.bid_trader_organization_responses (bid_id, trader_organization_id, response_status)
+values ('00000000-0000-0000-0000-000000000433', '00000000-0000-0000-0000-000000000412', 'awaiting');
 delete from realtime.messages;
 update app_private.bids set port_name = 'Ulsan' where id = '00000000-0000-0000-0000-000000000433';
 select is((select count(*) from realtime.messages where event = 'workspace_changed' and topic = 'workspace:trader:00000000-0000-0000-0000-000000000412'), 1::bigint, 'another still-scoped Bid Y continues notifying the TRADER organization');

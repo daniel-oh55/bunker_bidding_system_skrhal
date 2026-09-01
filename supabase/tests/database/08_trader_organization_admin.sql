@@ -29,6 +29,8 @@ insert into app_private.bid_trader_organization_access (bid_id, trader_organizat
 values ('84000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000001', '83000000-0000-4000-8000-000000000001');
 insert into app_private.quotes (id, bid_id, trader_organization_id, created_by, barge_fee)
 values ('85000000-0000-4000-8000-000000000001', '84000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000003', 1);
+insert into app_private.bid_trader_organization_responses (bid_id, trader_organization_id, response_status)
+values ('84000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000002', 'quoted');
 insert into app_private.quote_items (quote_id, fuel_grade, unit_price, display_order)
 values ('85000000-0000-4000-8000-000000000001', 'vlsfo', 100, 1);
 update app_private.bids
