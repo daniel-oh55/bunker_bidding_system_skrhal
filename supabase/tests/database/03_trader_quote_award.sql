@@ -37,6 +37,9 @@ select is((select proconfig::text like '%search_path=%' from pg_proc where oid='
 select ok(exists(select 1 from pg_constraint where conrelid='app_private.quotes'::regclass and contype='u' and conkey=array[2,3]::smallint[]),'one quote per bid and organization is constrained'); -- 14
 select ok(exists(select 1 from pg_constraint where conrelid='app_private.bids'::regclass and conname='bids_awarded_quote_same_bid'),'award quote uses same-bid composite FK'); -- 15
 
+insert into app_private.bids (id, vessel_voyage, port_name, delivery_window, status, created_by, responsible_buyer_user_id)
+values ('40000000-0000-0000-0000-000000000001', 'Authorization fixture', 'Busan', 'Window', 'open', '10000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001');
+
 set local role anon;
 select throws_like($$select * from public.list_trader_bids('30000000-0000-0000-0000-000000000003')$$,'%permission denied%','anon cannot list TRADER bids'); -- 16
 select throws_like($$select * from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001')$$,'%permission denied%','anon cannot list BUYER quotes'); -- 17

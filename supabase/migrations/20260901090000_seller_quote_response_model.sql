@@ -165,7 +165,7 @@ returns app_private.quote_api_result language sql volatile security definer set 
       and exists (select 1 from app_private.bid_trader_organization_access access where access.bid_id = quote.bid_id and access.trader_organization_id = quote.trader_organization_id)
       and organization.status = 'active'::app_private.organization_status
       and app_private.effective_bid_status(bid.status, bid.deadline_at) = 'closed',
-    bid.awarded_quote_id = quote.id,
+    coalesce(bid.awarded_quote_id = quote.id, false),
     response.response_status
   )::app_private.quote_api_result
   from app_private.quotes quote
