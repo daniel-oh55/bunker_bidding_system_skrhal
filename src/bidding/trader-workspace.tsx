@@ -203,7 +203,7 @@ export function TraderWorkspace({
           <span className="trader-summary-metrics">
             <span><strong>{currentSeoulDate(nowMs)}</strong> Seoul date</span>
             <span><strong>{openBidCount}</strong> open for quoting</span>
-            <span><strong>{ownQuoteCount}</strong> own-organization {ownQuoteCount === 1 ? 'quote' : 'quotes'}</span>
+            <span><strong>{ownQuoteCount}</strong> active {ownQuoteCount === 1 ? 'quote' : 'quotes'}</span>
             <span><strong>{bids.length}</strong> accessible {bids.length === 1 ? 'bid' : 'bids'}</span>
           </span>
         }

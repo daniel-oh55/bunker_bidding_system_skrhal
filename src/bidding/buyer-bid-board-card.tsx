@@ -95,6 +95,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
       || a.trader_organization_id.localeCompare(b.trader_organization_id))
     : [];
   const quotes = sellers.flatMap((seller) => seller.quote ? [seller.quote] : []);
+  const currentQuoteCount = sellers.filter((seller) => seller.response_status === 'quoted' && seller.quote !== null && seller.access_active && seller.organization_active).length;
   const comparisonRanks = new Map(
     quotes.filter((quote) => isComparisonEligible(bid, quote)).sort((a, b) => a.total_amount - b.total_amount || a.id.localeCompare(b.id)).map((quote, index) => [quote.id, index + 1]),
   );
@@ -112,7 +113,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
       <div className="buyer-board-fuels"><dt>Fuel request</dt><dd>{bid.fuel_items.map((item) => <span key={item.fuel_grade}><strong>{item.fuel_grade.toUpperCase()}</strong> {number(item.quantity_mt)} MT</span>)}</dd></div>
     </dl>
     <section className="buyer-board-quotes" aria-label={`SELLER comparison for ${bid.vessel_voyage}`}>
-      <div className="buyer-board-quotes-heading"><div><p className="eyebrow">BUYER-visible comparison</p><h4>SELLER comparison</h4></div>{sellerState.status === 'success' ? <span>{sellers.length} SELLER{sellers.length === 1 ? '' : 's'} · {quotes.length} quote{quotes.length === 1 ? '' : 's'} received</span> : null}</div>
+      <div className="buyer-board-quotes-heading"><div><p className="eyebrow">BUYER-visible comparison</p><h4>SELLER comparison</h4></div>{sellerState.status === 'success' ? <span>{sellers.length} SELLER{sellers.length === 1 ? '' : 's'} · {currentQuoteCount} current quote{currentQuoteCount === 1 ? '' : 's'}</span> : null}</div>
       {sellerState.status === 'loading' ? <p className="buyer-board-quote-state" role="status">Loading SELLER comparison…</p>
         : sellerState.status === 'error' ? <p className="buyer-board-quote-state is-error" role="status">SELLER comparison temporarily unavailable. Refresh to try again.</p>
           : sellers.length === 0 ? <p className="buyer-board-quote-state">No SELLER participants</p>

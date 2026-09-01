@@ -12,7 +12,7 @@
 
 ## Implemented access baseline
 
-- PR #49 remains repository-only and is not merged. Its seller quote response migration is not applied to Production, and no PR #49 Production smoke has been performed or is claimed.
+- Production applies the seller quote response model as `20260901063926 seller_quote_response_model`, aligned with final repository migration `20260901063926_seller_quote_response_model.sql`. Response states remain commercial state only; an explicit BID scope, active membership, and active organization remain the authorization boundary.
 
 - `buyer_admin`
 - `buyer_operator`

@@ -289,7 +289,7 @@ describe('TRADER workspace', () => {
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
     const summary = (await screen.findByRole('heading', { name: 'Quote workspace' })).closest('section');
     expect(summary).toHaveTextContent('2 open for quoting');
-    expect(summary).toHaveTextContent('1 own-organization quote');
+    expect(summary).toHaveTextContent('1 active quote');
     expect(summary).toHaveTextContent('3 accessible bids');
   });
 });

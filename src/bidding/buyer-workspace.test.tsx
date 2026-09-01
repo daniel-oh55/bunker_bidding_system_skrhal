@@ -73,6 +73,64 @@ describe('BUYER workspace', () => {
     expect(screen.queryByRole('button', { name: 'Create bid' })).not.toBeInTheDocument();
   });
 
+  it('places today’s Create new bid ahead of SELLER management and Mail Intake', async () => {
+    const { client } = fakeClient();
+    render(<BuyerWorkspace client={client} membershipId={id} membershipRole="buyer_admin" onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByRole('article', { name: 'MV Buyer' });
+    const createBid = screen.getByText('Create new bid');
+    const sellerManagement = screen.getByRole('region', { name: 'SELLER management' });
+    const mailIntake = screen.getByRole('heading', { name: 'Mail intake' });
+    expect(createBid.compareDocumentPosition(sellerManagement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(createBid.compareDocumentPosition(mailIntake) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('scrolls and focuses the selected detail only after an explicit Manage bid load succeeds', async () => {
+    const { client } = fakeClient();
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+    try {
+      render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+      const card = await screen.findByRole('article', { name: 'MV Buyer' });
+      fireEvent.click(within(card).getByRole('button', { name: 'Manage bid' }));
+      const detail = await screen.findByRole('region', { name: 'Selected bid detail' });
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledOnce());
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+      expect(document.activeElement).toBe(detail);
+    } finally {
+      if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: originalScrollIntoView });
+      else delete (HTMLElement.prototype as { scrollIntoView?: typeof HTMLElement.prototype.scrollIntoView }).scrollIntoView;
+    }
+  });
+
+  it('does not steal focus when manual Refresh retains selected detail', async () => {
+    const { client } = fakeClient();
+    const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
+    client.listBidTraderAccess = listBidTraderAccess;
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+    try {
+      render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+      const card = await screen.findByRole('article', { name: 'MV Buyer' });
+      fireEvent.click(within(card).getByRole('button', { name: 'Manage bid' }));
+      await screen.findByRole('region', { name: 'Selected bid detail' });
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledOnce());
+      scrollIntoView.mockClear();
+      const refresh = screen.getByRole('button', { name: 'Refresh' });
+      refresh.focus();
+
+      fireEvent.click(refresh);
+      await waitFor(() => expect(listBidTraderAccess).toHaveBeenCalledTimes(2));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(refresh);
+    } finally {
+      if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: originalScrollIntoView });
+      else delete (HTMLElement.prototype as { scrollIntoView?: typeof HTMLElement.prototype.scrollIntoView }).scrollIntoView;
+    }
+  });
+
   it('keeps normal bid operations available when the isolated mail queue has a non-authorization failure', async () => {
     const { client, listBids } = fakeClient();
     client.listMailIntakeItems = vi.fn<BiddingClient['listMailIntakeItems']>(() => Promise.resolve({ data: null, error: { kind: 'unknown', code: null, message: 'raw queue failure' } }));
