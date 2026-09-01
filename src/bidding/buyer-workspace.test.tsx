@@ -88,7 +88,7 @@ describe('BUYER workspace', () => {
   it('scrolls and focuses the selected detail only after an explicit Manage bid load succeeds', async () => {
     const { client } = fakeClient();
     const scrollIntoView = vi.fn();
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
     try {
       render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
@@ -99,8 +99,8 @@ describe('BUYER workspace', () => {
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
       expect(document.activeElement).toBe(detail);
     } finally {
-      if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: originalScrollIntoView });
-      else delete (HTMLElement.prototype as { scrollIntoView?: typeof HTMLElement.prototype.scrollIntoView }).scrollIntoView;
+      if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
+      else delete (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView;
     }
   });
 
@@ -109,7 +109,7 @@ describe('BUYER workspace', () => {
     const listBidTraderAccess = vi.fn(() => Promise.resolve(ok<BidTraderAccess[]>([])));
     client.listBidTraderAccess = listBidTraderAccess;
     const scrollIntoView = vi.fn();
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
     try {
       render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
@@ -126,8 +126,8 @@ describe('BUYER workspace', () => {
       expect(scrollIntoView).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(refresh);
     } finally {
-      if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: originalScrollIntoView });
-      else delete (HTMLElement.prototype as { scrollIntoView?: typeof HTMLElement.prototype.scrollIntoView }).scrollIntoView;
+      if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
+      else delete (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView;
     }
   });
 
