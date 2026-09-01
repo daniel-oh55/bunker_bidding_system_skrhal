@@ -32,6 +32,7 @@ select public.submit_quote_response(
   '73000000-0000-4000-8000-000000000002', (select id from submitted_audit_bid), 1, null,
   array['vlsfo'], array[99]::numeric[], 1
 );
+reset role;
 
 select is(
   (select (response_status, revision) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid) and trader_organization_id = '72000000-0000-4000-8000-000000000002'),
