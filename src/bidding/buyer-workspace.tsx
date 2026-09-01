@@ -36,12 +36,12 @@ const groupBidsByCreator = (bids: Bid[]) => {
 };
 
 export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_operator', onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; membershipRole?: 'buyer_admin' | 'buyer_operator'; onAuthorizationFailure: () => void; reloadVersion?: number }) {
-  const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null);
+  const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null); const detailRegionRef = useRef<HTMLElement | null>(null); const detailAttentionBidId = useRef<string | null>(null);
   const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [boardSellers, setBoardSellers] = useState<Record<string, BuyerBidBoardSellerState>>({}); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selectedDate, setSelectedDate] = useState(() => currentSeoulDate()); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
   const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const initialDateRef = useRef(selectedDate);
-  const clearVisible = useCallback(() => { selectedRef.current = null; setBids([]); setBoardSellers({}); setSelected(null); setDetail(null); }, []);
+  const clearVisible = useCallback(() => { detailAttentionBidId.current = null; selectedRef.current = null; setBids([]); setBoardSellers({}); setSelected(null); setDetail(null); }, []);
   const clearProtected = useCallback(() => { clearVisible(); setBuyers([]); setOrganizations([]); }, [clearVisible]);
   const invalidateOperations = useCallback(() => { ++listOperation.current; ++detailOperation.current; ++mutationOperation.current; }, []);
   const handleError = useCallback((next: WorkflowError) => {
@@ -55,7 +55,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     }
     setError(next);
   }, [clearProtected, invalidateOperations, onAuthorizationFailure]);
-  const loadDetail = useCallback(async (bid: Bid) => {
+  const loadDetail = useCallback(async (bid: Bid, requestAttention = false) => {
     const operation = ++detailOperation.current;
     selectedRef.current = bid;
     setSelected(bid);
@@ -65,6 +65,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
       if (operation !== detailOperation.current || selectedRef.current?.id !== bid.id) return false;
       const failure = access.error ?? quotes.error ?? audit.error;
       if (failure) { handleError(failure); return false; }
+      if (requestAttention) detailAttentionBidId.current = bid.id;
       setDetail({ access: access.data ?? [], quotes: [...(quotes.data ?? [])].sort(quoteSort), audit: audit.data ?? [] });
       return true;
     } catch {
@@ -72,6 +73,14 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
       return false;
     }
   }, [client, handleError, membershipId]);
+  useEffect(() => {
+    if (detailAttentionBidId.current !== selected?.id || detail === null) return;
+    const detailRegion = detailRegionRef.current;
+    if (!detailRegion) return;
+    detailAttentionBidId.current = null;
+    detailRegion.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    detailRegion.focus({ preventScroll: true });
+  }, [detail, selected]);
   const loadBoardSellers = useCallback(async (nextBids: Bid[], listGeneration: number) => {
     let cursor = 0;
     const worker = async () => {
@@ -156,7 +165,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
   const effectiveOpenCount = bids.filter((bid) => bid.effective_status === 'open').length;
   const terminalCount = bids.length - effectiveOpenCount;
   const creatorGroups = view === 'all' ? groupBidsByCreator(bids) : [];
-  const renderBidCard = (bid: Bid) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid)} />;
+  const renderBidCard = (bid: Bid) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid, true)} />;
   return <div className="workspace buyer-workspace">
     <WorkspaceSummary
       eyebrow="BUYER operations"
@@ -175,9 +184,9 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
       </fieldset>
       {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', selectedDate, target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
     </section>
+    {historicalDateSelected ? <section className="panel historical-create-notice" role="note"><h2>Create new bid unavailable</h2><p>New BIDs are created only for today’s Seoul operational date ({todayDate}). Select today to create a BID.</p></section> : <CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} />}
     {membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id)} /> : null}
     <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} onAuthorizationFailure={onAuthorizationFailure} />
-    {historicalDateSelected ? <section className="panel historical-create-notice" role="note"><h2>Create new bid unavailable</h2><p>New BIDs are created only for today’s Seoul operational date ({todayDate}). Select today to create a BID.</p></section> : <CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} />}
     <section className="panel buyer-bid-board" aria-label="BUYER operational bid board">
         <div className="buyer-list-heading"><div><p className="eyebrow">Current view</p><h2>Bids</h2></div><span>{bids.length} loaded</span></div>
         {loading ? <WorkspaceEmptyState title="Loading bids" description="Retrieving the current bid list." /> : view === 'responsible_buyer' && !responsible ? <WorkspaceEmptyState title="Select a BUYER to load responsible bids." description="Choose an active BUYER to view their responsible bids." /> : bids.length === 0 ? <WorkspaceEmptyState title="No bids in this view" description="Try another view or refresh the current bid list." /> : view === 'all' ? <div className="buyer-creator-groups">{creatorGroups.map((group) => {
@@ -196,6 +205,6 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
           </section>;
         })}</div> : <div className="buyer-bid-cards">{bids.map(renderBidCard)}</div>}
     </section>
-    {selected ? <section className="panel bid-detail buyer-bid-detail" aria-live="polite"><BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /></section> : null}
+    {selected ? <section className="panel bid-detail buyer-bid-detail" aria-label="Selected bid detail" aria-live="polite" ref={detailRegionRef} tabIndex={-1}><BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /></section> : null}
   </div>;
 }

@@ -167,7 +167,7 @@ describe('BuyerBidBoardCard', () => {
     expect(within(row).getAllByText('—')).toHaveLength(4);
     expect(row).toHaveClass('is-comparison-excluded');
     expect(within(card).getByText('No current comparison offers')).toBeInTheDocument();
-    expect(within(card).getByText('1 SELLER · 0 quotes received')).toBeInTheDocument();
+    expect(within(card).getByText('1 SELLER · 0 current quotes')).toBeInTheDocument();
   });
 
   it('excludes awaiting rows from mixed ranking and the lowest-price result', () => {
@@ -179,7 +179,7 @@ describe('BuyerBidBoardCard', () => {
     expect(within(quotedRow).getByText('1')).toBeInTheDocument();
     expect(within(quotedRow).getByText('Quoted')).toBeInTheDocument();
     expect(within(card).getByText(/Quoted Seller · \$100/)).toBeInTheDocument();
-    expect(within(card).getByText('2 SELLERs · 1 quote received')).toBeInTheDocument();
+    expect(within(card).getByText('2 SELLERs · 1 current quote')).toBeInTheDocument();
   });
 
   it('keeps a gave-up quote as history while hiding its price and excluding it from rank', () => {
@@ -192,6 +192,15 @@ describe('BuyerBidBoardCard', () => {
     expect(gaveUpRow).toHaveClass('is-comparison-excluded');
     expect(within(card).getByText(/Active Seller · \$100/)).toBeInTheDocument();
     expect(within(card).queryByText(/Gave Up Seller · \$50/)).not.toBeInTheDocument();
+    expect(within(card).getByText('2 SELLERs · 1 current quote')).toBeInTheDocument();
+  });
+
+  it('does not count a retained gave-up quote as a current quote', () => {
+    const gaveUp = quote('Gave Up Seller', 50, { response_status: 'gave_up', eligible_for_award: false });
+    const card = renderSellers(bid(), [comparison(gaveUp)]);
+    expect(within(card).getByText('Gave up')).toBeInTheDocument();
+    expect(within(card).getByText('1 SELLER · 0 current quotes')).toBeInTheDocument();
+    expect(within(card).getByText('No current comparison offers')).toBeInTheDocument();
   });
 
   it('shows inactive organization metadata for an awaiting participant', () => {
@@ -214,7 +223,7 @@ describe('BuyerBidBoardCard', () => {
     const currentBid = bid();
     const { rerender } = render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} />);
     expect(screen.getByText('No SELLER participants')).toBeInTheDocument();
-    expect(screen.getByText('0 SELLERs · 0 quotes received')).toBeInTheDocument();
+    expect(screen.getByText('0 SELLERs · 0 current quotes')).toBeInTheDocument();
     rerender(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'loading' }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} />);
     expect(screen.getByRole('status')).toHaveTextContent('Loading SELLER comparison');
     rerender(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'error' }} currentTimeMs={Date.parse(now)} selected onManage={vi.fn()} />);
