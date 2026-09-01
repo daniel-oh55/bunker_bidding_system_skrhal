@@ -26,6 +26,7 @@ const quotePrice = (quote: Quote, grade: Bid['fuel_items'][number]['fuel_grade']
   return price ? money(price.unit_price) : '—';
 };
 const isComparisonEligible = (bid: Bid, quote: Quote) => {
+  if (quote.response_status !== 'quoted') return false;
   if (bid.effective_status === 'open') return quote.access_active && quote.organization_active;
   if (bid.effective_status === 'closed') return quote.eligible_for_award;
   return false;
@@ -33,6 +34,7 @@ const isComparisonEligible = (bid: Bid, quote: Quote) => {
 const quoteMetadata = (bid: Bid, quote: Quote, comparisonEligible: boolean) => {
   const metadata: string[] = [];
   if (quote.is_awarded) metadata.push('Awarded quote');
+  if (quote.response_status === 'gave_up') metadata.push('Gave up');
   if (!quote.access_active) metadata.push('Access inactive');
   if (!quote.organization_active) metadata.push('Organization inactive');
   if (bid.effective_status === 'open') {
@@ -49,7 +51,7 @@ const quoteMetadata = (bid: Bid, quote: Quote, comparisonEligible: boolean) => {
 };
 const sellerMetadata = (bid: Bid, seller: BuyerSellerComparison, comparisonEligible: boolean) => {
   if (seller.quote) return quoteMetadata(bid, seller.quote, comparisonEligible);
-  const metadata = ['Current scope'];
+  const metadata = [seller.access_active ? 'Current scope' : 'Access inactive'];
   if (!seller.organization_active) metadata.push('Organization inactive');
   metadata.push('Excluded from current comparison');
   return metadata.join(' · ');
@@ -120,13 +122,14 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
                 <tbody>{sellers.map((seller) => {
                   const quote = seller.quote;
                   const comparisonEligible = quote ? isComparisonEligible(bid, quote) : false;
-                  const status = quote?.is_awarded ? 'Awarded' : quote ? 'Quoted' : 'Awaiting quote';
+                  const hasActivePrice = seller.response_status === 'quoted' && quote;
+                  const status = quote?.is_awarded ? 'Awarded' : seller.response_status === 'quoted' ? 'Quoted' : seller.response_status === 'gave_up' ? 'Gave up' : 'Awaiting quote';
                   return <tr className={`${quote?.is_awarded ? 'is-awarded ' : ''}${!quote?.is_awarded && !comparisonEligible ? 'is-comparison-excluded' : ''}`.trim()} key={seller.trader_organization_id}>
-                  <td className="buyer-board-rank">{quote?.is_awarded ? 'Awarded' : quote ? comparisonRanks.get(quote.id) ?? '—' : '—'}</td>
+                  <td className="buyer-board-rank">{quote?.is_awarded ? 'Awarded' : hasActivePrice ? comparisonRanks.get(quote.id) ?? '—' : '—'}</td>
                   <th scope="row"><strong>{seller.trader_organization_label}</strong><small>{sellerMetadata(bid, seller, comparisonEligible)}</small></th>
                   <td className="buyer-board-seller-status">{status}</td>
-                  {bid.fuel_items.map((item) => <td key={item.fuel_grade}>{quote ? quotePrice(quote, item.fuel_grade) : '—'}</td>)}
-                  <td>{quote ? money(quote.barge_fee) : '—'}</td><td className="buyer-board-total">{quote ? <>{money(quote.total_amount)}<small>Server total</small></> : '—'}</td>
+                  {bid.fuel_items.map((item) => <td key={item.fuel_grade}>{hasActivePrice ? quotePrice(quote, item.fuel_grade) : '—'}</td>)}
+                  <td>{hasActivePrice ? money(quote.barge_fee) : '—'}</td><td className="buyer-board-total">{hasActivePrice ? <>{money(quote.total_amount)}<small>Server total</small></> : '—'}</td>
                 </tr>;
                 })}</tbody>
               </table>
