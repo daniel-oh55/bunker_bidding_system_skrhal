@@ -10,9 +10,9 @@
 
 ## Current migration state
 
-- Repository migrations: fourteen, ending with `20260831071010_bid_operational_date.sql`.
+- Repository migrations: fifteen; the repository-only final migration is `20260901090000_seller_quote_response_model.sql`.
 - Local clean-replay status: must be established by the required local database validation.
-- Remote applied status: planning context only; this task must not connect, apply, or otherwise modify Production.
+- Remote applied status: fourteen Production-applied migrations, ending with `20260831071010_bid_operational_date.sql`; this task must not connect, apply, or otherwise modify Production.
 
 ## Single purpose
 
@@ -43,6 +43,7 @@ Only an active, server-verified TRADER membership in an active TRADER organizati
 ## Allowed files
 
 - One new Supabase migration and directly related database tests/integration scripts
+- Focused upgrade-backfill fixture, regression harness, and its directly related pgTAP assertion
 - `src/bidding/types.ts`, `bidding-client.ts`, `trader-workspace.tsx`, `buyer-bid-board-card.tsx`, their direct tests, and necessary styles
 - `PROJECT_STATE.md`, `docs/PRODUCT_AND_SCOPE.md`, `docs/SECURITY_MODEL.md`, `docs/ARCHITECTURE.md`
 - This task card and `docs/AI_REVIEW_PR_49.md`
@@ -57,7 +58,7 @@ Create the retained response and append-only response-audit private tables; back
 
 ## Test scenarios
 
-- Positive: slot initialization/backfill, submit/update/give-up/resume (including identical retained values), award eligibility and buyer/trader presentation.
+- Positive: slot initialization/backfill, including an upgrade fixture with overlapping scope+quote, scope-only, and quote-only pairs; submit/update/give-up/resume (including identical retained values), award eligibility and buyer/trader presentation.
 - Denial: cross-org, revoked, inactive, historical-date, deadline, cancelled/awarded, stale response/quote revision, and direct table/RPC privilege access.
 - Concurrency: BID-first give-up versus update and deadline/award races.
 

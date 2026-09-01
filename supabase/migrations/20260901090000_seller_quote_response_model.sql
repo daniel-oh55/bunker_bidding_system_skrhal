@@ -75,15 +75,16 @@ insert into app_private.bid_trader_organization_responses (
   bid_id, trader_organization_id, response_status, revision
 )
 select participant.bid_id, participant.trader_organization_id,
-  case when participant.has_quote then 'quoted' else 'awaiting' end,
+  case when bool_or(participant.has_quote) then 'quoted' else 'awaiting' end,
   1
 from (
   select access.bid_id, access.trader_organization_id, false as has_quote
   from app_private.bid_trader_organization_access as access
-  union
+  union all
   select quote.bid_id, quote.trader_organization_id, true as has_quote
   from app_private.quotes as quote
-) as participant;
+) as participant
+group by participant.bid_id, participant.trader_organization_id;
 
 alter type app_private.quote_api_result add attribute response_status text;
 

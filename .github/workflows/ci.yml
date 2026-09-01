@@ -143,6 +143,9 @@ jobs:
       - name: Run pgTAP database tests
         run: npm run db:test
 
+      - name: Run seller quote response upgrade regression
+        run: npm run db:test:response-upgrade
+
       - name: Resolve and mask local Auth and database values
         shell: bash
         run: |

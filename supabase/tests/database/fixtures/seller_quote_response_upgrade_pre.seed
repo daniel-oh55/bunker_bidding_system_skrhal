@@ -1,0 +1,82 @@
+-- Pre-PR #49 production-shaped business rows for the upgrade regression.
+-- The final migration must leave these rows untouched while deriving response state.
+
+do $$
+begin
+  -- A normal full-migration pgTAP run discovers this fixture directory too.
+  -- Seed only the migration-14 database created by the dedicated upgrade harness.
+  if to_regclass('app_private.bid_trader_organization_responses') is not null then
+    return;
+  end if;
+
+insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data) values
+  ('61000000-0000-4000-8000-000000000001', 'upgrade-buyer@test.invalid', '{}', '{}'),
+  ('61000000-0000-4000-8000-000000000002', 'upgrade-trader@test.invalid', '{}', '{}');
+
+update app_private.user_accounts
+set status = 'active'
+where user_id in ('61000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000002');
+
+insert into app_private.organizations (id, kind, name, status) values
+  ('62000000-0000-4000-8000-000000000001', 'buyer', 'Upgrade Buyer', 'active'),
+  ('62000000-0000-4000-8000-000000000002', 'trader', 'Upgrade Trader', 'active');
+
+insert into app_private.organization_memberships (id, user_id, organization_id, role, status) values
+  ('63000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'buyer_admin', 'active'),
+  ('63000000-0000-4000-8000-000000000002', '61000000-0000-4000-8000-000000000002', '62000000-0000-4000-8000-000000000002', 'trader', 'active');
+
+insert into app_private.bids (
+  id, vessel_voyage, port_name, delivery_window, deadline_at, status, revision,
+  created_by, responsible_buyer_user_id, created_at, updated_at, bid_date
+) values
+  ('64000000-0000-4000-8000-000000000001', 'Upgrade overlap', 'Busan', 'Window A', '2030-01-01 00:00:00+00', 'open', 4,
+   '61000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000001', '2026-08-30 01:02:03+00', '2026-08-30 04:05:06+00', '2026-08-30'),
+  ('64000000-0000-4000-8000-000000000002', 'Upgrade access only', 'Incheon', 'Window B', '2030-01-02 00:00:00+00', 'open', 2,
+   '61000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000001', '2026-08-30 02:03:04+00', '2026-08-30 05:06:07+00', '2026-08-30'),
+  ('64000000-0000-4000-8000-000000000003', 'Upgrade quote only', 'Ulsan', 'Window C', '2030-01-03 00:00:00+00', 'open', 3,
+   '61000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000001', '2026-08-30 03:04:05+00', '2026-08-30 06:07:08+00', '2026-08-30');
+
+insert into app_private.bid_items (bid_id, fuel_grade, quantity_mt, display_order) values
+  ('64000000-0000-4000-8000-000000000001', 'vlsfo', 10, 1),
+  ('64000000-0000-4000-8000-000000000002', 'vlsfo', 20, 1),
+  ('64000000-0000-4000-8000-000000000003', 'vlsfo', 30, 1);
+
+insert into app_private.bid_trader_organization_access (
+  bid_id, trader_organization_id, granted_at, granted_by_user_id, granted_by_membership_id
+) values
+  ('64000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000002', '2026-08-30 07:00:00+00', '61000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001'),
+  ('64000000-0000-4000-8000-000000000002', '62000000-0000-4000-8000-000000000002', '2026-08-30 08:00:00+00', '61000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001');
+
+insert into app_private.quotes (
+  id, bid_id, trader_organization_id, revision, created_by, barge_fee, created_at, updated_at
+) values
+  ('65000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000002', 7, '61000000-0000-4000-8000-000000000002', 11, '2026-08-30 09:00:00+00', '2026-08-30 10:00:00+00'),
+  ('65000000-0000-4000-8000-000000000002', '64000000-0000-4000-8000-000000000003', '62000000-0000-4000-8000-000000000002', 3, '61000000-0000-4000-8000-000000000002', 22, '2026-08-30 11:00:00+00', '2026-08-30 12:00:00+00');
+
+insert into app_private.quote_items (quote_id, fuel_grade, unit_price, display_order) values
+  ('65000000-0000-4000-8000-000000000001', 'vlsfo', 101, 1),
+  ('65000000-0000-4000-8000-000000000002', 'vlsfo', 202, 1);
+
+insert into app_private.bid_audit_events (
+  bid_id, event_type, actor_user_id, actor_membership_id, actor_organization_id, actor_role,
+  occurred_at, prior_revision, resulting_revision, prior_status, resulting_status,
+  prior_responsible_buyer_user_id, resulting_responsible_buyer_user_id, before_snapshot, after_snapshot
+)
+select bid.id, 'created', '61000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001',
+  '62000000-0000-4000-8000-000000000001', 'buyer_admin', '2026-08-30 13:00:00+00', null, 1, null, 'open', null,
+  '61000000-0000-4000-8000-000000000001', null, jsonb_build_object('fixture', 'pre-pr-49', 'bid_id', bid.id)
+from app_private.bids as bid
+where bid.id::text like '64000000-%';
+
+insert into app_private.quote_audit_events (
+  quote_id, bid_id, trader_organization_id, event_type, actor_user_id, actor_membership_id,
+  actor_organization_id, actor_role, occurred_at, prior_revision, resulting_revision, before_snapshot, after_snapshot
+)
+select quote.id, quote.bid_id, quote.trader_organization_id, 'created', '61000000-0000-4000-8000-000000000002',
+  '63000000-0000-4000-8000-000000000002', '62000000-0000-4000-8000-000000000002', 'trader', '2026-08-30 14:00:00+00',
+  null, 1, null, jsonb_build_object('fixture', 'pre-pr-49', 'quote_id', quote.id)
+from app_private.quotes as quote
+where quote.id::text like '65000000-%';
+
+end;
+$$;

@@ -3,7 +3,7 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: fourteen repository migrations and pgTAP tests; all fourteen are Production-applied, ending with `20260831071010_bid_operational_date.sql`
+- Supabase access: fifteen repository migrations and pgTAP tests; fourteen are Production-applied, ending with `20260831071010_bid_operational_date.sql`, while repository-only `20260901090000_seller_quote_response_model.sql` remains unapplied
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()`, an integrated RPC-only BUYER/TRADER workspace with isolated BUYER mail-intake list/dismiss state, and a private Realtime invalidation adapter
 - Local intake: a BUYER form-local `.msg` binary adapter validates extension, size, and CFBF signature before browser parsing; a separate pure parser converts only plain-text subject/body into advisory candidates and warnings
@@ -68,7 +68,7 @@ PR #47 adds a private operational-date authority alongside the existing lifecycl
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- fourteen migrations exist in the repository and all fourteen are Production-applied; the final migration is `20260831071010_bid_operational_date.sql`
+- fifteen migrations exist in the repository; fourteen are Production-applied through `20260831071010_bid_operational_date.sql`, and repository-only `20260901090000_seller_quote_response_model.sql` is the final migration
 - PR #49 remains repository-only and is not merged; its seller quote response migration is not applied to Production, and no PR #49 Production smoke has been performed or is claimed
 - browser access remains RPC-only and publishable-key-only; the PR #44 frontend is merged and its merged-main Vercel deployment completed successfully, while no direct browser-authenticated Production UI smoke of the rendered `Awaiting quote` row is claimed
 - PR #47 Production verification preserved the pre-apply 24-BID, 45-scope, one-quote, 52-BID-audit, and one-quote-audit baseline and fingerprints; the server backfill had zero Seoul-date mismatches, the old unfiltered list signature was absent, the date-scoped signature and required triggers were present, and reviewed fixed-empty-`search_path` RPC boundaries remained intact. A real authenticated BUYER browser created one `PR47 PROD SMOKE` BID on `2026-08-31` with five active SELLER scope snapshots and a matching created audit, then normally cancelled and retained it at revision 2 with five scopes, zero quotes, and created/cancelled audit history. No direct authenticated Production TRADER browser today-only or quote-mutation smoke is claimed.
