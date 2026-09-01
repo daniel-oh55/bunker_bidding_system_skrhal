@@ -34,10 +34,7 @@ select public.submit_quote_response(
 );
 reset role;
 
-select is(
-  (select (response_status, revision) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid) and trader_organization_id = '72000000-0000-4000-8000-000000000002'),
-  row('awaiting', 1::bigint), 'current scoped response starts awaiting at revision one'
-); -- 1
+select ok((select response_status = 'awaiting' and revision = 1 from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid) and trader_organization_id = '72000000-0000-4000-8000-000000000002'), 'current scoped response starts awaiting at revision one'); -- 1
 select is(
   (select count(*) from app_private.bid_trader_organization_response_audit_events where bid_id = (select id from lifecycle_bid)),
   0::bigint, 'awaiting response starts with no response audit'
@@ -47,7 +44,7 @@ create temporary table gave_up_awaiting on commit drop as
 select result.* from public.give_up_quote_response(
   '73000000-0000-4000-8000-000000000002', (select id from lifecycle_bid), 1
 ) as result;
-select is((select (response_status, revision, quote_id) from gave_up_awaiting), row('gave_up', 2::bigint, null::uuid), 'awaiting response gives up at revision two without a quote'); -- 3
+select ok((select response_status = 'gave_up' and revision = 2 and quote_id is null from gave_up_awaiting), 'awaiting response gives up at revision two without a quote'); -- 3
 select is((select response_status from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), 'gave_up', 'awaiting response is stored as gave_up'); -- 4
 select is((select count(*) from app_private.quotes where bid_id = (select id from lifecycle_bid)), 0::bigint, 'awaiting give-up creates no quote'); -- 5
 select is((select count(*) from app_private.bid_trader_organization_response_audit_events where bid_id = (select id from lifecycle_bid)), 1::bigint, 'awaiting give-up adds exactly one response audit'); -- 6
@@ -68,7 +65,7 @@ select result.* from public.submit_quote_response(
   '73000000-0000-4000-8000-000000000002', (select id from lifecycle_bid), 2, null,
   array['vlsfo'], array[100]::numeric[], 5
 ) as result;
-select is((select (response_status, revision) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), row('quoted', 3::bigint), 'gave-up response resumes to quoted exactly once with no retained quote'); -- 14
+select ok((select response_status = 'quoted' and revision = 3 from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), 'gave-up response resumes to quoted exactly once with no retained quote'); -- 14
 select is((select revision from resumed_without_quote), 1::bigint, 'no-quote resume creates quote revision one'); -- 15
 select is((select count(*) from app_private.bid_trader_organization_response_audit_events where bid_id = (select id from lifecycle_bid) and event_type = 'resumed' and resulting_revision = 3), 1::bigint, 'no-quote resume adds one resumed response audit'); -- 16
 select ok((select event.actor_user_id = '71000000-0000-4000-8000-000000000002'::uuid and event.actor_membership_id = '73000000-0000-4000-8000-000000000002'::uuid and event.actor_organization_id = '72000000-0000-4000-8000-000000000002'::uuid and event.actor_role = 'trader'::app_private.membership_role and event.quote_id = (select id from resumed_without_quote) and event.quote_revision = 1 from app_private.bid_trader_organization_response_audit_events event where event.bid_id = (select id from lifecycle_bid) and event.resulting_revision = 3), 'no-quote resume audit records the actual actor and created quote'); -- 17
@@ -82,7 +79,7 @@ create temporary table retained_quote_before_resume on commit drop as
 select quote.id, quote.revision, quote.barge_fee,
   (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'unit_price', item.unit_price, 'display_order', item.display_order) order by item.display_order) from app_private.quote_items item where item.quote_id = quote.id) as items
 from app_private.quotes quote where quote.bid_id = (select id from lifecycle_bid);
-select is((select (response_status, revision, quote_id, quote_revision) from gave_up_quoted), row('gave_up', 4::bigint, (select id from retained_quote_before_resume), 1::bigint), 'quoted response gives up while retaining quote revision one'); -- 19
+select ok((select response_status = 'gave_up' and revision = 4 and quote_id = (select id from retained_quote_before_resume) and quote_revision = 1 from gave_up_quoted), 'quoted response gives up while retaining quote revision one'); -- 19
 select ok((select quote.id = retained.id and quote.revision = retained.revision and quote.barge_fee = retained.barge_fee from app_private.quotes quote cross join retained_quote_before_resume retained where quote.id = retained.id), 'quoted give-up leaves retained quote commercial row unchanged'); -- 20
 select is((select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'unit_price', item.unit_price, 'display_order', item.display_order) order by item.display_order) from app_private.quote_items item where item.quote_id = (select id from retained_quote_before_resume)), (select items from retained_quote_before_resume), 'quoted give-up retains all quote items unchanged'); -- 21
 select is((select count(*) from app_private.bid_trader_organization_response_audit_events where bid_id = (select id from lifecycle_bid) and event_type = 'gave_up' and resulting_revision = 4), 1::bigint, 'quoted give-up adds one retained-quote response audit'); -- 22
@@ -92,7 +89,7 @@ select result.* from public.submit_quote_response(
   '73000000-0000-4000-8000-000000000002', (select id from lifecycle_bid), 4, 1,
   array['vlsfo'], array[100]::numeric[], 5
 ) as result;
-select is((select (response_status, revision) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), row('quoted', 5::bigint), 'identical retained values resume the response once'); -- 23
+select ok((select response_status = 'quoted' and revision = 5 from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), 'identical retained values resume the response once'); -- 23
 select is((select revision from resumed_identically), 1::bigint, 'identical retained values do not increment quote revision'); -- 24
 select ok((select quote.barge_fee = retained.barge_fee and (select jsonb_agg(jsonb_build_object('fuel_grade', item.fuel_grade, 'unit_price', item.unit_price, 'display_order', item.display_order) order by item.display_order) from app_private.quote_items item where item.quote_id = quote.id) = retained.items from app_private.quotes quote cross join retained_quote_before_resume retained where quote.id = retained.id), 'identical retained values leave commercial values unchanged'); -- 25
 select is((select count(*) from app_private.quote_audit_events where quote_id = (select id from retained_quote_before_resume) and event_type = 'updated'), 0::bigint, 'identical retained-value resume synthesizes no quote update audit'); -- 26
@@ -103,13 +100,13 @@ select result.* from public.submit_quote_response(
   '73000000-0000-4000-8000-000000000002', (select id from lifecycle_bid), 5, 1,
   array['vlsfo'], array[110]::numeric[], 6
 ) as result;
-select is((select (revision, response_status) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), row(6::bigint, 'quoted'), 'quoted price update increments response once'); -- 28
+select ok((select revision = 6 and response_status = 'quoted' from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), 'quoted price update increments response once'); -- 28
 select is((select revision from price_updated), 2::bigint, 'quoted price update increments quote once'); -- 29
 select is((select count(*) from app_private.bid_trader_organization_response_audit_events where bid_id = (select id from lifecycle_bid) and event_type = 'price_updated' and prior_revision = 5 and resulting_revision = 6), 1::bigint, 'quoted price update has one response audit'); -- 30
 select is((select count(*) from app_private.quote_audit_events where quote_id = (select id from retained_quote_before_resume) and event_type = 'updated' and resulting_revision = 2), 1::bigint, 'quoted price update has one quote update audit'); -- 31
 
 select public.give_up_quote_response('73000000-0000-4000-8000-000000000002', (select id from lifecycle_bid), 6);
-select is((select (response_status, revision) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), row('gave_up', 7::bigint), 'quoted response can give up again with quote retained'); -- 32
+select ok((select response_status = 'gave_up' and revision = 7 from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), 'quoted response can give up again with quote retained'); -- 32
 select is((select revision from app_private.quotes where id = (select id from retained_quote_before_resume)), 2::bigint, 'second give-up leaves retained quote revision unchanged'); -- 33
 
 create temporary table resumed_changed on commit drop as
@@ -117,14 +114,14 @@ select result.* from public.submit_quote_response(
   '73000000-0000-4000-8000-000000000002', (select id from lifecycle_bid), 7, 2,
   array['vlsfo'], array[125]::numeric[], 7
 ) as result;
-select is((select (response_status, revision) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), row('quoted', 8::bigint), 'changed retained values resume the response once'); -- 34
+select ok((select response_status = 'quoted' and revision = 8 from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), 'changed retained values resume the response once'); -- 34
 select is((select revision from resumed_changed), 3::bigint, 'changed retained values increment quote once'); -- 35
 select is((select total_amount from resumed_changed), 1257::numeric, 'changed resume returns the authoritative server-calculated total'); -- 36
 select is((select count(*) from app_private.bid_trader_organization_response_audit_events where bid_id = (select id from lifecycle_bid) and event_type = 'resumed' and prior_revision = 7 and resulting_revision = 8), 1::bigint, 'changed retained-value resume adds one response audit'); -- 37
 select is((select count(*) from app_private.quote_audit_events where quote_id = (select id from retained_quote_before_resume) and event_type = 'updated' and resulting_revision = 3), 1::bigint, 'changed retained-value resume adds exactly one quote update audit'); -- 38
 
 select public.give_up_quote_response('73000000-0000-4000-8000-000000000002', (select id from lifecycle_bid), 8);
-select is((select (response_status, revision) from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), row('gave_up', 9::bigint), 'active quote can be put into final gave_up state'); -- 39
+select ok((select response_status = 'gave_up' and revision = 9 from app_private.bid_trader_organization_responses where bid_id = (select id from lifecycle_bid)), 'active quote can be put into final gave_up state'); -- 39
 
 select set_config('request.jwt.claim.sub', '71000000-0000-4000-8000-000000000001', true);
 select public.close_bid('73000000-0000-4000-8000-000000000001', (select id from lifecycle_bid), 1);
