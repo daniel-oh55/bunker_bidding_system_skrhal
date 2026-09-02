@@ -64,21 +64,21 @@ describe('BUYER workspace', () => {
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     expect(await screen.findByRole('article', { name: 'MV Today' })).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'MV Historical' })).not.toBeInTheDocument();
-    expect(screen.getByText('Create new bid')).toBeInTheDocument();
+    expect(screen.getByText('Publish new BID')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
     expect(await screen.findByRole('article', { name: 'MV Historical' })).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'MV Today' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Create new bid unavailable' })).toBeInTheDocument();
-    expect(screen.getByText(/created only for today’s Seoul operational date/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create bid' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Publish new BID unavailable' })).toBeInTheDocument();
+    expect(screen.getByText(/published only for today’s Seoul operational date/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Publish BID' })).not.toBeInTheDocument();
   });
 
-  it('places today’s Create new bid ahead of SELLER management and Mail Intake', async () => {
+  it('places today’s Publish new BID ahead of SELLER management and Mail Intake', async () => {
     const { client } = fakeClient();
     render(<BuyerWorkspace client={client} membershipId={id} membershipRole="buyer_admin" onAuthorizationFailure={vi.fn()} />);
 
     await screen.findByRole('article', { name: 'MV Buyer' });
-    const createBid = screen.getByText('Create new bid');
+    const createBid = screen.getByText('Publish new BID');
     const sellerManagement = screen.getByRole('region', { name: 'SELLER management' });
     const mailIntake = screen.getByRole('heading', { name: 'Mail intake' });
     expect(createBid.compareDocumentPosition(sellerManagement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -138,7 +138,7 @@ describe('BUYER workspace', () => {
 
     expect(await screen.findByRole('article', { name: 'MV Buyer' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('The mail intake request could not be completed. Please try again.');
-    expect(screen.getByText('Create new bid')).toBeInTheDocument();
+    expect(screen.getByText('Publish new BID')).toBeInTheDocument();
     expect(listBids).toHaveBeenCalledWith(id, '2026-08-03', 'all', undefined);
     expect(screen.queryByText('No bid selected')).not.toBeInTheDocument();
   });

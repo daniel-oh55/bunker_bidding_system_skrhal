@@ -194,7 +194,7 @@ describe('bunker request draft parser', () => {
 
     expect(draft.fuelItems).toEqual([{ grade: 'vlsfo', quantity: expected }]);
     expect(draft.warnings).toEqual([
-      'VLSFO quantity range was imported using its lower bound; verify before creating the bid.',
+      'VLSFO quantity range was imported using its lower bound; verify before publishing the BID.',
     ]);
     expect(draft.warnings).not.toContainEqual(expect.stringContaining('Invalid VLSFO quantity'));
   });

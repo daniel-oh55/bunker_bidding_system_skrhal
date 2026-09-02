@@ -71,13 +71,15 @@ select set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000001
 create temporary table bid_date_admin_bid on commit drop as
 select result.* from public.create_bid(
   '53000000-0000-4000-8000-000000000001', 'Admin Current BID', 'Busan', 'Current delivery',
-  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[20]::numeric[]
+  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[20]::numeric[],
+  array['52000000-0000-4000-8000-000000000002']::uuid[]
 ) as result;
 select set_config('request.jwt.claim.sub', '51000000-0000-4000-8000-000000000002', true);
 create temporary table bid_date_operator_bid on commit drop as
 select result.* from public.create_bid(
   '53000000-0000-4000-8000-000000000002', 'Operator Current BID', 'Incheon', 'Current delivery',
-  clock_timestamp() + interval '2 days', '51000000-0000-4000-8000-000000000001', array['vlsfo'], array[30]::numeric[]
+  clock_timestamp() + interval '2 days', '51000000-0000-4000-8000-000000000001', array['vlsfo'], array[30]::numeric[],
+  array['52000000-0000-4000-8000-000000000002']::uuid[]
 ) as result;
 reset role;
 
@@ -100,7 +102,7 @@ select ok(
   not coalesce((
     select proargnames @> array['p_bid_date']
     from pg_proc
-    where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure
+    where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[],uuid[])'::regprocedure
   ), false),
   'create_bid exposes no client BID date argument'
 ); -- 22

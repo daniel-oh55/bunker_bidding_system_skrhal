@@ -18,7 +18,12 @@ function MsgDraftPreview({ draft, disabled, onApply }: { draft: BunkerRequestDra
   return <div className="msg-intake-preview" aria-live="polite"><h4>Parsed draft</h4><dl>{draft.vesselVoyage ? <div><dt>Vessel / voyage</dt><dd>{draft.vesselVoyage}</dd></div> : null}{draft.portName ? <div><dt>Port</dt><dd>{draft.portName}</dd></div> : null}{draft.deliveryWindow ? <div><dt>Delivery</dt><dd>{draft.deliveryWindow}</dd></div> : null}{draft.fuelItems.length ? <div><dt>Fuel items</dt><dd>{draft.fuelItems.map((item) => `${item.grade.toUpperCase()} ${item.quantity} MT`).join(', ')}</dd></div> : null}</dl>{draft.warnings.length ? <div className="notice warning"><strong>Review warnings</strong><ul>{draft.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div> : null}<button type="button" className="secondary" disabled={disabled || !hasCandidate} onClick={onApply}>Apply parsed fields</button></div>;
 }
 
-export function CreateBidForm({ buyers, disabled, onSubmit }: { buyers: ActiveBuyer[]; disabled: boolean; onSubmit: (input: BidInput) => Promise<boolean> }) {
+function SellerSelection({ organizations, selectedSellerIds, disabled, onToggle }: { organizations: TraderOrganization[]; selectedSellerIds: Set<string>; disabled: boolean; onToggle: (organizationId: string) => void }) {
+  const selectedCount = organizations.filter((organization) => selectedSellerIds.has(organization.organization_id)).length;
+  return <fieldset className="prepared-seller-selection"><legend>SELLER participants</legend><p className="buyer-form-helper">All active SELLER organizations are selected by default. Only selected SELLERs receive BID scope when published.</p>{organizations.length === 0 ? <p className="notice warning">At least one active SELLER is required before this BID can be published.</p> : <div>{organizations.map((organization) => <label key={organization.organization_id}><input type="checkbox" aria-label={`Include SELLER ${organization.organization_label}`} disabled={disabled} checked={selectedSellerIds.has(organization.organization_id)} onChange={() => onToggle(organization.organization_id)} /> {organization.organization_label}</label>)}</div>}{selectedCount === 0 && organizations.length > 0 ? <p className="notice warning">Select at least one active SELLER before publishing.</p> : null}</fieldset>;
+}
+
+export function CreateBidForm({ buyers, organizations, disabled, onSubmit }: { buyers: ActiveBuyer[]; organizations: TraderOrganization[]; disabled: boolean; onSubmit: (input: BidInput) => Promise<boolean> }) {
   const [rows, setRows] = useState<Row[]>(emptyRows);
   const [vessel, setVessel] = useState('');
   const [port, setPort] = useState('');
@@ -29,8 +34,22 @@ export function CreateBidForm({ buyers, disabled, onSubmit }: { buyers: ActiveBu
   const [msgError, setMsgError] = useState('');
   const [parsingMsg, setParsingMsg] = useState(false);
   const [hasAppliedImport, setHasAppliedImport] = useState(false);
+  const [selectedSellerIds, setSelectedSellerIds] = useState(() => new Set(organizations.map((organization) => organization.organization_id)));
+  const sellerSelectionInitialized = useRef(organizations.length > 0);
   const selectionRevision = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (sellerSelectionInitialized.current || organizations.length === 0) return;
+    sellerSelectionInitialized.current = true;
+    setSelectedSellerIds(new Set(organizations.map((organization) => organization.organization_id)));
+  }, [organizations]);
+
+  const toggleSeller = (organizationId: string) => setSelectedSellerIds((current) => {
+    const next = new Set(current);
+    if (next.has(organizationId)) next.delete(organizationId); else next.add(organizationId);
+    return next;
+  });
 
   const selectMsg = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -67,15 +86,18 @@ export function CreateBidForm({ buyers, disabled, onSubmit }: { buyers: ActiveBu
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const quantities = rows.map((row) => Number(row.quantity));
-    if (rows.some((row, index) => !row.quantity || !Number.isFinite(quantities[index]) || quantities[index]! <= 0)) return;
+    const deadlineAt = localInputToIso(deadline);
+    const selectedTraderOrganizationIds = organizations.filter((organization) => selectedSellerIds.has(organization.organization_id)).map((organization) => organization.organization_id);
+    if (!deadlineAt || selectedTraderOrganizationIds.length === 0 || rows.some((row, index) => !row.quantity || !Number.isFinite(quantities[index]) || quantities[index]! <= 0)) return;
     const succeeded = await onSubmit({
       vesselVoyage: vessel,
       portName: port,
       deliveryWindow: window,
-      deadlineAt: localInputToIso(deadline),
+      deadlineAt,
       responsibleBuyerUserId: responsible || null,
       fuelGrades: rows.map((row) => row.grade),
       quantities,
+      selectedTraderOrganizationIds,
     });
     if (succeeded) {
       setRows(emptyRows());
@@ -88,12 +110,14 @@ export function CreateBidForm({ buyers, disabled, onSubmit }: { buyers: ActiveBu
       setMsgError('');
       setParsingMsg(false);
       setHasAppliedImport(false);
+      setSelectedSellerIds(new Set(organizations.map((organization) => organization.organization_id)));
       selectionRevision.current += 1;
       if (fileInput.current) fileInput.current.value = '';
     }
   };
 
-  return <details className="panel buyer-create-panel"><summary><span>Create new bid</span><small>Set commercial terms and assign responsibility</small></summary><form className="operation-form buyer-create-form" onSubmit={(event) => void submit(event)}><section className="msg-intake" aria-labelledby="msg-intake-heading"><div><h3 id="msg-intake-heading">Import bunker request (.msg)</h3><p className="buyer-form-helper">Select one local Outlook file (maximum 5 MiB). It is parsed in this browser and is not uploaded.</p></div><label>Outlook message<input ref={fileInput} aria-label="Bunker request .msg file" type="file" accept=".msg" disabled={disabled || parsingMsg} onChange={(event) => void selectMsg(event)} /></label>{parsingMsg ? <p className="buyer-form-helper" role="status">Parsing local file…</p> : null}{msgError ? <p className="notice error" role="alert">{msgError}</p> : null}{msgDraft ? <MsgDraftPreview draft={msgDraft} disabled={disabled} onApply={applyMsgDraft} /> : null}</section>{hasAppliedImport ? <p className="notice warning imported-draft-helper">Imported values are a draft. Verify vessel/voyage, port, delivery, fuel grade and quantity before creating the bid.</p> : null}<section className="buyer-create-manual" aria-labelledby="buyer-create-manual-heading"><div className="buyer-editable-heading"><strong id="buyer-create-manual-heading">Bid details</strong><span>Review every editable value before creating the authoritative bid.</span></div><div className="buyer-create-fields"><label>Vessel / voyage<input required disabled={disabled} value={vessel} onChange={(event) => setVessel(event.target.value)} /></label><label>Port<input required disabled={disabled} value={port} onChange={(event) => setPort(event.target.value)} /></label><label>Delivery window<input required disabled={disabled} value={window} onChange={(event) => setWindow(event.target.value)} /></label><label>Deadline<input aria-label="Create deadline" type="datetime-local" disabled={disabled} value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><label>Responsible BUYER<select disabled={disabled} value={responsible} onChange={(event) => setResponsible(event.target.value)}><option value="">Current actor</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label></div><FuelRows rows={rows} onChange={setRows} disabled={disabled} /></section><div className="buyer-create-actions"><p className="buyer-form-helper">The server validates the bid and returns the authoritative record.</p><button type="submit" disabled={disabled}>Create bid</button></div></form></details>;
+  const selectedSellerCount = organizations.filter((organization) => selectedSellerIds.has(organization.organization_id)).length;
+  return <details className="panel buyer-create-panel"><summary><span>Publish new BID</span><small>Set commercial terms, assign responsibility, and select SELLERs</small></summary><form className="operation-form buyer-create-form" onSubmit={(event) => void submit(event)}><section className="msg-intake" aria-labelledby="msg-intake-heading"><div><h3 id="msg-intake-heading">Import bunker request (.msg)</h3><p className="buyer-form-helper">Select one local Outlook file (maximum 5 MiB). It is parsed in this browser and is not uploaded.</p></div><label>Outlook message<input ref={fileInput} aria-label="Bunker request .msg file" type="file" accept=".msg" disabled={disabled || parsingMsg} onChange={(event) => void selectMsg(event)} /></label>{parsingMsg ? <p className="buyer-form-helper" role="status">Parsing local file…</p> : null}{msgError ? <p className="notice error" role="alert">{msgError}</p> : null}{msgDraft ? <MsgDraftPreview draft={msgDraft} disabled={disabled} onApply={applyMsgDraft} /> : null}</section>{hasAppliedImport ? <p className="notice warning imported-draft-helper">Imported values are a draft. Verify vessel/voyage, port, delivery, fuel grade and quantity before publishing the BID.</p> : null}<section className="buyer-create-manual" aria-labelledby="buyer-create-manual-heading"><div className="buyer-editable-heading"><strong id="buyer-create-manual-heading">Bid details</strong><span>Review every editable value before publishing the authoritative BID.</span></div><div className="buyer-create-fields"><label>Vessel / voyage<input required disabled={disabled} value={vessel} onChange={(event) => setVessel(event.target.value)} /></label><label>Port<input required disabled={disabled} value={port} onChange={(event) => setPort(event.target.value)} /></label><label>Delivery window<input required disabled={disabled} value={window} onChange={(event) => setWindow(event.target.value)} /></label><label>Deadline<input aria-label="Create deadline" type="datetime-local" required disabled={disabled} value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><label>Responsible BUYER<select disabled={disabled} value={responsible} onChange={(event) => setResponsible(event.target.value)}><option value="">Current actor</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label></div><FuelRows rows={rows} onChange={setRows} disabled={disabled} /></section><SellerSelection organizations={organizations} selectedSellerIds={selectedSellerIds} disabled={disabled} onToggle={toggleSeller} /><div className="buyer-create-actions"><p className="buyer-form-helper">Publish creates the authoritative BID and selected SELLER response slots.</p><button type="submit" disabled={disabled || selectedSellerCount === 0}>Publish BID</button></div></form></details>;
 }
 
 export function PreparedMailIntakeBidForm({ item, buyers, organizations, disabled, onSubmit, onClose }: { item: MailIntakeItem; buyers: ActiveBuyer[]; organizations: TraderOrganization[]; disabled: boolean; onSubmit: (input: PreparedMailIntakeBidInput) => Promise<boolean>; onClose: () => void }) {
@@ -117,6 +141,7 @@ export function PreparedMailIntakeBidForm({ item, buyers, organizations, disable
     if (next.has(organizationId)) next.delete(organizationId); else next.add(organizationId);
     return next;
   });
+  const selectedSellerCount = organizations.filter((organization) => selectedSellerIds.has(organization.organization_id)).length;
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const quantities = rows.map((row) => Number(row.quantity));
@@ -146,8 +171,8 @@ export function PreparedMailIntakeBidForm({ item, buyers, organizations, disable
         <div className="buyer-create-fields"><label>Prepared vessel / voyage<input aria-label="Prepared vessel / voyage" required disabled={disabled} value={vessel} onChange={(event) => setVessel(event.target.value)} /></label><label>Prepared port<input aria-label="Prepared port" required disabled={disabled} value={port} onChange={(event) => setPort(event.target.value)} /></label><label>Prepared delivery window<input aria-label="Prepared delivery window" required disabled={disabled} value={window} onChange={(event) => setWindow(event.target.value)} /></label><label>Publish deadline<input aria-label="Publish deadline" type="datetime-local" required disabled={disabled} value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><label>Responsible BUYER<select aria-label="Prepared responsible BUYER" disabled={disabled} value={responsible} onChange={(event) => setResponsible(event.target.value)}><option value="">Current actor</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label></div>
         <FuelRows rows={rows} onChange={setRows} disabled={disabled} />
       </section>
-      <fieldset className="prepared-seller-selection"><legend>SELLER participants</legend><p className="buyer-form-helper">All active SELLER organizations are selected by default. Only selected SELLERs receive BID scope when published.</p>{organizations.length === 0 ? <p className="notice warning">At least one active SELLER is required before this BID can be published.</p> : <div>{organizations.map((organization) => <label key={organization.organization_id}><input type="checkbox" aria-label={`Include SELLER ${organization.organization_label}`} disabled={disabled} checked={selectedSellerIds.has(organization.organization_id)} onChange={() => toggleSeller(organization.organization_id)} /> {organization.organization_label}</label>)}</div>}{selectedSellerIds.size === 0 ? <p className="notice warning">Select at least one active SELLER before publishing.</p> : null}</fieldset>
-      <div className="buyer-create-actions"><p className="buyer-form-helper">Publish creates the authoritative BID and selected SELLER response slots exactly once.</p><button type="submit" disabled={disabled || selectedSellerIds.size === 0}>Publish BID</button></div>
+      <SellerSelection organizations={organizations} selectedSellerIds={selectedSellerIds} disabled={disabled} onToggle={toggleSeller} />
+      <div className="buyer-create-actions"><p className="buyer-form-helper">Publish creates the authoritative BID and selected SELLER response slots exactly once.</p><button type="submit" disabled={disabled || selectedSellerCount === 0}>Publish BID</button></div>
     </form>
   </section>;
 }

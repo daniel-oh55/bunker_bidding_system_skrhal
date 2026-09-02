@@ -19,12 +19,14 @@ select set_config('request.jwt.claim.sub', '71000000-0000-4000-8000-000000000001
 create temporary table lifecycle_bid on commit drop as
 select result.* from public.create_bid(
   '73000000-0000-4000-8000-000000000001', 'Response lifecycle vessel', 'Busan', 'Current delivery',
-  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[10]::numeric[]
+  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[10]::numeric[],
+  array['72000000-0000-4000-8000-000000000002']::uuid[]
 ) as result;
 create temporary table submitted_audit_bid on commit drop as
 select result.* from public.create_bid(
   '73000000-0000-4000-8000-000000000001', 'Submitted audit vessel', 'Busan', 'Current delivery',
-  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[]
+  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[],
+  array['72000000-0000-4000-8000-000000000002']::uuid[]
 ) as result;
 
 select set_config('request.jwt.claim.sub', '71000000-0000-4000-8000-000000000002', true);

@@ -39,18 +39,18 @@ async function asBuyer(client, fixture, callback) {
 }
 
 async function createFixture(client, label) {
-  const fixture = { userId: randomUUID(), organizationId: randomUUID(), membershipId: randomUUID(), bidIds: [] };
+  const fixture = { userId: randomUUID(), organizationId: randomUUID(), membershipId: randomUUID(), publishSellerOrganizationId: randomUUID(), bidIds: [] };
   await client.query('insert into auth.users (id, email) values ($1, $2)', [fixture.userId, `${fixture.userId}@bid-race.test`]);
   await client.query("update app_private.user_accounts set status = 'active' where user_id = $1", [fixture.userId]);
-  await client.query("insert into app_private.organizations (id, kind, name, status) values ($1, 'buyer', $2, 'active')", [fixture.organizationId, `Bid race ${label}`]);
+  await client.query("insert into app_private.organizations (id, kind, name, status) values ($1, 'buyer', $2, 'active'), ($3, 'trader', $4, 'active')", [fixture.organizationId, `Bid race ${label}`, fixture.publishSellerOrganizationId, `Bid race seller ${label}`]);
   await client.query("insert into app_private.organization_memberships (id, user_id, organization_id, role, status) values ($1, $2, $3, 'buyer_admin', 'active')", [fixture.membershipId, fixture.userId, fixture.organizationId]);
   return fixture;
 }
 
 async function createBid(client, fixture, suffix) {
   const { rows } = await asBuyer(client, fixture, () => client.query(
-    `select (public.create_bid($1, $2, 'Busan', 'window', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[10]::numeric[])).id as id`,
-    [fixture.membershipId, `race-${suffix}`],
+    `select (public.create_bid($1, $2, 'Busan', 'window', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[10]::numeric[], array[$3]::uuid[])).id as id`,
+    [fixture.membershipId, `race-${suffix}`, fixture.publishSellerOrganizationId],
   ));
   fixture.bidIds.push(rows[0].id);
   return rows[0].id;
@@ -118,12 +118,14 @@ async function race({ name, fixture, clients, pids, firstQuery, secondQuery, exp
 
 async function cleanup(client, fixture) {
   for (const bidId of fixture.bidIds) {
+    await client.query('delete from app_private.bid_trader_organization_responses where bid_id = $1', [bidId]);
+    await client.query('delete from app_private.bid_trader_organization_access where bid_id = $1', [bidId]);
     await client.query('delete from app_private.bid_audit_events where bid_id = $1', [bidId]);
     await client.query('delete from app_private.bid_items where bid_id = $1', [bidId]);
     await client.query('delete from app_private.bids where id = $1', [bidId]);
   }
   await client.query('delete from app_private.organization_memberships where id = $1', [fixture.membershipId]);
-  await client.query('delete from app_private.organizations where id = $1', [fixture.organizationId]);
+  await client.query('delete from app_private.organizations where id = any($1::uuid[])', [[fixture.organizationId, fixture.publishSellerOrganizationId]]);
   await client.query('delete from auth.users where id = $1', [fixture.userId]);
 }
 

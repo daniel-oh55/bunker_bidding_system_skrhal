@@ -141,7 +141,7 @@ function parseFuelItems(body: string, warnings: string[]): BunkerRequestDraft['f
     candidates.set(grade, quantities);
     if (parsedQuantity.usedRangeLowerBound) {
       const gradeWarnings = rangeWarnings.get(grade) ?? [];
-      gradeWarnings.push(`${alias} quantity range was imported using its lower bound; verify before creating the bid.`);
+      gradeWarnings.push(`${alias} quantity range was imported using its lower bound; verify before publishing the BID.`);
       rangeWarnings.set(grade, gradeWarnings);
     }
   }
