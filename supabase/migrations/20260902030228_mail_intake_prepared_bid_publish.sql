@@ -243,6 +243,9 @@ begin
   if p_selected_trader_organization_ids is null then
     raise exception using errcode = '22023', message = 'Selected SELLER organizations are required';
   end if;
+  if cardinality(p_selected_trader_organization_ids) < 1 then
+    raise exception using errcode = '22023', message = 'At least one selected active SELLER is required';
+  end if;
 
   select result.* into v_result
   from app_private.create_authoritative_bid(
@@ -376,6 +379,9 @@ begin
   end if;
   if app_private.effective_bid_status(v_bid.status, v_bid.deadline_at) <> 'open' then
     raise exception using errcode = '55000', message = 'TRADER scope can be revoked only while effective-open';
+  end if;
+  if (select count(*) from app_private.bid_trader_organization_access where bid_id = p_bid_id) <= 1 then
+    raise exception using errcode = '55000', message = 'The final current SELLER scope cannot be revoked';
   end if;
   if not exists (
     select 1

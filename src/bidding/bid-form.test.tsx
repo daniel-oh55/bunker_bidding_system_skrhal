@@ -33,6 +33,10 @@ describe('BUYER bid forms and detail editor', () => {
     expect(screen.getByLabelText('Include SELLER First SELLER')).toBeChecked();
     expect(screen.getByLabelText('Include SELLER Second SELLER')).toBeChecked();
     fireEvent.click(screen.getByLabelText('Include SELLER Second SELLER'));
+    fireEvent.click(screen.getByLabelText('Include SELLER First SELLER'));
+    expect(screen.getByText('Select at least one active SELLER before publishing.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish BID' })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Include SELLER First SELLER'));
     fireEvent.change(screen.getByLabelText('Publish deadline'), { target: { value: '2026-08-04T12:30' } });
     fireEvent.change(screen.getByLabelText('Prepared vessel / voyage'), { target: { value: 'Edited vessel' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish BID' }));

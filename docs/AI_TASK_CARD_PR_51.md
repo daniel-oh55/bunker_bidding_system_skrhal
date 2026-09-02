@@ -20,7 +20,7 @@ Turn a pending, normalized mail-intake candidate into a private BUYER prepared-B
 
 ## Protected business invariant
 
-An intake item is not a BID and must be invisible to TRADERs. A pending item can be converted at most once by an active server-verified BUYER. Publish requires a valid future deadline and valid fuel items, creates the same authoritative BID guarantees as manual creation, grants explicit scope and awaiting response rows only to selected active SELLER organizations, appends exactly one created BID audit, and removes the converted item from the pending queue. Scope changes remain server-authorized and are forbidden after effective close.
+An intake item is not a BID and must be invisible to TRADERs. A pending item can be converted at most once by an active server-verified BUYER. Publish requires a valid future deadline, valid fuel items, and at least one selected active SELLER; it creates the same authoritative BID guarantees as manual creation, grants explicit scope and awaiting response rows only to selected active SELLER organizations, appends exactly one created BID audit, and removes the converted item from the pending queue. While effective-open, scope may change but the final participant cannot be revoked; all participant changes are forbidden after effective close.
 
 ## Actor and action matrix
 
