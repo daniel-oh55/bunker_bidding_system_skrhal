@@ -69,8 +69,16 @@ describe('BUYER mail intake queue', () => {
     expect(screen.getAllByText('Not extracted')).toHaveLength(3);
     expect(screen.getByText('None extracted')).toBeInTheDocument();
     expect(screen.getByText('Received time is source metadata, not the bidding deadline.')).toBeInTheDocument();
-    expect(screen.getByText('Items are review-only candidates. They do not create or update bids.')).toBeInTheDocument();
+    expect(screen.getByText('Items prepare a private BUYER draft. Only explicit Publish creates an authoritative BID.')).toBeInTheDocument();
     expect(screen.queryByText(/secret-provider|secret-box|secret-message/)).not.toBeInTheDocument();
+  });
+
+  it('opens the exact pending item as a private prepared BID draft', async () => {
+    const onPrepare = vi.fn();
+    const { client } = queueClient(vi.fn(() => Promise.resolve(ok([item()]))));
+    render(<MailIntakeQueue client={client} membershipId={membershipId} onPrepare={onPrepare} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepare BID' }));
+    expect(onPrepare).toHaveBeenCalledWith(item());
   });
 
   it('manually refreshes the authoritative pending queue and invalidates open confirmation', async () => {

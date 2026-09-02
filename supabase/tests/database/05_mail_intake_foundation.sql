@@ -15,7 +15,8 @@ select columns_are(
   array[
     'id', 'source_provider', 'source_mailbox_key', 'source_message_id', 'received_at', 'subject',
     'vessel_voyage', 'port_name', 'delivery_window', 'fuel_items', 'warnings', 'status', 'revision',
-    'created_at', 'updated_at', 'dismissed_at', 'dismissed_by_user_id', 'dismissed_by_membership_id'
+    'created_at', 'updated_at', 'dismissed_at', 'dismissed_by_user_id', 'dismissed_by_membership_id',
+    'converted_bid_id', 'converted_at', 'converted_by_user_id', 'converted_by_membership_id'
   ],
   'mail intake table has only the normalized contract columns'
 ); -- 4
@@ -65,7 +66,7 @@ select ok(not exists(select 1 from pg_attribute where attrelid = 'app_private.ma
 select ok(not exists(select 1 from information_schema.columns where table_schema = 'app_private' and table_name = 'mail_intake_items' and column_name ~ '(raw|body|html|attachment)'), 'intake storage has no raw body, HTML, or attachment column'); -- 37
 select ok(not exists(select 1 from information_schema.columns where table_schema = 'app_private' and table_name = 'mail_intake_items' and column_name ~ '(sender|recipient|cc|bcc|address|email)'), 'intake storage has no sender, recipient, or address column'); -- 38
 select ok(not exists(select 1 from information_schema.columns where table_schema = 'app_private' and table_name = 'mail_intake_items' and column_name ~ '(deadline|responsible)'), 'intake storage has no deadline or responsible-BUYER column'); -- 39
-select ok(not exists(select 1 from information_schema.columns where table_schema = 'app_private' and table_name = 'mail_intake_items' and column_name ~ '(trader|seller|quote|award|bid|converted)'), 'intake storage has no bid, conversion, TRADER, seller, quote, or award column'); -- 40
+select ok(not exists(select 1 from pg_attribute where attrelid = 'app_private.mail_intake_api_result'::regclass and attnum > 0 and not attisdropped and attname ~ '(source|converted|bid|actor|membership)'), 'BUYER queue result excludes source identity and conversion linkage'); -- 40
 
 -- Execute grants are proven with actual caller roles.
 set local role anon;

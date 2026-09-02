@@ -54,6 +54,12 @@ describe('BiddingClient RPC adapter', () => {
     expect(await malformedDismiss.client.dismissMailIntakeItem(id, other, 1)).toMatchObject({ data: null, error: { kind: 'protocol' } });
   });
 
+  it('maps explicit mail-intake publish with only the reviewed preparation fields', async () => {
+    const { rpc, client } = harness();
+    await client.publishMailIntakeBid(id, { intakeItemId: other, expectedIntakeRevision: 4, vesselVoyage: 'V', portName: 'P', deliveryWindow: 'W', deadlineAt: now, responsibleBuyerUserId: null, fuelGrades: ['vlsfo'], quantities: [1], selectedTraderOrganizationIds: [id] });
+    expect(rpc).toHaveBeenCalledWith('publish_mail_intake_bid', { p_actor_membership_id: id, p_item_id: other, p_expected_revision: 4, p_vessel_voyage: 'V', p_port_name: 'P', p_delivery_window: 'W', p_deadline_at: now, p_responsible_buyer_user_id: null, p_fuel_grades: ['vlsfo'], p_quantities: [1], p_selected_trader_organization_ids: [id] });
+  });
+
   it('maps all BUYER methods with the selected membership and only contract arguments', async () => {
     const { rpc, client } = harness();
     await client.listActiveBuyers(id); await client.listBids(id, '2026-08-03', 'responsible_buyer', other); await client.listBidAudit(id, other); await client.createBid(id, { vesselVoyage: 'V', portName: 'P', deliveryWindow: 'W', deadlineAt: null, responsibleBuyerUserId: other, fuelGrades: ['vlsfo'], quantities: [1] }); await client.updateBid(id, other, 2, { vesselVoyage: 'V', portName: 'P', deliveryWindow: 'W', deadlineAt: null, fuelGrades: ['vlsfo'], quantities: [1] }); await client.reassignBid(id, other, 2, id); await client.closeBid(id, other, 2); await client.reopenBid(id, other, 2, null); await client.cancelBid(id, other, 2); await client.listActiveTraderOrganizations(id); await client.listBidTraderAccess(id, other); await client.grantBidTraderAccess(id, other, 2, id); await client.revokeBidTraderAccess(id, other, 2, id); await client.listBidSellerComparisonForBuyers(id, other); await client.listQuotesForBuyers(id, other); await client.awardBid(id, other, 2, id, 3);
