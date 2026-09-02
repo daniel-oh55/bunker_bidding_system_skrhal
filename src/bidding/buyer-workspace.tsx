@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BiddingClient, BiddingResult, BidInput } from './bidding-client';
-import { CreateBidForm } from './bid-form';
+import type { BiddingClient, BiddingResult, BidInput, PreparedMailIntakeBidInput } from './bidding-client';
+import { CreateBidForm, PreparedMailIntakeBidForm } from './bid-form';
 import { BuyerBidBoardCard, type BuyerBidBoardSellerState } from './buyer-bid-board-card';
 import { BuyerBidDetail } from './buyer-bid-detail';
 import { MailIntakeQueue } from './mail-intake-queue';
 import { SellerManagement } from './seller-management';
-import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, Quote, TraderOrganization, WorkflowError } from './types';
+import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, MailIntakeItem, Quote, TraderOrganization, WorkflowError } from './types';
 import { WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
 import { currentSeoulDate } from './datetime';
 
@@ -38,7 +38,7 @@ const groupBidsByCreator = (bids: Bid[]) => {
 export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_operator', onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; membershipRole?: 'buyer_admin' | 'buyer_operator'; onAuthorizationFailure: () => void; reloadVersion?: number }) {
   const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null); const detailRegionRef = useRef<HTMLElement | null>(null); const detailAttentionBidId = useRef<string | null>(null);
   const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [boardSellers, setBoardSellers] = useState<Record<string, BuyerBidBoardSellerState>>({}); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selectedDate, setSelectedDate] = useState(() => currentSeoulDate()); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
-  const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({});
+  const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({}); const [preparedItem, setPreparedItem] = useState<MailIntakeItem | null>(null); const [mailIntakeReloadVersion, setMailIntakeReloadVersion] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const initialDateRef = useRef(selectedDate);
   const clearVisible = useCallback(() => { detailAttentionBidId.current = null; selectedRef.current = null; setBids([]); setBoardSellers({}); setSelected(null); setDetail(null); }, []);
@@ -158,6 +158,11 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     return loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id);
   };
   const create = async (input: BidInput) => mutate(() => client.createBid(membershipId, input));
+  const publishPrepared = async (input: PreparedMailIntakeBidInput) => {
+    const published = await mutate(() => client.publishMailIntakeBid(membershipId, input));
+    if (published) { setPreparedItem(null); setMailIntakeReloadVersion((version) => version + 1); }
+    return published;
+  };
   const changeView = (next: View) => { setView(next); setResponsible(''); void loadList(next, selectedDate); };
   const changeDate = (nextDate: string) => { setSelectedDate(nextDate); void loadList(view, nextDate, responsible || undefined, selectedRef.current?.id); };
   const todayDate = currentSeoulDate(nowMs);
@@ -184,9 +189,10 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
       </fieldset>
       {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', selectedDate, target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
     </section>
+    {preparedItem ? <PreparedMailIntakeBidForm key={`${preparedItem.id}:${preparedItem.revision}`} item={preparedItem} buyers={buyers} organizations={organizations} disabled={pending} onSubmit={publishPrepared} onClose={() => setPreparedItem(null)} /> : null}
     {historicalDateSelected ? <section className="panel historical-create-notice" role="note"><h2>Create new bid unavailable</h2><p>New BIDs are created only for today’s Seoul operational date ({todayDate}). Select today to create a BID.</p></section> : <CreateBidForm buyers={buyers} disabled={pending} onSubmit={create} />}
     {membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id)} /> : null}
-    <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} onAuthorizationFailure={onAuthorizationFailure} />
+    <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} reloadVersion={mailIntakeReloadVersion} onPrepare={setPreparedItem} onAuthorizationFailure={onAuthorizationFailure} />
     <section className="panel buyer-bid-board" aria-label="BUYER operational bid board">
         <div className="buyer-list-heading"><div><p className="eyebrow">Current view</p><h2>Bids</h2></div><span>{bids.length} loaded</span></div>
         {loading ? <WorkspaceEmptyState title="Loading bids" description="Retrieving the current bid list." /> : view === 'responsible_buyer' && !responsible ? <WorkspaceEmptyState title="Select a BUYER to load responsible bids." description="Choose an active BUYER to view their responsible bids." /> : bids.length === 0 ? <WorkspaceEmptyState title="No bids in this view" description="Try another view or refresh the current bid list." /> : view === 'all' ? <div className="buyer-creator-groups">{creatorGroups.map((group) => {

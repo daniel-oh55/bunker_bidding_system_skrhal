@@ -1,5 +1,5 @@
 begin;
-select plan(86);
+select plan(87);
 
 insert into auth.users (id,email,raw_user_meta_data,raw_app_meta_data) values
   ('10000000-0000-0000-0000-000000000001','buyer-a@quote.test','{"role":"trader"}','{"role":"trader"}'),
@@ -108,25 +108,33 @@ select throws_ok($$select public.submit_quote_response('30000000-0000-0000-0000-
 
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select count(*) from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids))),1::bigint,'BUYER sees retained quote'); -- 37
-select is((select (public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000003')).revision),3::bigint,'BUYER revokes scope in one revision'); -- 38
+select public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),2,'20000000-0000-0000-0000-000000000004');
+select is((select (public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),3,'20000000-0000-0000-0000-000000000003')).revision),4::bigint,'BUYER revokes one of multiple current TRADER scopes in one revision'); -- 38
+select throws_ok($$select public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),4,'20000000-0000-0000-0000-000000000004')$$,'55000','The final current SELLER scope cannot be revoked','effective-open final current TRADER scope cannot be revoked');
 reset role;
-select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_revoked'),1::bigint,'scope revoke creates exactly one corresponding bid audit event');
+select ok(
+  (select revision from app_private.bids where id=(select bid_id from quote_test_ids))=4
+  and (select count(*) from app_private.bid_trader_organization_access where bid_id=(select bid_id from quote_test_ids))=1
+  and exists(select 1 from app_private.bid_trader_organization_access where bid_id=(select bid_id from quote_test_ids) and trader_organization_id='20000000-0000-0000-0000-000000000004')
+  and (select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_revoked')=1,
+  'effective-open final-scope denial preserves the remaining TRADER scope, BID revision, and revoke audit history'
+);
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 select is((select count(*) from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),0::bigint,'revocation immediately removes quote visibility'); -- 39
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select count(*) from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids))),1::bigint,'revocation preserves BUYER visibility'); -- 40
-select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),3,'20000000-0000-0000-0000-000000000003')).revision),4::bigint,'regrant restores scope while open'); -- 41
+select is((select (public.grant_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),4,'20000000-0000-0000-0000-000000000003')).revision),5::bigint,'regrant restores scope while open'); -- 41
 reset role;
-select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_granted'),2::bigint,'regrant creates a second corresponding bid audit event');
+select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_granted'),3::bigint,'second participant grant and regrant each create a corresponding bid audit event');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
-select is((select (public.close_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),4)).raw_status),'closed','close bid with quote'); -- 42
+select is((select (public.close_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),5)).raw_status),'closed','close bid with quote'); -- 42
 select is((select eligible_for_award from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),true,'closed bid quote is eligible for award');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 select throws_ok($$select public.submit_quote_response('30000000-0000-0000-0000-000000000003',(select bid_id from quote_test_ids),3,2,array['vlsfo','lsmgo'],array[102,202]::numeric[],6)$$,'55000','Quote responses are editable only while effective-open','close blocks quote-response update'); -- 43
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
-select is((select (public.award_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),5,(select quote_id from quote_test_ids),2)).raw_status),'awarded','effective-closed bid award succeeds'); -- 44
+select is((select (public.award_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),6,(select quote_id from quote_test_ids),2)).raw_status),'awarded','effective-closed bid award succeeds'); -- 44
 select is((select is_awarded from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),true,'awarded quote returns true');
 select is((select eligible_for_award from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids)) where id=(select quote_id from quote_test_ids)),false,'awarded quote is no longer eligible for award');
 reset role;
@@ -134,14 +142,14 @@ select is((select awarded_quote_id from app_private.bids where id=(select bid_id
 select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='awarded'),1::bigint,'award creates one bid audit event'); -- 46
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
-select is((select (public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),6,'20000000-0000-0000-0000-000000000003')).revision),7::bigint,'BUYER can revoke current TRADER scope after award');
+select throws_ok($$select public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),7,'20000000-0000-0000-0000-000000000003')$$,'55000','TRADER scope can be revoked only while effective-open','BUYER cannot revoke current TRADER scope after award');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
-select is((select count(*) from public.list_trader_bids('30000000-0000-0000-0000-000000000003') where id=(select bid_id from quote_test_ids)),0::bigint,'awarded-bid scope revoke immediately removes TRADER bid visibility');
-select is((select count(*) from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),0::bigint,'awarded-bid scope revoke immediately removes TRADER quote visibility');
+select is((select count(*) from public.list_trader_bids('30000000-0000-0000-0000-000000000003') where id=(select bid_id from quote_test_ids)),1::bigint,'failed awarded-bid revoke retains TRADER bid visibility');
+select is((select count(*) from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from quote_test_ids)),1::bigint,'failed awarded-bid revoke retains TRADER quote visibility');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select count(*) from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids))),1::bigint,'awarded-bid scope revoke retains BUYER quote visibility');
 reset role;
-select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_revoked'),2::bigint,'each successful scope revoke creates exactly one bid audit event');
+select is((select count(*) from app_private.bid_audit_events where bid_id=(select bid_id from quote_test_ids) and event_type='trader_access_revoked'),1::bigint,'terminal scope revoke denials create no additional bid audit event');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select throws_ok($$select public.cancel_bid('30000000-0000-0000-0000-000000000001',(select bid_id from quote_test_ids),7)$$,'55000','Only raw open or closed bids can be cancelled','awarded bid cannot cancel'); -- 47
@@ -241,10 +249,10 @@ select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003'
 update terminal_cancel_bid_ids set quote_id=(select (public.submit_quote_response('30000000-0000-0000-0000-000000000003',bid_id,1,null,array['vlsfo'],array[100]::numeric[],0)).id from terminal_cancel_bid_ids);
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select (public.cancel_bid('30000000-0000-0000-0000-000000000001',(select bid_id from terminal_cancel_bid_ids),2)).raw_status),'cancelled','BUYER can cancel a bid with current TRADER scope');
-select is((select (public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from terminal_cancel_bid_ids),3,'20000000-0000-0000-0000-000000000003')).revision),4::bigint,'BUYER can revoke current TRADER scope after cancellation');
+select throws_ok($$select public.revoke_bid_trader_access('30000000-0000-0000-0000-000000000001',(select bid_id from terminal_cancel_bid_ids),3,'20000000-0000-0000-0000-000000000003')$$,'55000','TRADER scope can be revoked only while effective-open','BUYER cannot revoke current TRADER scope after cancellation');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
-select is((select count(*) from public.list_trader_bids('30000000-0000-0000-0000-000000000003') where id=(select bid_id from terminal_cancel_bid_ids)),0::bigint,'cancelled-bid scope revoke immediately removes TRADER bid visibility');
-select is((select count(*) from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from terminal_cancel_bid_ids)),0::bigint,'cancelled-bid scope revoke immediately removes TRADER quote visibility');
+select is((select count(*) from public.list_trader_bids('30000000-0000-0000-0000-000000000003') where id=(select bid_id from terminal_cancel_bid_ids)),1::bigint,'failed cancelled-bid revoke retains TRADER bid visibility');
+select is((select count(*) from public.list_my_quotes('30000000-0000-0000-0000-000000000003') where id=(select quote_id from terminal_cancel_bid_ids)),1::bigint,'failed cancelled-bid revoke retains TRADER quote visibility');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select is((select count(*) from public.list_quotes_for_buyers('30000000-0000-0000-0000-000000000001',(select bid_id from terminal_cancel_bid_ids))),1::bigint,'cancelled-bid scope revoke retains BUYER quote visibility');
 

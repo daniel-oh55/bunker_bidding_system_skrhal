@@ -18,7 +18,7 @@ const displayError = (error: WorkflowError) => {
   return 'The mail intake request could not be completed. Please try again.';
 };
 
-export function MailIntakeQueue({ client, membershipId, selectedBidDate, onAuthorizationFailure }: { client: BiddingClient; membershipId: string; selectedBidDate: string; onAuthorizationFailure: () => void }) {
+export function MailIntakeQueue({ client, membershipId, selectedBidDate, reloadVersion = 0, onPrepare = () => {}, onAuthorizationFailure }: { client: BiddingClient; membershipId: string; selectedBidDate: string; reloadVersion?: number; onPrepare?: (item: MailIntakeItem) => void; onAuthorizationFailure: () => void }) {
   const operation = useRef(0);
   const [items, setItems] = useState<MailIntakeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +60,7 @@ export function MailIntakeQueue({ client, membershipId, selectedBidDate, onAutho
 
   useEffect(() => { void load(); return invalidate; }, [invalidate, load]);
   useEffect(() => { setDismissTarget(null); }, [selectedBidDate]);
+  useEffect(() => { if (reloadVersion > 0) void load(); }, [load, reloadVersion]);
 
   const dismiss = async (target: DismissTarget) => {
     const item = items.find((candidate) => candidate.id === target.id && candidate.revision === target.revision);
@@ -89,7 +90,7 @@ export function MailIntakeQueue({ client, membershipId, selectedBidDate, onAutho
       <div className="mail-intake-heading-actions"><span>{visibleItems.length} pending for {selectedBidDate}</span><button type="button" className="secondary" disabled={loading || pending} onClick={() => void load()}>Refresh mail intake</button></div>
     </header>
     <div className="mail-intake-boundary">
-      <p>Items are review-only candidates. They do not create or update bids.</p>
+      <p>Items prepare a private BUYER draft. Only explicit Publish creates an authoritative BID.</p>
       <p>Received time is source metadata, not the bidding deadline.</p>
     </div>
     {error ? <p className="notice error" role="alert">{displayError(error)}</p> : null}
@@ -107,6 +108,7 @@ export function MailIntakeQueue({ client, membershipId, selectedBidDate, onAutho
             </dl>
             {item.warnings.length ? <aside className="notice warning mail-intake-warnings"><strong>Extraction warnings</strong><ul>{item.warnings.map((warning, index) => <li key={`${item.id}:warning:${index}`}>{warning}</li>)}</ul></aside> : null}
             <footer className="mail-intake-dismiss">
+              <button type="button" disabled={pending} onClick={() => onPrepare(item)}>Prepare BID</button>
               {confirming ? <div className="mail-intake-confirmation" role="group" aria-label={`Confirm dismissal of ${item.subject || 'item with no subject'}`}><p>Dismissal is shared and irreversible.</p><div><button type="button" className="danger" disabled={pending} onClick={() => void dismiss(dismissTarget)}>Confirm dismiss for all BUYERs</button><button type="button" className="secondary" disabled={pending} onClick={() => setDismissTarget(null)}>Cancel</button></div></div> : <button type="button" className="secondary mail-intake-dismiss-button" disabled={pending} onClick={() => setDismissTarget({ id: item.id, revision: item.revision })}>Dismiss</button>}
             </footer>
           </article>

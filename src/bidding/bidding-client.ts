@@ -2,6 +2,7 @@ import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAudit
 
 export type BiddingResult<T> = { data: T | null; error: WorkflowError | null };
 export type BidInput = { vesselVoyage: string; portName: string; deliveryWindow: string; deadlineAt: string | null; responsibleBuyerUserId: string | null; fuelGrades: string[]; quantities: number[] };
+export type PreparedMailIntakeBidInput = BidInput & { intakeItemId: string; expectedIntakeRevision: number; selectedTraderOrganizationIds: string[] };
 export type QuoteInput = { fuelGrades: string[]; unitPrices: number[]; bargeFee: number };
 export interface BiddingClient {
   listMailIntakeItems(membershipId: string): Promise<BiddingResult<MailIntakeItem[]>>;
@@ -10,6 +11,7 @@ export interface BiddingClient {
   listBids(membershipId: string, bidDate: string, view: 'all' | 'created_by_me' | 'responsible_buyer', responsibleBuyerUserId?: string): Promise<BiddingResult<Bid[]>>;
   listBidAudit(membershipId: string, bidId: string): Promise<BiddingResult<BidAuditEvent[]>>;
   createBid(membershipId: string, input: BidInput): Promise<BiddingResult<Bid>>;
+  publishMailIntakeBid(membershipId: string, input: PreparedMailIntakeBidInput): Promise<BiddingResult<Bid>>;
   updateBid(membershipId: string, bidId: string, expectedRevision: number, input: Omit<BidInput, 'responsibleBuyerUserId'>): Promise<BiddingResult<Bid>>;
   reassignBid(membershipId: string, bidId: string, expectedRevision: number, userId: string): Promise<BiddingResult<Bid>>;
   closeBid(membershipId: string, bidId: string, expectedRevision: number): Promise<BiddingResult<Bid>>;
@@ -52,6 +54,7 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
     listBids: (m, bidDate, view, user) => rpc('list_bids', { p_actor_membership_id: m, p_bid_date: bidDate, p_view: view, p_responsible_buyer_user_id: view === 'responsible_buyer' ? user ?? null : null }, many(parseBid)),
     listBidAudit: (m, b) => rpc('list_bid_audit', { p_actor_membership_id: m, p_bid_id: b }, many(parseBidAuditEvent)),
     createBid: (m, i) => rpc('create_bid', { p_actor_membership_id: m, p_vessel_voyage: i.vesselVoyage, p_port_name: i.portName, p_delivery_window: i.deliveryWindow, p_deadline_at: i.deadlineAt, p_responsible_buyer_user_id: i.responsibleBuyerUserId, p_fuel_grades: i.fuelGrades, p_quantities: i.quantities }, parseBid),
+    publishMailIntakeBid: (m, i) => rpc('publish_mail_intake_bid', { p_actor_membership_id: m, p_item_id: i.intakeItemId, p_expected_revision: i.expectedIntakeRevision, p_vessel_voyage: i.vesselVoyage, p_port_name: i.portName, p_delivery_window: i.deliveryWindow, p_deadline_at: i.deadlineAt, p_responsible_buyer_user_id: i.responsibleBuyerUserId, p_fuel_grades: i.fuelGrades, p_quantities: i.quantities, p_selected_trader_organization_ids: i.selectedTraderOrganizationIds }, parseBid),
     updateBid: (m, b, r, i) => rpc('update_bid', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_vessel_voyage: i.vesselVoyage, p_port_name: i.portName, p_delivery_window: i.deliveryWindow, p_deadline_at: i.deadlineAt, p_fuel_grades: i.fuelGrades, p_quantities: i.quantities }, parseBid),
     reassignBid: (m, b, r, u) => rpc('reassign_bid', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_responsible_buyer_user_id: u }, parseBid),
     closeBid: (m, b, r) => rpc('close_bid', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r }, parseBid),

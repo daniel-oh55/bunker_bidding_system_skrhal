@@ -4,22 +4,46 @@ import { describe, expect, it, vi } from 'vitest';
 const msgIntake = vi.hoisted(() => ({ readMsgFile: vi.fn() }));
 vi.mock('./msg-intake', () => ({ readMsgFile: msgIntake.readMsgFile }));
 
-import { CreateBidForm } from './bid-form';
+import { CreateBidForm, PreparedMailIntakeBidForm } from './bid-form';
 import { BuyerBidDetail } from './buyer-bid-detail';
+import { localInputToIso } from './datetime';
 import type { BiddingClient } from './bidding-client';
-import type { Bid, Quote } from './types';
+import type { Bid, MailIntakeItem, Quote } from './types';
 
 const membership = '10000000-0000-4000-8000-000000000001'; const buyerId = '10000000-0000-4000-8000-000000000002'; const bidId = '10000000-0000-4000-8000-000000000003'; const now = '2026-08-03T03:00:00.000Z';
 const buyers = [{ user_id: buyerId, display_label: 'Responsible buyer', active_buyer_membership_count: 1 }];
 const bid: Bid = { id: bidId, bid_date: '2026-08-03', vessel_voyage: 'MV Before', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: '2026-08-03T03:00:00.000Z', raw_status: 'open', effective_status: 'open', revision: 3, created_by: membership, created_by_label: 'Creator', responsible_buyer_user_id: buyerId, responsible_buyer_label: 'Responsible buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null };
 const updateBid = vi.fn<BiddingClient['updateBid']>(() => Promise.resolve({ data: bid, error: null }));
 const fakeClient = { updateBid } as unknown as BiddingClient;
+const preparedItem: MailIntakeItem = { id: bidId, received_at: now, subject: 'Mail request', vessel_voyage: 'Parsed vessel', port_name: 'Parsed port', delivery_window: 'Parsed delivery', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: ['Check parsed delivery'], status: 'pending', revision: 4, created_at: now, updated_at: now, dismissed_at: null };
 
 function fillCreateForm() {
   fireEvent.change(screen.getByLabelText('Vessel / voyage'), { target: { value: 'MV New' } }); fireEvent.change(screen.getByLabelText('Port'), { target: { value: 'Ulsan' } }); fireEvent.change(screen.getByLabelText('Delivery window'), { target: { value: 'Next week' } }); fireEvent.change(screen.getByLabelText('Create deadline'), { target: { value: '2026-08-04T12:30' } }); fireEvent.change(screen.getByLabelText('Responsible BUYER'), { target: { value: buyerId } }); fireEvent.change(screen.getByLabelText('Fuel quantity 1'), { target: { value: '15' } });
 }
 
 describe('BUYER bid forms and detail editor', () => {
+  it('prefills a private prepared BID, selects active SELLERs by default, and publishes only reviewed values', async () => {
+    const submit = vi.fn().mockResolvedValue(true);
+    render(<PreparedMailIntakeBidForm item={preparedItem} buyers={buyers} organizations={[{ organization_id: membership, organization_label: 'First SELLER' }, { organization_id: buyerId, organization_label: 'Second SELLER' }]} disabled={false} onSubmit={submit} onClose={vi.fn()} />);
+    expect(screen.getByText('Check parsed delivery')).toBeInTheDocument();
+    expect(screen.getByLabelText('Prepared vessel / voyage')).toHaveValue('Parsed vessel');
+    expect(screen.getByLabelText('Prepared port')).toHaveValue('Parsed port');
+    expect(screen.getByLabelText('Prepared delivery window')).toHaveValue('Parsed delivery');
+    expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(10);
+    expect(screen.getByLabelText('Include SELLER First SELLER')).toBeChecked();
+    expect(screen.getByLabelText('Include SELLER Second SELLER')).toBeChecked();
+    fireEvent.click(screen.getByLabelText('Include SELLER Second SELLER'));
+    fireEvent.click(screen.getByLabelText('Include SELLER First SELLER'));
+    expect(screen.getByText('Select at least one active SELLER before publishing.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish BID' })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Include SELLER First SELLER'));
+    fireEvent.change(screen.getByLabelText('Publish deadline'), { target: { value: '2026-08-04T12:30' } });
+    fireEvent.change(screen.getByLabelText('Prepared vessel / voyage'), { target: { value: 'Edited vessel' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish BID' }));
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    expect(submit).toHaveBeenCalledWith({ intakeItemId: bidId, expectedIntakeRevision: 4, vesselVoyage: 'Edited vessel', portName: 'Parsed port', deliveryWindow: 'Parsed delivery', deadlineAt: localInputToIso('2026-08-04T12:30'), responsibleBuyerUserId: null, fuelGrades: ['vlsfo'], quantities: [10], selectedTraderOrganizationIds: [membership] });
+  });
+
   it('preserves every create draft field after failure and clears all of them only after success', async () => {
     const submit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true); render(<CreateBidForm buyers={buyers} disabled={false} onSubmit={submit} />);
     expect(screen.getByText('Create new bid').closest('details')).not.toHaveAttribute('open');
