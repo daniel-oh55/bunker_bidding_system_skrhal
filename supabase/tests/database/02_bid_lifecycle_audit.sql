@@ -30,7 +30,7 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000014', true);
 select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000214', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '42501', 'An active BUYER membership is required', 'TRADER cannot list bids');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000214', 'V', 'P', 'W', null, null, array['vlsfo'], array[1]::numeric[])$$, '42501', 'An active BUYER membership is required', 'TRADER cannot create bids despite forged metadata');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000214', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '42501', 'An active BUYER membership is required', 'TRADER cannot publish bids despite forged metadata');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000015', true);
 select throws_ok($$select * from public.list_bids('00000000-0000-0000-0000-000000000215', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null)$$, '42501', 'An active BUYER membership is required', 'inactive BUYER account or organization is denied');
 reset role;
@@ -59,7 +59,7 @@ select throws_like($$delete from app_private.bid_audit_events$$, '%permission de
 
 create temporary table bid_test_ids (name text primary key, id uuid not null) on commit drop;
 insert into bid_test_ids (name, id)
-select 'main', (public.create_bid('00000000-0000-0000-0000-000000000211', ' Vessel A ', ' Busan ', ' 1-3 Aug ', clock_timestamp() + interval '1 day', null, array['vlsfo', 'lsmgo'], array[100, 25]::numeric[])).id;
+select 'main', (public.create_bid('00000000-0000-0000-0000-000000000211', ' Vessel A ', ' Busan ', ' 1-3 Aug ', clock_timestamp() + interval '1 day', null, array['vlsfo', 'lsmgo'], array[100, 25]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])).id;
 select is((select raw_status from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'main')), 'open', 'create returns an expanded result with raw status');
 select is((select pg_typeof(id)::text from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'main')), 'uuid', 'list_bids returns expanded typed id fields');
 select is((select pg_typeof(fuel_items)::text from public.list_bids('00000000-0000-0000-0000-000000000211', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'main')), 'jsonb', 'list_bids returns expanded typed fuel item fields');
@@ -115,7 +115,7 @@ select throws_ok($$select public.reopen_bid('00000000-0000-0000-0000-00000000021
 select throws_ok($$select public.cancel_bid('00000000-0000-0000-0000-000000000211', (select id from bid_test_ids where name = 'main'), 6)$$, '55000', 'Only raw open or closed bids can be cancelled', 'cancellation is irreversible');
 
 insert into bid_test_ids (name, id)
-select 'expired', (public.create_bid('00000000-0000-0000-0000-000000000211', 'Expired', 'Busan', 'Now', clock_timestamp() + interval '1 hour', null, array['vlsfo'], array[1]::numeric[])).id;
+select 'expired', (public.create_bid('00000000-0000-0000-0000-000000000211', 'Expired', 'Busan', 'Now', clock_timestamp() + interval '1 hour', null, array['vlsfo'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])).id;
 reset role;
 update app_private.bids set deadline_at = clock_timestamp() - interval '1 second' where id = (select id from bid_test_ids where name = 'expired');
 set local role authenticated;
@@ -123,27 +123,27 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000012
 select is((select effective_status from public.list_bids('00000000-0000-0000-0000-000000000212', (clock_timestamp() at time zone 'Asia/Seoul')::date, 'all', null) where id = (select id from bid_test_ids where name = 'expired')), 'closed', 'expired raw open bid is effective closed');
 select throws_ok($$select public.update_bid('00000000-0000-0000-0000-000000000212', (select id from bid_test_ids where name = 'expired'), 1, 'V', 'P', 'W', clock_timestamp() + interval '1 hour', array['vlsfo'], array[1]::numeric[])$$, '55000', 'Bid details are editable only while effective-open', 'expired open bid cannot extend deadline with normal update');
 select is((select (public.reopen_bid('00000000-0000-0000-0000-000000000212', (select id from bid_test_ids where name = 'expired'), 1, clock_timestamp() + interval '1 day')).revision), 2::bigint, 'expired raw open bid can reopen');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', ' ', 'P', 'W', null, null, array['vlsfo'], array[1]::numeric[])$$, '22023', 'vessel_voyage is required', 'blank required field is rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', null, null, array['bad'], array[1]::numeric[])$$, '22023', 'Unsupported fuel grade', 'invalid fuel grade is rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', null, null, array['vlsfo','vlsfo'], array[1,2]::numeric[])$$, '22023', 'Fuel grades must be unique', 'duplicate fuel grade is rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', null, null, array['vlsfo'], array[0]::numeric[])$$, '22023', 'Fuel quantity must be finite and greater than zero', 'zero quantity is rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', null, null, array['vlsfo'], array[-1]::numeric[])$$, '22023', 'Fuel quantity must be finite and greater than zero', 'negative quantity is rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', null, null, array['vlsfo'], array[null::numeric])$$, '22023', 'Fuel quantity must be finite and greater than zero', 'null quantity is rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', null, null, array['vlsfo'], array[]::numeric[])$$, '22023', 'Fuel grades and quantities must be non-empty equal-length arrays', 'mismatched fuel arrays are rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', null, null, array[]::text[], array[]::numeric[])$$, '22023', 'Fuel grades and quantities must be non-empty equal-length arrays', 'empty item set is rejected');
-select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() - interval '1 second', null, array['vlsfo'], array[1]::numeric[])$$, '22023', 'Deadline must be strictly in the future', 'past create deadline is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', ' ', 'P', 'W', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'vessel_voyage is required', 'blank required field is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array['bad'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Unsupported fuel grade', 'invalid fuel grade is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array['vlsfo','vlsfo'], array[1,2]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Fuel grades must be unique', 'duplicate fuel grade is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[0]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Fuel quantity must be finite and greater than zero', 'zero quantity is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[-1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Fuel quantity must be finite and greater than zero', 'negative quantity is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[null::numeric], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Fuel quantity must be finite and greater than zero', 'null quantity is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Fuel grades and quantities must be non-empty equal-length arrays', 'mismatched fuel arrays are rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() + interval '1 day', null, array[]::text[], array[]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Fuel grades and quantities must be non-empty equal-length arrays', 'empty item set is rejected');
+select throws_ok($$select public.create_bid('00000000-0000-0000-0000-000000000212', 'V', 'P', 'W', clock_timestamp() - interval '1 second', null, array['vlsfo'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])$$, '22023', 'Deadline must be strictly in the future', 'past create deadline is rejected');
 insert into bid_test_ids (name, id)
-select 'deadline-validation', (public.create_bid('00000000-0000-0000-0000-000000000212', 'Deadline', 'Busan', 'Tomorrow', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[1]::numeric[])).id;
+select 'deadline-validation', (public.create_bid('00000000-0000-0000-0000-000000000212', 'Deadline', 'Busan', 'Tomorrow', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])).id;
 select throws_ok($$select public.update_bid('00000000-0000-0000-0000-000000000212', (select id from bid_test_ids where name = 'deadline-validation'), 1, 'Deadline', 'Busan', 'Tomorrow', clock_timestamp() - interval '1 second', array['vlsfo'], array[1]::numeric[])$$, '22023', 'Deadline must be strictly in the future', 'normal update with a past deadline is rejected');
 select throws_ok($$select public.update_bid('00000000-0000-0000-0000-000000000212', (select id from bid_test_ids where name = 'expired'), 1, 'V', 'P', 'W', null, array['vlsfo'], array[1]::numeric[])$$, '40001', 'Bid revision conflict', 'stale expected revision is rejected');
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000011', true);
 insert into bid_test_ids (name, id)
-select 'closed-cancel', (public.create_bid('00000000-0000-0000-0000-000000000211', 'Closed cancel', 'Busan', 'Tomorrow', null, null, array['vlsfo'], array[1]::numeric[])).id;
+select 'closed-cancel', (public.create_bid('00000000-0000-0000-0000-000000000211', 'Closed cancel', 'Busan', 'Tomorrow', clock_timestamp() + interval '1 day', null, array['vlsfo'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])).id;
 select is((select (public.close_bid('00000000-0000-0000-0000-000000000211', (select id from bid_test_ids where name = 'closed-cancel'), 1)).raw_status), 'closed', 'a raw open bid can close before cancellation');
 select is((select (public.cancel_bid('00000000-0000-0000-0000-000000000211', (select id from bid_test_ids where name = 'closed-cancel'), 2)).raw_status), 'cancelled', 'a raw closed bid can cancel');
 insert into bid_test_ids (name, id)
-select 'expired-close', (public.create_bid('00000000-0000-0000-0000-000000000211', 'Expired close', 'Busan', 'Now', clock_timestamp() + interval '1 hour', null, array['vlsfo'], array[1]::numeric[])).id;
+select 'expired-close', (public.create_bid('00000000-0000-0000-0000-000000000211', 'Expired close', 'Busan', 'Now', clock_timestamp() + interval '1 hour', null, array['vlsfo'], array[1]::numeric[], array['00000000-0000-0000-0000-000000000114']::uuid[])).id;
 reset role;
 update app_private.bids set deadline_at = clock_timestamp() - interval '1 second' where id = (select id from bid_test_ids where name = 'expired-close');
 set local role authenticated;
@@ -161,11 +161,11 @@ select is((select provolatile::text from pg_proc where oid = 'app_private.effect
 select is((select provolatile::text from pg_proc where oid = 'app_private.bid_snapshot(uuid)'::regprocedure), 'v', 'bid snapshot is VOLATILE');
 select is((select provolatile::text from pg_proc where oid = 'app_private.bid_result(uuid)'::regprocedure), 'v', 'bid result is VOLATILE');
 select ok(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('delete_bid', 'remove_bid')), 'no hard-delete public API exists');
-select ok((select prosecdef from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure), 'public create function is security definer');
-select is((select proconfig::text like '%search_path=%' from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure), true, 'public create function has a fixed search path');
-select is((select pg_get_userbyid(proowner) from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure), current_user, 'public create function owner is the migration owner');
-select is((select has_function_privilege('anon', 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure, 'execute')), false, 'anon has no create execute privilege');
-select is((select has_function_privilege('authenticated', 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[])'::regprocedure, 'execute')), true, 'authenticated has intended create execute privilege');
+select ok((select prosecdef from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[],uuid[])'::regprocedure), 'public create function is security definer');
+select is((select proconfig::text like '%search_path=%' from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[],uuid[])'::regprocedure), true, 'public create function has a fixed search path');
+select is((select pg_get_userbyid(proowner) from pg_proc where oid = 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[],uuid[])'::regprocedure), current_user, 'public create function owner is the migration owner');
+select is((select has_function_privilege('anon', 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[],uuid[])'::regprocedure, 'execute')), false, 'anon has no create execute privilege');
+select is((select has_function_privilege('authenticated', 'public.create_bid(uuid,text,text,text,timestamptz,uuid,text[],numeric[],uuid[])'::regprocedure, 'execute')), true, 'authenticated has intended create execute privilege');
 
 select * from finish();
 rollback;

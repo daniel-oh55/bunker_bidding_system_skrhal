@@ -13,7 +13,8 @@ insert into app_private.organizations (id,kind,name,status) values
   ('20000000-0000-0000-0000-000000000002','buyer','Quote Buyer B','active'),
   ('20000000-0000-0000-0000-000000000003','trader','Quote Trader A','inactive'),
   ('20000000-0000-0000-0000-000000000004','trader','Quote Trader Other','inactive'),
-  ('20000000-0000-0000-0000-000000000005','trader','Quote Trader Inactive','inactive');
+  ('20000000-0000-0000-0000-000000000005','trader','Quote Trader Inactive','inactive'),
+  ('20000000-0000-0000-0000-000000000006','trader','Publish Fixture Seller','active');
 insert into app_private.organization_memberships (id,user_id,organization_id,role,status) values
   ('30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','buyer_admin','active'),
   ('30000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000002','buyer_operator','active'),
@@ -54,8 +55,10 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 create temporary table quote_test_ids (bid_id uuid, quote_id uuid) on commit drop;
-insert into quote_test_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Quote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id;
+insert into quote_test_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Quote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[],array['20000000-0000-0000-0000-000000000006']::uuid[])).id;
 reset role;
+delete from app_private.bid_trader_organization_responses where bid_id=(select bid_id from quote_test_ids);
+delete from app_private.bid_trader_organization_access where bid_id=(select bid_id from quote_test_ids);
 update app_private.organizations
 set status='active'
 where id in (
@@ -161,8 +164,10 @@ update app_private.organizations set status='inactive' where id='20000000-0000-0
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 insert into post_quote_bid_ids(bid_id,deadline_at)
-select (public.create_bid('30000000-0000-0000-0000-000000000001','Prequote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id, clock_timestamp()+interval '2 days';
+select (public.create_bid('30000000-0000-0000-0000-000000000001','Prequote vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[],array['20000000-0000-0000-0000-000000000006']::uuid[])).id, clock_timestamp()+interval '2 days';
 reset role;
+delete from app_private.bid_trader_organization_responses where bid_id=(select bid_id from post_quote_bid_ids);
+delete from app_private.bid_trader_organization_access where bid_id=(select bid_id from post_quote_bid_ids);
 update app_private.organizations set status='active' where id='20000000-0000-0000-0000-000000000003';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
@@ -182,8 +187,10 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 create temporary table pre_quote_replacement_bid_ids (bid_id uuid) on commit drop;
 insert into pre_quote_replacement_bid_ids(bid_id)
-select (public.create_bid('30000000-0000-0000-0000-000000000001','Replacement vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[])).id;
+select (public.create_bid('30000000-0000-0000-0000-000000000001','Replacement vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo','lsmgo'],array[10,2]::numeric[],array['20000000-0000-0000-0000-000000000006']::uuid[])).id;
 reset role;
+delete from app_private.bid_trader_organization_responses where bid_id=(select bid_id from pre_quote_replacement_bid_ids);
+delete from app_private.bid_trader_organization_access where bid_id=(select bid_id from pre_quote_replacement_bid_ids);
 update app_private.organizations set status='active' where id='20000000-0000-0000-0000-000000000003';
 select is((select array_agg(fuel_grade order by display_order) from app_private.bid_items where bid_id=(select bid_id from pre_quote_replacement_bid_ids)),array['vlsfo','lsmgo']::text[],'replacement bid initially has VLSFO and LSMGO');
 
@@ -239,8 +246,10 @@ update app_private.organizations set status='inactive' where id='20000000-0000-0
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 create temporary table terminal_cancel_bid_ids (bid_id uuid, quote_id uuid) on commit drop;
-insert into terminal_cancel_bid_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Cancelled scope vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo'],array[10]::numeric[])).id;
+insert into terminal_cancel_bid_ids(bid_id) select (public.create_bid('30000000-0000-0000-0000-000000000001','Cancelled scope vessel','Busan','Window',clock_timestamp()+interval '1 day',null,array['vlsfo'],array[10]::numeric[],array['20000000-0000-0000-0000-000000000006']::uuid[])).id;
 reset role;
+delete from app_private.bid_trader_organization_responses where bid_id=(select bid_id from terminal_cancel_bid_ids);
+delete from app_private.bid_trader_organization_access where bid_id=(select bid_id from terminal_cancel_bid_ids);
 update app_private.organizations set status='active' where id='20000000-0000-0000-0000-000000000003';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);

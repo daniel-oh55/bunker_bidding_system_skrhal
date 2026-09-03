@@ -180,8 +180,8 @@ describe('Gmail IMAP mail intake', () => {
       { grade: 'lsmgo', quantity: 100 },
     ]);
     expect(ingress?.p_warnings).toEqual([
-      'VLSFO quantity range was imported using its lower bound; verify before creating the bid.',
-      'LSMGO quantity range was imported using its lower bound; verify before creating the bid.',
+      'VLSFO quantity range was imported using its lower bound; verify before publishing the BID.',
+      'LSMGO quantity range was imported using its lower bound; verify before publishing the BID.',
     ]);
     expect(ingress?.p_warnings).not.toContainEqual(expect.stringContaining('Invalid VLSFO quantity was not imported'));
     expect(ingress?.p_warnings).not.toContainEqual(expect.stringContaining('Invalid LSMGO quantity was not imported'));

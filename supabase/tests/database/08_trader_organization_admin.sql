@@ -155,7 +155,7 @@ select throws_ok($$delete from app_private.trader_organization_admin_audit_event
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000002', true);
-select ok((select id is not null from public.create_bid('83000000-0000-4000-8000-000000000002', 'Operator authority retained', 'Busan', 'Synthetic window', clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[])), 'existing BUYER operator bidding RPC authority remains unchanged'); -- 72
+select ok((select id is not null from public.create_bid('83000000-0000-4000-8000-000000000002', 'Operator authority retained', 'Busan', 'Synthetic window', clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[], array[(select organization_id from created_seller_admin_result)]::uuid[])), 'existing BUYER operator publishing authority remains intact'); -- 72
 select throws_ok($$select * from public.list_trader_organizations_for_admin('83000000-0000-4000-8000-000000000001')$$, '42501', 'An active BUYER administrator membership is required', 'forged buyer_admin membership ID does not authorize buyer_operator caller'); -- 73
 select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000001', true);
 select throws_ok($$select * from public.deactivate_trader_organization('83000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001')$$, '22023', 'Target organization must be a TRADER organization', 'BUYER organization cannot be deactivated through SELLER RPC'); -- 74

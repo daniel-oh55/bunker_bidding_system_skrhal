@@ -53,16 +53,16 @@ async function assertFinalQuote(observer, { bidId, quoteId }, expected, label) {
 }
 
 async function fixture(client) {
-  const ids = { buyer: randomUUID(), buyerOrg: randomUUID(), buyerMembership: randomUUID(), trader: randomUUID(), traderOrg: randomUUID(), traderMembership: randomUUID(), bids: [], quotes: [] };
+  const ids = { buyer: randomUUID(), buyerOrg: randomUUID(), buyerMembership: randomUUID(), trader: randomUUID(), traderOrg: randomUUID(), traderMembership: randomUUID(), publishSellerOrg: randomUUID(), bids: [], quotes: [] };
   for (const [userId, email] of [[ids.buyer, 'buyer'], [ids.trader, 'trader']]) await client.query('insert into auth.users(id,email) values($1,$2)', [userId, `${email}-${userId}@quote-race.test`]);
   await client.query("update app_private.user_accounts set status='active' where user_id=any($1::uuid[])", [[ids.buyer, ids.trader]]);
-  await client.query("insert into app_private.organizations(id,kind,name,status) values($1,'buyer',$2,'active'),($3,'trader',$4,'inactive')", [ids.buyerOrg, `buyer-${ids.buyerOrg}`, ids.traderOrg, `trader-${ids.traderOrg}`]);
+  await client.query("insert into app_private.organizations(id,kind,name,status) values($1,'buyer',$2,'active'),($3,'trader',$4,'inactive'),($5,'trader',$6,'active')", [ids.buyerOrg, `buyer-${ids.buyerOrg}`, ids.traderOrg, `trader-${ids.traderOrg}`, ids.publishSellerOrg, `publish-seller-${ids.publishSellerOrg}`]);
   await client.query("insert into app_private.organization_memberships(id,user_id,organization_id,role,status) values($1,$2,$3,'buyer_admin','active'),($4,$5,$6,'trader','active')", [ids.buyerMembership, ids.buyer, ids.buyerOrg, ids.traderMembership, ids.trader, ids.traderOrg]);
   return ids;
 }
 async function bidWithQuote(observer, ids, label, deadline = "clock_timestamp() + interval '1 day'") {
   await observer.query("update app_private.organizations set status='inactive' where id=$1", [ids.traderOrg]);
-  const { rows: bidRows } = await caller(observer, ids.buyer, () => observer.query(`select (public.create_bid($1,$2,'Busan','window',${deadline},null,array['vlsfo'],array[10]::numeric[])).id id`, [ids.buyerMembership, label]));
+  const { rows: bidRows } = await caller(observer, ids.buyer, () => observer.query(`select (public.create_bid($1,$2,'Busan','window',${deadline},null,array['vlsfo'],array[10]::numeric[],array[$3]::uuid[])).id id`, [ids.buyerMembership, label, ids.publishSellerOrg]));
   const bidId = bidRows[0].id; ids.bids.push(bidId);
   await observer.query("update app_private.organizations set status='active' where id=$1", [ids.traderOrg]);
   await caller(observer, ids.buyer, () => observer.query('select public.grant_bid_trader_access($1,$2,1,$3)', [ids.buyerMembership, bidId, ids.traderOrg]));
@@ -83,7 +83,7 @@ async function cleanup(client, ids) {
     await client.query('commit');
   } catch (error) { await rollback(client); throw error; }
   await client.query('delete from app_private.organization_memberships where id=any($1::uuid[])', [[ids.buyerMembership, ids.traderMembership]]);
-  await client.query('delete from app_private.organizations where id=any($1::uuid[])', [[ids.buyerOrg, ids.traderOrg]]);
+  await client.query('delete from app_private.organizations where id=any($1::uuid[])', [[ids.buyerOrg, ids.traderOrg, ids.publishSellerOrg]]);
   await client.query('delete from auth.users where id=any($1::uuid[])', [[ids.buyer, ids.trader]]);
 }
 

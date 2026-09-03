@@ -35,7 +35,8 @@ select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000001
 create temporary table admin_created_bid on commit drop as
 select result.* from public.create_bid(
   '93000000-0000-4000-8000-000000000001', 'Admin Default Scope', 'Busan', 'Synthetic window',
-  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[10]::numeric[]
+  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[10]::numeric[],
+  array['92000000-0000-4000-8000-000000000002','92000000-0000-4000-8000-000000000003']::uuid[]
 ) as result;
 reset role;
 
@@ -43,16 +44,16 @@ select is((select revision from admin_created_bid), 1::bigint, 'buyer_admin crea
 select is(
   (select array_agg(trader_organization_id order by trader_organization_id) from app_private.bid_trader_organization_access where bid_id = (select id from admin_created_bid)),
   array['92000000-0000-4000-8000-000000000002','92000000-0000-4000-8000-000000000003']::uuid[],
-  'new BID scopes every currently active SELLER exactly once'
+  'new BID scopes every selected active SELLER exactly once'
 ); -- 10
 select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from admin_created_bid) and trader_organization_id = '92000000-0000-4000-8000-000000000004'), 0::bigint, 'inactive SELLER is excluded'); -- 11
 select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from admin_created_bid) and trader_organization_id = '92000000-0000-4000-8000-000000000005'), 0::bigint, 'suspended SELLER is excluded'); -- 12
-select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from admin_created_bid) and granted_by_user_id = '91000000-0000-4000-8000-000000000001' and granted_by_membership_id = '93000000-0000-4000-8000-000000000001'), 2::bigint, 'default grants record the verified creating BUYER actor'); -- 13
+select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from admin_created_bid) and granted_by_user_id = '91000000-0000-4000-8000-000000000001' and granted_by_membership_id = '93000000-0000-4000-8000-000000000001'), 2::bigint, 'selected grants record the verified publishing BUYER actor'); -- 13
 select is((select count(*) from app_private.bid_audit_events where bid_id = (select id from admin_created_bid) and event_type = 'created'), 1::bigint, 'new BID has one created audit event'); -- 14
 select is(
   (select after_snapshot -> 'allowed_trader_organization_ids' from app_private.bid_audit_events where bid_id = (select id from admin_created_bid) and event_type = 'created'),
   '["92000000-0000-4000-8000-000000000002", "92000000-0000-4000-8000-000000000003"]'::jsonb,
-  'created audit snapshot contains the exact default scope IDs'
+  'created audit snapshot contains the exact selected scope IDs'
 ); -- 15
 select is((select count(*) from app_private.bid_audit_events where bid_id = (select id from admin_created_bid) and event_type = 'trader_access_granted'), 0::bigint, 'automatic initial scope creates no separate grant audit'); -- 16
 
@@ -61,12 +62,13 @@ select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000002
 create temporary table operator_created_bid on commit drop as
 select result.* from public.create_bid(
   '93000000-0000-4000-8000-000000000002', 'Operator Default Scope', 'Incheon', 'Synthetic window',
-  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[20]::numeric[]
+  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[20]::numeric[],
+  array['92000000-0000-4000-8000-000000000003']::uuid[]
 ) as result;
 reset role;
 select is((select revision from operator_created_bid), 1::bigint, 'buyer_operator retains normal revision-1 BID creation'); -- 17
-select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from operator_created_bid)), 2::bigint, 'buyer_operator receives the same active-SELLER snapshot behavior'); -- 18
-select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from operator_created_bid) and granted_by_user_id = '91000000-0000-4000-8000-000000000002' and granted_by_membership_id = '93000000-0000-4000-8000-000000000002'), 2::bigint, 'operator default grants record the verified operator actor'); -- 19
+select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from operator_created_bid)), 1::bigint, 'buyer_operator may publish to one selected active SELLER'); -- 18
+select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from operator_created_bid) and granted_by_user_id = '91000000-0000-4000-8000-000000000002' and granted_by_membership_id = '93000000-0000-4000-8000-000000000002'), 1::bigint, 'operator selected grant records the verified operator actor'); -- 19
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000003', true);
@@ -142,16 +144,23 @@ update app_private.organizations set status = 'inactive'
 where id in ('92000000-0000-4000-8000-000000000003', (select organization_id from late_seller));
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000002', true);
-create temporary table zero_seller_bid on commit drop as
-select result.* from public.create_bid(
-  '93000000-0000-4000-8000-000000000002', 'Zero Active Seller', 'Ulsan', 'Synthetic window',
-  clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[]
-) as result;
+select throws_ok(
+  $$select public.create_bid('93000000-0000-4000-8000-000000000002', 'Zero Selected Seller', 'Ulsan', 'Synthetic window', clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[], array[]::uuid[])$$,
+  '22023', 'At least one selected active SELLER is required', 'zero selected SELLERs are rejected'
+); -- 47
+select throws_ok(
+  $$select public.create_bid('93000000-0000-4000-8000-000000000002', 'Null Selected Seller', 'Ulsan', 'Synthetic window', clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[], null)$$,
+  '22023', 'Selected SELLER organizations are required', 'null selected SELLER array is rejected'
+); -- 48
+select throws_ok(
+  $$select public.create_bid('93000000-0000-4000-8000-000000000002', 'Inactive Selected Seller', 'Ulsan', 'Synthetic window', clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[], array['92000000-0000-4000-8000-000000000004']::uuid[])$$,
+  '22023', 'Selected SELLER organizations must be active', 'inactive selected SELLER is rejected'
+); -- 49
+select throws_ok(
+  $$select public.create_bid('93000000-0000-4000-8000-000000000002', 'Non Seller Organization', 'Ulsan', 'Synthetic window', clock_timestamp() + interval '2 days', null, array['vlsfo'], array[1]::numeric[], array['92000000-0000-4000-8000-000000000001']::uuid[])$$,
+  '22023', 'Selected SELLER organizations must be active', 'non-TRADER organization is rejected'
+); -- 50
 reset role;
-select ok((select id is not null from zero_seller_bid), 'zero-active-SELLER case still creates a BID'); -- 47
-select is((select count(*) from app_private.bid_trader_organization_access where bid_id = (select id from zero_seller_bid)), 0::bigint, 'zero-active-SELLER BID creates zero access rows'); -- 48
-select is((select revision from zero_seller_bid), 1::bigint, 'zero-active-SELLER BID remains revision 1'); -- 49
-select is((select after_snapshot -> 'allowed_trader_organization_ids' from app_private.bid_audit_events where bid_id = (select id from zero_seller_bid) and event_type = 'created'), '[]'::jsonb, 'zero-active-SELLER created audit records an empty explicit scope snapshot'); -- 50
 
 insert into app_private.bids (id, vessel_voyage, port_name, delivery_window, deadline_at, status, created_by, responsible_buyer_user_id)
 values ('94000000-0000-4000-8000-000000000001', 'Historical Direct Fixture', 'Busan', 'Before automatic scope semantics', clock_timestamp() + interval '1 day', 'open', '91000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001');
@@ -162,7 +171,7 @@ select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000001
 select is((select count(*) from public.list_bid_seller_comparison_for_buyers('93000000-0000-4000-8000-000000000001', '94000000-0000-4000-8000-000000000001')), 0::bigint, 'old BID without explicit scope or quote remains empty in presentation'); -- 52
 select ok((select not organization_active and access_active and quote is null from public.list_bid_seller_comparison_for_buyers('93000000-0000-4000-8000-000000000001', (select id from admin_created_bid)) where trader_organization_id = '92000000-0000-4000-8000-000000000003'), 'inactive unquoted organization remains BUYER-visible while retained scope exists'); -- 53
 reset role;
-select ok(not exists (select 1 from pg_trigger where tgrelid = 'app_private.bids'::regclass and not tgisinternal and pg_get_triggerdef(oid) ilike '%bid_trader_organization_access%'), 'automatic participation is confined to create_bid, not a global BID trigger'); -- 54
+select ok(not exists (select 1 from pg_trigger where tgrelid = 'app_private.bids'::regclass and not tgisinternal and pg_get_triggerdef(oid) ilike '%bid_trader_organization_access%'), 'selected participation is confined to Publish, not a global BID trigger'); -- 54
 
 select * from finish();
 rollback;

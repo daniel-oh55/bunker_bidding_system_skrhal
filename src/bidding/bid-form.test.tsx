@@ -12,6 +12,7 @@ import type { Bid, MailIntakeItem, Quote } from './types';
 
 const membership = '10000000-0000-4000-8000-000000000001'; const buyerId = '10000000-0000-4000-8000-000000000002'; const bidId = '10000000-0000-4000-8000-000000000003'; const now = '2026-08-03T03:00:00.000Z';
 const buyers = [{ user_id: buyerId, display_label: 'Responsible buyer', active_buyer_membership_count: 1 }];
+const sellers = [{ organization_id: membership, organization_label: 'First SELLER' }, { organization_id: bidId, organization_label: 'Second SELLER' }];
 const bid: Bid = { id: bidId, bid_date: '2026-08-03', vessel_voyage: 'MV Before', port_name: 'Busan', delivery_window: 'Tomorrow', deadline_at: '2026-08-03T03:00:00.000Z', raw_status: 'open', effective_status: 'open', revision: 3, created_by: membership, created_by_label: 'Creator', responsible_buyer_user_id: buyerId, responsible_buyer_label: 'Responsible buyer', fuel_items: [{ fuel_grade: 'vlsfo', quantity_mt: 10 }], created_at: now, updated_at: now, closed_at: null, cancelled_at: null, awarded_quote_id: null, awarded_trader_organization_id: null, awarded_trader_organization_label: null, awarded_total_amount: null, awarded_at: null };
 const updateBid = vi.fn<BiddingClient['updateBid']>(() => Promise.resolve({ data: bid, error: null }));
 const fakeClient = { updateBid } as unknown as BiddingClient;
@@ -45,13 +46,29 @@ describe('BUYER bid forms and detail editor', () => {
   });
 
   it('preserves every create draft field after failure and clears all of them only after success', async () => {
-    const submit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true); render(<CreateBidForm buyers={buyers} disabled={false} onSubmit={submit} />);
-    expect(screen.getByText('Create new bid').closest('details')).not.toHaveAttribute('open');
+    const submit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true); render(<CreateBidForm buyers={buyers} organizations={sellers} disabled={false} onSubmit={submit} />);
+    expect(screen.getByText('Publish new BID').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByLabelText('Include SELLER First SELLER')).toBeChecked(); expect(screen.getByLabelText('Include SELLER Second SELLER')).toBeChecked();
+    fireEvent.click(screen.getByLabelText('Include SELLER Second SELLER'));
     fillCreateForm();
-    fireEvent.click(screen.getByRole('button', { name: 'Create bid' })); await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Publish BID' })); await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ deadlineAt: localInputToIso('2026-08-04T12:30'), selectedTraderOrganizationIds: [membership] }));
     expect(screen.getByLabelText('Vessel / voyage')).toHaveValue('MV New'); expect(screen.getByLabelText('Port')).toHaveValue('Ulsan'); expect(screen.getByLabelText('Delivery window')).toHaveValue('Next week'); expect(screen.getByLabelText('Create deadline')).toHaveValue('2026-08-04T12:30'); expect(screen.getByLabelText('Responsible BUYER')).toHaveValue(buyerId); expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(15);
-    fireEvent.click(screen.getByRole('button', { name: 'Create bid' })); await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('Include SELLER Second SELLER')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Publish BID' })); await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
     expect(screen.getByLabelText('Vessel / voyage')).toHaveValue(''); expect(screen.getByLabelText('Port')).toHaveValue(''); expect(screen.getByLabelText('Delivery window')).toHaveValue(''); expect(screen.getByLabelText('Create deadline')).toHaveValue(''); expect(screen.getByLabelText('Responsible BUYER')).toHaveValue(''); expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(null);
+    expect(screen.getByLabelText('Include SELLER First SELLER')).toBeChecked(); expect(screen.getByLabelText('Include SELLER Second SELLER')).toBeChecked();
+  });
+
+  it('requires a deadline and at least one selected active SELLER before manual Publish', () => {
+    const submit = vi.fn();
+    render(<CreateBidForm buyers={buyers} organizations={sellers} disabled={false} onSubmit={submit} />);
+    expect(screen.getByLabelText('Create deadline')).toBeRequired();
+    fireEvent.click(screen.getByLabelText('Include SELLER First SELLER'));
+    fireEvent.click(screen.getByLabelText('Include SELLER Second SELLER'));
+    expect(screen.getByText('Select at least one active SELLER before publishing.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish BID' })).toBeDisabled();
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it('parses locally, applies only after confirmation, stays editable, and submits only visible values', async () => {
@@ -63,7 +80,7 @@ describe('BUYER bid forms and detail editor', () => {
       },
     });
     const submit = vi.fn().mockResolvedValue(false);
-    render(<CreateBidForm buyers={buyers} disabled={false} onSubmit={submit} />);
+    render(<CreateBidForm buyers={buyers} organizations={sellers} disabled={false} onSubmit={submit} />);
     const fileInput = screen.getByLabelText('Bunker request .msg file');
     expect(fileInput).toHaveAttribute('accept', '.msg');
     expect(fileInput).not.toHaveAttribute('multiple');
@@ -91,24 +108,26 @@ describe('BUYER bid forms and detail editor', () => {
     fireEvent.change(screen.getByLabelText('Port'), { target: { value: 'EDITED PORT' } });
     fireEvent.change(screen.getByLabelText('Delivery window'), { target: { value: 'EDITED DELIVERY' } });
     fireEvent.change(screen.getByLabelText('Fuel quantity 1'), { target: { value: '425' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create bid' }));
+    fireEvent.change(screen.getByLabelText('Create deadline'), { target: { value: '2026-08-04T12:30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish BID' }));
 
     await waitFor(() => expect(submit).toHaveBeenCalledOnce());
     expect(submit).toHaveBeenCalledWith({
       vesselVoyage: 'EDITED VESSEL 2602W',
       portName: 'EDITED PORT',
       deliveryWindow: 'EDITED DELIVERY',
-      deadlineAt: null,
+      deadlineAt: localInputToIso('2026-08-04T12:30'),
       responsibleBuyerUserId: null,
       fuelGrades: ['hsfo', 'lsmgo'],
       quantities: [425, 15],
+      selectedTraderOrganizationIds: [membership, bidId],
     });
   });
 
   it('keeps the form usable and makes no submission when local message parsing fails', async () => {
     msgIntake.readMsgFile.mockResolvedValueOnce({ ok: false, error: 'The selected .msg file could not be parsed safely.' });
     const submit = vi.fn();
-    render(<CreateBidForm buyers={buyers} disabled={false} onSubmit={submit} />);
+    render(<CreateBidForm buyers={buyers} organizations={sellers} disabled={false} onSubmit={submit} />);
 
     fireEvent.change(screen.getByLabelText('Bunker request .msg file'), { target: { files: [new File([], 'broken.msg')] } });
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be parsed safely');
@@ -127,7 +146,7 @@ describe('BUYER bid forms and detail editor', () => {
       },
     });
     const submit = vi.fn();
-    render(<CreateBidForm buyers={buyers} disabled={false} onSubmit={submit} />);
+    render(<CreateBidForm buyers={buyers} organizations={sellers} disabled={false} onSubmit={submit} />);
     fireEvent.change(screen.getByLabelText('Fuel quantity 1'), { target: { value: '99' } });
 
     fireEvent.change(screen.getByLabelText('Bunker request .msg file'), { target: { files: [new File([], 'request.msg')] } });

@@ -178,7 +178,7 @@ async function run() {
     return await within(caller.rpc(name, args), label);
   }
 
-  async function createScopedBid(buyerCaller, buyer, traderOrganizationId, suffix) {
+  async function createScopedBid(buyerCaller, buyer, traderOrganizationId, publishSellerOrganizationId, suffix) {
     await query(
       `update app_private.organizations set status = 'inactive' where id = $1`,
       [traderOrganizationId],
@@ -193,6 +193,7 @@ async function run() {
       p_responsible_buyer_user_id: null,
       p_fuel_grades: ['vlsfo'],
       p_quantities: [10],
+      p_selected_trader_organization_ids: [publishSellerOrganizationId],
     }, `create Bid ${suffix}`);
     assert(!create.error && create.data?.id && create.data.revision === 1, `Could not create Bid ${suffix}${create.error ? ` (${create.error.code}: ${create.error.message})` : ''}.`);
     state.bidIds.push(create.data.id);
@@ -245,6 +246,9 @@ async function run() {
     await createMembership(suspendedAccountUser, 'buyer', 'buyer_admin', 'suspended-account');
     const suspendedMembership = await createMembership(suspendedMembershipUser, 'trader', 'trader', 'suspended-membership', { membershipStatus: 'suspended' });
     const suspendedOrganization = await createMembership(suspendedOrganizationUser, 'trader', 'trader', 'suspended-organization', { organizationStatus: 'suspended' });
+    const publishSellerOrganizationId = randomUUID();
+    state.organizations.push(publishSellerOrganizationId);
+    await query(`insert into app_private.organizations (id, kind, name, status) values ($1, 'trader', $2, 'active')`, [publishSellerOrganizationId, `publish-seller-${publishSellerOrganizationId}`], 'create Publish fixture SELLER');
 
     const buyerCaller = await signIn(buyerUser, 'BUYER');
     const traderACaller = await signIn(traderAUser, 'TRADER A');
@@ -257,8 +261,8 @@ async function run() {
     const anonymousCaller = appClient(apiUrl, publishableKey);
     callers.push(anonymousCaller);
 
-    const bidX = await createScopedBid(buyerCaller, buyer, traderA.organizationId, 'X');
-    const bidY = await createScopedBid(buyerCaller, buyer, traderA.organizationId, 'Y');
+    const bidX = await createScopedBid(buyerCaller, buyer, traderA.organizationId, publishSellerOrganizationId, 'X');
+    const bidY = await createScopedBid(buyerCaller, buyer, traderA.organizationId, publishSellerOrganizationId, 'Y');
     await query(
       `update app_private.organizations set status = 'active' where id = $1`,
       [traderB.organizationId],
