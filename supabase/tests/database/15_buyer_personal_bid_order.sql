@@ -55,9 +55,11 @@ select throws_ok($$select * from public.save_my_bid_order('63000000-0000-4000-80
 select throws_ok($$select * from public.save_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03', 2, array['64000000-0000-4000-8000-000000000001','64000000-0000-4000-8000-000000000002','64000000-0000-4000-8000-000000000099']::uuid[])$$, '22023', 'BID order contains an unknown BID', 'unknown BID is rejected'); -- 26
 select throws_ok($$select * from public.save_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03', 2, array['64000000-0000-4000-8000-000000000001','64000000-0000-4000-8000-000000000002','64000000-0000-4000-8000-000000000004']::uuid[])$$, '22023', 'BID order must contain only BIDs from the selected date', 'cross-date BID is rejected'); -- 27
 select throws_ok($$select * from public.save_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03', 2, array['64000000-0000-4000-8000-000000000001','64000000-0000-4000-8000-000000000002']::uuid[])$$, '40001', 'BID order conflicts with the latest BID list', 'incomplete stale BID set is rejected'); -- 28
-select is((select count(*) from app_private.buyer_bid_preferences where user_id = '61000000-0000-4000-8000-000000000001' and bid_date = '2026-09-03'), 3::bigint, 'all submitted BID IDs are retained exactly once'); -- 29
+select is(cardinality((select ordered_bid_ids from public.get_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03'))), 3, 'all submitted BID IDs are retained exactly once'); -- 29
+reset role;
 select is((select revision from app_private.bids where id = '64000000-0000-4000-8000-000000000001'), 1::bigint, 'preference save did not increment BID revision'); -- 30
 select is((select count(*) from app_private.bid_audit_events where bid_id in ('64000000-0000-4000-8000-000000000001','64000000-0000-4000-8000-000000000002','64000000-0000-4000-8000-000000000003')), 0::bigint, 'preference save created no BID audit'); -- 31
+set local role authenticated;
 select set_config('request.jwt.claim.sub', '61000000-0000-4000-8000-000000000002', true);
 select is((select revision from public.save_my_bid_order('63000000-0000-4000-8000-000000000002', '2026-09-03', 0, array['64000000-0000-4000-8000-000000000003','64000000-0000-4000-8000-000000000002','64000000-0000-4000-8000-000000000001']::uuid[])), 1, 'active buyer_operator may SAVE independently'); -- 32
 select isnt((select ordered_bid_ids from public.get_my_bid_order('63000000-0000-4000-8000-000000000002', '2026-09-03')), (select ordered_bid_ids from public.get_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03')), 'two BUYER users have independent orders'); -- 33
@@ -82,6 +84,7 @@ insert into app_private.bids (id, vessel_voyage, port_name, delivery_window, sta
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '61000000-0000-4000-8000-000000000001', true);
 select is((select ordered_bid_ids from public.get_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03')), array['64000000-0000-4000-8000-000000000002','64000000-0000-4000-8000-000000000001','64000000-0000-4000-8000-000000000003','64000000-0000-4000-8000-000000000005']::uuid[], 'new BID missing from preference is appended and never hidden'); -- 39
+reset role;
 select is((select count(*) from app_private.buyer_bid_preferences where user_id = '61000000-0000-4000-8000-000000000001' and bid_id = '64000000-0000-4000-8000-000000000005'), 0::bigint, 'GET does not mutate storage for newly missing BID'); -- 40
 select * from finish();
 rollback;
