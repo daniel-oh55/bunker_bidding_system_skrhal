@@ -173,6 +173,11 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
   };
   const todayDate = currentSeoulDate(nowMs);
   const historicalDateSelected = selectedDate !== todayDate;
+  useEffect(() => {
+    if (!historicalDateSelected) return;
+    setManualComposerOpen(false);
+    setPreparedItem(null);
+  }, [historicalDateSelected]);
   const effectiveOpenCount = bids.filter((bid) => bid.effective_status === 'open').length;
   const terminalCount = bids.length - effectiveOpenCount;
   const creatorGroups = view === 'all' ? groupBidsByCreator(bids) : [];
@@ -199,7 +204,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     </section>
     {error ? <p className="notice error" role="alert">{error.message}</p> : null}
     <section className="buyer-composer-zone" aria-label="BID composer" ref={composerZoneRef}>
-      {preparedItem ? <PreparedMailIntakeBidForm key={`${preparedItem.id}:${preparedItem.revision}`} item={preparedItem} buyers={buyers} organizations={organizations} disabled={pending} onSubmit={publishPrepared} onClose={() => setPreparedItem(null)} /> : null}
+      {preparedItem && !historicalDateSelected ? <PreparedMailIntakeBidForm key={`${preparedItem.id}:${preparedItem.revision}`} item={preparedItem} buyers={buyers} organizations={organizations} disabled={pending} onSubmit={publishPrepared} onClose={() => setPreparedItem(null)} /> : null}
       {manualComposerOpen && !preparedItem && !historicalDateSelected ? <CreateBidForm buyers={buyers} organizations={organizations} disabled={pending} onSubmit={create} inline onClose={() => setManualComposerOpen(false)} /> : null}
     </section>
     <section className="panel buyer-bid-board" aria-label="BUYER operational bid board">

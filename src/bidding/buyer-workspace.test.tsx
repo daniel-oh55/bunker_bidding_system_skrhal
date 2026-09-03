@@ -1,12 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerWorkspace } from './buyer-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
 import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerSellerComparison, MailIntakeItem, Quote, TraderBid, TraderOrganization } from './types';
 
+const mockedSeoulDate = vi.hoisted(() => ({ value: '2026-08-03' }));
+
 vi.mock('./datetime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./datetime')>()),
-  currentSeoulDate: () => '2026-08-03',
+  currentSeoulDate: () => mockedSeoulDate.value,
 }));
 
 const id = '10000000-0000-4000-8000-000000000001'; const target = '10000000-0000-4000-8000-000000000002'; const bidId = '10000000-0000-4000-8000-000000000003'; const now = '2026-08-03T03:00:00.000Z';
@@ -24,6 +26,8 @@ function fakeClient(bids: Bid[] = [bid()]) {
 }
 
 describe('BUYER workspace', () => {
+  beforeEach(() => { mockedSeoulDate.value = '2026-08-03'; });
+
   it('defaults to Seoul today and retains the selected date across view, Refresh, and Realtime reloads', async () => {
     const { client, listBids } = fakeClient();
     const view = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
@@ -114,6 +118,25 @@ describe('BUYER workspace', () => {
     expect(await screen.findByRole('button', { name: 'Prepare BID' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled();
     expect(within(composer).queryByRole('heading', { name: 'Prepare BID from mail intake' })).not.toBeInTheDocument();
+  });
+
+  it('clears a prepared mail composer when Seoul rolls over without changing the operational date', async () => {
+    const { client } = fakeClient();
+    const intake: MailIntakeItem = { id: '20000000-0000-4000-8000-000000000020', received_at: now, subject: 'Midnight mail request', vessel_voyage: 'MV Midnight', port_name: 'Ulsan', delivery_window: 'Tomorrow', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null };
+    client.listMailIntakeItems = vi.fn(() => Promise.resolve(ok([intake])));
+    const view = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepare BID' }));
+    expect(screen.getByRole('heading', { name: 'Prepare BID from mail intake' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish BID' })).toBeInTheDocument();
+
+    mockedSeoulDate.value = '2026-08-04';
+    view.rerender(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Prepare BID from mail intake' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Publish BID' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New BID' })).toBeDisabled();
+    expect(screen.getByRole('note')).toHaveTextContent('New BIDs and mail preparation are available only for today’s Seoul operational date (2026-08-04).');
   });
 
   it('scrolls and focuses the selected detail only after an explicit Manage bid load succeeds', async () => {
