@@ -62,7 +62,9 @@ select is((select count(*) from app_private.bid_audit_events where bid_id in ('6
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '61000000-0000-4000-8000-000000000002', true);
 select is((select revision from public.save_my_bid_order('63000000-0000-4000-8000-000000000002', '2026-09-03', 0, array['64000000-0000-4000-8000-000000000003','64000000-0000-4000-8000-000000000002','64000000-0000-4000-8000-000000000001']::uuid[])), 1, 'active buyer_operator may SAVE independently'); -- 32
-select isnt((select ordered_bid_ids from public.get_my_bid_order('63000000-0000-4000-8000-000000000002', '2026-09-03')), (select ordered_bid_ids from public.get_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03')), 'two BUYER users have independent orders'); -- 33
+reset role;
+select isnt((select array_agg(preference.bid_id order by preference.display_order) from app_private.buyer_bid_preferences as preference where preference.user_id = '61000000-0000-4000-8000-000000000002' and preference.bid_date = '2026-09-03'), (select array_agg(preference.bid_id order by preference.display_order) from app_private.buyer_bid_preferences as preference where preference.user_id = '61000000-0000-4000-8000-000000000001' and preference.bid_date = '2026-09-03'), 'two BUYER users have independent orders'); -- 33
+set local role authenticated;
 select throws_ok($$select * from public.get_my_bid_order('63000000-0000-4000-8000-000000000001', '2026-09-03')$$, '42501', 'An active BUYER membership is required', 'forged membership is denied'); -- 34
 select set_config('request.jwt.claim.sub', '61000000-0000-4000-8000-000000000003', true);
 select throws_ok($$select * from public.get_my_bid_order('63000000-0000-4000-8000-000000000003', '2026-09-03')$$, '42501', 'An active BUYER membership is required', 'TRADER is denied'); -- 35
