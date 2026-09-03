@@ -1,4 +1,4 @@
-import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseQuoteResponse, parseSellerOrganizationAdmin, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type BuyerSellerComparison, type MailIntakeItem, type Quote, type QuoteResponse, type SellerOrganizationAdmin, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
+import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseBuyerBidOrder, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseQuoteResponse, parseSellerOrganizationAdmin, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type BuyerBidOrder, type BuyerSellerComparison, type MailIntakeItem, type Quote, type QuoteResponse, type SellerOrganizationAdmin, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
 
 export type BiddingResult<T> = { data: T | null; error: WorkflowError | null };
 type BidTermsInput = { vesselVoyage: string; portName: string; deliveryWindow: string; fuelGrades: string[]; quantities: number[] };
@@ -11,6 +11,8 @@ export interface BiddingClient {
   dismissMailIntakeItem(membershipId: string, itemId: string, expectedRevision: number): Promise<BiddingResult<MailIntakeItem>>;
   listActiveBuyers(membershipId: string): Promise<BiddingResult<ActiveBuyer[]>>;
   listBids(membershipId: string, bidDate: string, view: 'all' | 'created_by_me' | 'responsible_buyer', responsibleBuyerUserId?: string): Promise<BiddingResult<Bid[]>>;
+  getMyBidOrder(membershipId: string, bidDate: string): Promise<BiddingResult<BuyerBidOrder>>;
+  saveMyBidOrder(membershipId: string, bidDate: string, expectedRevision: number, orderedBidIds: string[]): Promise<BiddingResult<BuyerBidOrder>>;
   listBidAudit(membershipId: string, bidId: string): Promise<BiddingResult<BidAuditEvent[]>>;
   createBid(membershipId: string, input: BidInput): Promise<BiddingResult<Bid>>;
   publishMailIntakeBid(membershipId: string, input: PreparedMailIntakeBidInput): Promise<BiddingResult<Bid>>;
@@ -54,6 +56,8 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
     dismissMailIntakeItem: (m, i, r) => rpc('dismiss_mail_intake_item', { p_actor_membership_id: m, p_item_id: i, p_expected_revision: r }, parseDismissedMailIntakeItem),
     listActiveBuyers: (m) => rpc('list_active_buyers', { p_actor_membership_id: m }, many(parseActiveBuyer)),
     listBids: (m, bidDate, view, user) => rpc('list_bids', { p_actor_membership_id: m, p_bid_date: bidDate, p_view: view, p_responsible_buyer_user_id: view === 'responsible_buyer' ? user ?? null : null }, many(parseBid)),
+    getMyBidOrder: (m, bidDate) => rpc('get_my_bid_order', { p_actor_membership_id: m, p_bid_date: bidDate }, oneRow(parseBuyerBidOrder)),
+    saveMyBidOrder: (m, bidDate, revision, orderedBidIds) => rpc('save_my_bid_order', { p_actor_membership_id: m, p_bid_date: bidDate, p_expected_revision: revision, p_ordered_bid_ids: orderedBidIds }, oneRow(parseBuyerBidOrder)),
     listBidAudit: (m, b) => rpc('list_bid_audit', { p_actor_membership_id: m, p_bid_id: b }, many(parseBidAuditEvent)),
     createBid: (m, i) => rpc('create_bid', { p_actor_membership_id: m, p_vessel_voyage: i.vesselVoyage, p_port_name: i.portName, p_delivery_window: i.deliveryWindow, p_deadline_at: i.deadlineAt, p_responsible_buyer_user_id: i.responsibleBuyerUserId, p_fuel_grades: i.fuelGrades, p_quantities: i.quantities, p_selected_trader_organization_ids: i.selectedTraderOrganizationIds }, parseBid),
     publishMailIntakeBid: (m, i) => rpc('publish_mail_intake_bid', { p_actor_membership_id: m, p_item_id: i.intakeItemId, p_expected_revision: i.expectedIntakeRevision, p_vessel_voyage: i.vesselVoyage, p_port_name: i.portName, p_delivery_window: i.deliveryWindow, p_deadline_at: i.deadlineAt, p_responsible_buyer_user_id: i.responsibleBuyerUserId, p_fuel_grades: i.fuelGrades, p_quantities: i.quantities, p_selected_trader_organization_ids: i.selectedTraderOrganizationIds }, parseBid),

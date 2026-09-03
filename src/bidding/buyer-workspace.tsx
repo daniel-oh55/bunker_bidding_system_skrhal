@@ -5,7 +5,7 @@ import { BuyerBidBoardCard, type BuyerBidBoardSellerState } from './buyer-bid-bo
 import { BuyerBidDetail } from './buyer-bid-detail';
 import { MailIntakeQueue } from './mail-intake-queue';
 import { SellerManagement } from './seller-management';
-import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, MailIntakeItem, Quote, TraderOrganization, WorkflowError } from './types';
+import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerBidOrder, MailIntakeItem, Quote, TraderOrganization, WorkflowError } from './types';
 import { WorkspaceEmptyState } from '../ui/workspace-ui';
 import { currentSeoulDate } from './datetime';
 
@@ -34,16 +34,40 @@ const groupBidsByCreator = (bids: Bid[]) => {
   }
   return groups;
 };
+const completeOrder = (bids: Bid[], order: BuyerBidOrder | null) => {
+  const known = new Set(bids.map((bid) => bid.id));
+  const saved = order?.ordered_bid_ids.filter((id) => known.has(id)) ?? [];
+  return [...saved, ...bids.map((bid) => bid.id).filter((id) => !saved.includes(id))];
+};
+const rankBids = (bids: Bid[], orderedIds: string[]) => {
+  const ranks = new Map(orderedIds.map((id, index) => [id, index]));
+  return [...bids].sort((a, b) => (ranks.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (ranks.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+};
+const moveBefore = (orderedIds: string[], sourceId: string, targetId: string) => {
+  if (sourceId === targetId || !orderedIds.includes(sourceId) || !orderedIds.includes(targetId)) return orderedIds;
+  const withoutSource = orderedIds.filter((id) => id !== sourceId);
+  const targetIndex = withoutSource.indexOf(targetId);
+  return [...withoutSource.slice(0, targetIndex), sourceId, ...withoutSource.slice(targetIndex)];
+};
+const moveVisible = (orderedIds: string[], visibleIds: string[], sourceId: string, direction: -1 | 1) => {
+  const index = visibleIds.indexOf(sourceId); const targetId = visibleIds[index + direction];
+  if (!targetId) return orderedIds;
+  const withoutSource = orderedIds.filter((id) => id !== sourceId);
+  const targetIndex = withoutSource.indexOf(targetId);
+  const insertionIndex = direction === -1 ? targetIndex : targetIndex + 1;
+  return [...withoutSource.slice(0, insertionIndex), sourceId, ...withoutSource.slice(insertionIndex)];
+};
 
 export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_operator', onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; membershipRole?: 'buyer_admin' | 'buyer_operator'; onAuthorizationFailure: () => void; reloadVersion?: number }) {
-  const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null); const detailRegionRef = useRef<HTMLElement | null>(null); const detailAttentionBidId = useRef<string | null>(null); const composerZoneRef = useRef<HTMLElement | null>(null);
+  const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const orderOperation = useRef(0); const selectedRef = useRef<Bid | null>(null); const detailRegionRef = useRef<HTMLElement | null>(null); const detailAttentionBidId = useRef<string | null>(null); const composerZoneRef = useRef<HTMLElement | null>(null);
   const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [boardSellers, setBoardSellers] = useState<Record<string, BuyerBidBoardSellerState>>({}); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selectedDate, setSelectedDate] = useState(() => currentSeoulDate()); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
   const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({}); const [manualComposerOpen, setManualComposerOpen] = useState(false); const [preparedItem, setPreparedItem] = useState<MailIntakeItem | null>(null); const [mailIntakeReloadVersion, setMailIntakeReloadVersion] = useState(0);
+  const [bidOrder, setBidOrder] = useState<BuyerBidOrder | null>(null); const [orderAvailable, setOrderAvailable] = useState(true); const [orderPending, setOrderPending] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const initialDateRef = useRef(selectedDate);
-  const clearVisible = useCallback(() => { detailAttentionBidId.current = null; selectedRef.current = null; setBids([]); setBoardSellers({}); setSelected(null); setDetail(null); }, []);
+  const clearVisible = useCallback(() => { detailAttentionBidId.current = null; selectedRef.current = null; setBids([]); setBoardSellers({}); setBidOrder(null); setSelected(null); setDetail(null); }, []);
   const clearProtected = useCallback(() => { clearVisible(); setBuyers([]); setOrganizations([]); }, [clearVisible]);
-  const invalidateOperations = useCallback(() => { ++listOperation.current; ++detailOperation.current; ++mutationOperation.current; }, []);
+  const invalidateOperations = useCallback(() => { ++listOperation.current; ++detailOperation.current; ++mutationOperation.current; ++orderOperation.current; }, []);
   const handleError = useCallback((next: WorkflowError) => {
     if (next.kind === 'authorization') {
       invalidateOperations();
@@ -103,8 +127,10 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
   const loadList = useCallback(async (nextView: View, nextDate: string, target?: string, retainId?: string, errorAfterReload?: WorkflowError) => {
     const keep = retainId ?? selectedRef.current?.id;
     const operation = ++listOperation.current;
+    ++orderOperation.current;
     ++detailOperation.current;
     clearVisible();
+    setOrderPending(false);
     setLoading(nextView !== 'responsible_buyer' || !!target);
     setError(null);
     if (nextView === 'responsible_buyer' && !target) {
@@ -112,14 +138,17 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
       return false;
     }
     try {
-      const [buyerResult, bidResult, orgResult] = await Promise.all([client.listActiveBuyers(membershipId), client.listBids(membershipId, nextDate, nextView, nextView === 'responsible_buyer' ? target : undefined), client.listActiveTraderOrganizations(membershipId)]);
+      const [buyerResult, bidResult, orgResult, orderResult] = await Promise.all([client.listActiveBuyers(membershipId), client.listBids(membershipId, nextDate, nextView, nextView === 'responsible_buyer' ? target : undefined), client.listActiveTraderOrganizations(membershipId), client.getMyBidOrder(membershipId, nextDate)]);
       if (operation !== listOperation.current) return false;
       const failure = buyerResult.error ?? bidResult.error ?? orgResult.error;
       if (failure) { handleError(failure); if (operation === listOperation.current) setLoading(false); return false; }
       const nextBids = (bidResult.data ?? []).filter((bid) => bid.bid_date === nextDate);
+      if (orderResult.error?.kind === 'authorization') { handleError(orderResult.error); if (operation === listOperation.current) setLoading(false); return false; }
       setBuyers(buyerResult.data ?? []);
       setOrganizations(orgResult.data ?? []);
       setBids(nextBids);
+      setBidOrder(orderResult.data ?? null);
+      setOrderAvailable(orderResult.error === null);
       setBoardSellers(Object.fromEntries(nextBids.map((bid) => [bid.id, { status: 'loading' } satisfies BuyerBidBoardSellerState])));
       setLoading(false);
       void loadBoardSellers(nextBids, operation);
@@ -178,9 +207,11 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     setManualComposerOpen(false);
     setPreparedItem(null);
   }, [historicalDateSelected]);
+  const orderedIds = completeOrder(bids, bidOrder);
+  const orderedBids = rankBids(bids, orderedIds);
   const effectiveOpenCount = bids.filter((bid) => bid.effective_status === 'open').length;
   const terminalCount = bids.length - effectiveOpenCount;
-  const creatorGroups = view === 'all' ? groupBidsByCreator(bids) : [];
+  const creatorGroups = view === 'all' ? groupBidsByCreator(bids).map((group) => ({ ...group, bids: rankBids(group.bids, orderedIds) })) : [];
   const prepareMailIntakeBid = (item: MailIntakeItem) => {
     if (historicalDateSelected || preparedItem) return;
     setManualComposerOpen(false);
@@ -190,7 +221,26 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     if (!manualComposerOpen && !preparedItem) return;
     composerZoneRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }, [manualComposerOpen, preparedItem]);
-  const renderBidCard = (bid: Bid) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid, true)} />;
+  const saveOrder = async (nextIds: string[]) => {
+    if (!bidOrder || !orderAvailable || orderPending || nextIds.every((id, index) => id === orderedIds[index])) return;
+    const previous = bidOrder; const operation = ++orderOperation.current;
+    setBidOrder({ ...previous, ordered_bid_ids: nextIds }); setOrderPending(true); setError(null);
+    let result: BiddingResult<BuyerBidOrder>;
+    try { result = await client.saveMyBidOrder(membershipId, selectedDate, previous.revision, nextIds); } catch { result = { data: null, error: unknownError }; }
+    if (operation !== orderOperation.current) return;
+    setOrderPending(false);
+    if (!result.error && result.data) { setBidOrder(result.data); return; }
+    if (result.error?.kind === 'authorization') { handleError(result.error); return; }
+    if (result.error?.kind === 'conflict') {
+      const latest = await client.getMyBidOrder(membershipId, selectedDate);
+      if (latest.error?.kind === 'authorization') { handleError(latest.error); return; }
+      setBidOrder(latest.data ?? previous); setOrderAvailable(latest.error === null);
+      setError({ kind: 'conflict', code: '40001', message: 'BID order changed elsewhere. The latest order was restored.' });
+      return;
+    }
+    setBidOrder(previous); setOrderAvailable(false); setError(result.error ?? unknownError);
+  };
+  const renderBidCard = (bid: Bid, visibleIds: string[]) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid, true)} reorder={{ enabled: orderAvailable && !orderPending && bidOrder !== null, canMoveEarlier: visibleIds.indexOf(bid.id) > 0, canMoveLater: visibleIds.indexOf(bid.id) >= 0 && visibleIds.indexOf(bid.id) < visibleIds.length - 1, onMoveEarlier: () => void saveOrder(moveVisible(orderedIds, visibleIds, bid.id, -1)), onMoveLater: () => void saveOrder(moveVisible(orderedIds, visibleIds, bid.id, 1)), onDropBefore: (sourceId) => { if (visibleIds.includes(sourceId)) void saveOrder(moveBefore(orderedIds, sourceId, bid.id)); } }} />;
   return <div className="workspace buyer-workspace">
     <section className="panel buyer-bids-header" aria-labelledby="buyer-bids-heading">
       <div className="buyer-bids-title"><p className="eyebrow">BUYER operations</p><h2 id="buyer-bids-heading">BIDS</h2><p className="buyer-summary-metrics"><span><strong>{bids.length}</strong> total</span><span><strong>{effectiveOpenCount}</strong> bidding open</span><span><strong>{terminalCount}</strong> closed / terminal</span></p></div>
@@ -221,9 +271,9 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
                 <button type="button" className="secondary buyer-creator-toggle" aria-controls={groupContentId} aria-expanded={!isCollapsed} aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} bids created by ${group.creatorLabel}`} onClick={() => setCollapsedCreators((current) => ({ ...current, [group.creatorId]: !current[group.creatorId] }))}><span aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>{isCollapsed ? 'Expand' : 'Collapse'}</button>
               </div>
             </header>
-            <div className="buyer-bid-cards buyer-creator-bid-cards" id={groupContentId} hidden={isCollapsed}>{group.bids.map(renderBidCard)}</div>
+            <div className="buyer-bid-cards buyer-creator-bid-cards" id={groupContentId} hidden={isCollapsed}>{group.bids.map((bid) => renderBidCard(bid, group.bids.map((item) => item.id)))}</div>
           </section>;
-        })}</div> : <div className="buyer-bid-cards">{bids.map(renderBidCard)}</div>}
+        })}</div> : <div className="buyer-bid-cards">{orderedBids.map((bid) => renderBidCard(bid, orderedBids.map((item) => item.id)))}</div>}
     </section>
     {selected ? <section className="panel bid-detail buyer-bid-detail" aria-label="Selected bid detail" aria-live="polite" ref={detailRegionRef} tabIndex={-1}><BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /></section> : null}
     <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} reloadVersion={mailIntakeReloadVersion} canPrepare={!historicalDateSelected && !preparedItem} prepareUnavailableMessage={historicalDateSelected ? `Prepare BID is available only for today’s Seoul operational date (${todayDate}).` : preparedItem ? 'Close the open prepared draft before preparing another BID.' : undefined} onPrepare={prepareMailIntakeBid} onAuthorizationFailure={onAuthorizationFailure} />

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerWorkspace } from './buyer-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
-import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerSellerComparison, MailIntakeItem, Quote, TraderBid, TraderOrganization } from './types';
+import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerBidOrder, BuyerSellerComparison, MailIntakeItem, Quote, TraderBid, TraderOrganization } from './types';
 
 const mockedSeoulDate = vi.hoisted(() => ({ value: '2026-08-03' }));
 
@@ -21,12 +21,41 @@ function fakeClient(bids: Bid[] = [bid()]) {
   const listBids = vi.fn<BiddingClient['listBids']>(() => Promise.resolve(ok(bids)));
   const listActiveBuyers = vi.fn(() => Promise.resolve(ok<ActiveBuyer[]>([{ user_id: target, display_label: 'Target buyer', active_buyer_membership_count: 1 }])));
   const listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok<TraderOrganization[]>([])));
-  const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), publishMailIntakeBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listBidSellerComparisonForBuyers: () => Promise.resolve(ok<BuyerSellerComparison[]>([])), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), submitQuoteResponse: () => Promise.resolve(ok<Quote>(null as never)), giveUpQuoteResponse: () => Promise.resolve(ok(null as never)) };
-  return { client, listBids, listActiveBuyers, listActiveTraderOrganizations };
+  const getMyBidOrder = vi.fn(() => Promise.resolve(ok<BuyerBidOrder>({ revision: 0, ordered_bid_ids: bids.map((current) => current.id) })));
+  const saveMyBidOrder = vi.fn((_m: string, _d: string, revision: number, ids: string[]) => Promise.resolve(ok<BuyerBidOrder>({ revision: revision + 1, ordered_bid_ids: ids })));
+  const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, getMyBidOrder, saveMyBidOrder, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), publishMailIntakeBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listBidSellerComparisonForBuyers: () => Promise.resolve(ok<BuyerSellerComparison[]>([])), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), submitQuoteResponse: () => Promise.resolve(ok<Quote>(null as never)), giveUpQuoteResponse: () => Promise.resolve(ok(null as never)) };
+  return { client, listBids, listActiveBuyers, listActiveTraderOrganizations, getMyBidOrder, saveMyBidOrder };
 }
 
 describe('BUYER workspace', () => {
   beforeEach(() => { mockedSeoulDate.value = '2026-08-03'; });
+
+  it('keeps server order without a saved preference and applies personal rank within immutable creator groups', async () => {
+    const a1 = bid({ id: '10000000-0000-4000-8000-000000000011', vessel_voyage: 'A first', created_by: id, created_by_label: 'Creator A' });
+    const b1 = bid({ id: '10000000-0000-4000-8000-000000000012', vessel_voyage: 'B first', created_by: target, created_by_label: 'Creator B' });
+    const a2 = bid({ id: '10000000-0000-4000-8000-000000000013', vessel_voyage: 'A second', created_by: id, created_by_label: 'Creator A' });
+    const { client, getMyBidOrder } = fakeClient([a1, b1, a2]);
+    getMyBidOrder.mockResolvedValue(ok({ revision: 4, ordered_bid_ids: [a2.id, b1.id, a1.id] }));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByRole('article', { name: 'A first' });
+    const groups = screen.getAllByRole('region', { name: /Bids created by/ });
+    expect(groups.map((group) => within(group).getAllByRole('article').map((card) => card.getAttribute('aria-labelledby')))).toEqual([
+      [`buyer-board-card-${a2.id}`, `buyer-board-card-${a1.id}`], [`buyer-board-card-${b1.id}`],
+    ]);
+  });
+
+  it('uses accessible movement to save a complete full-date order without changing Manage selection', async () => {
+    const first = bid({ id: '10000000-0000-4000-8000-000000000021', vessel_voyage: 'First' });
+    const second = bid({ id: '10000000-0000-4000-8000-000000000022', vessel_voyage: 'Second' });
+    const third = bid({ id: '10000000-0000-4000-8000-000000000023', vessel_voyage: 'Third' });
+    const { client, saveMyBidOrder } = fakeClient([first, second, third]);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    const secondCard = await screen.findByRole('article', { name: 'Second' });
+    expect(within(screen.getByRole('article', { name: 'First' })).getByRole('button', { name: 'Move earlier' })).toBeDisabled();
+    fireEvent.click(within(secondCard).getByRole('button', { name: 'Move earlier' }));
+    await waitFor(() => expect(saveMyBidOrder).toHaveBeenCalledWith(id, '2026-08-03', 0, [second.id, first.id, third.id]));
+    expect(within(secondCard).getByRole('button', { name: 'Manage bid' })).toHaveAttribute('aria-pressed', 'false');
+  });
 
   it('defaults to Seoul today and retains the selected date across view, Refresh, and Realtime reloads', async () => {
     const { client, listBids } = fakeClient();

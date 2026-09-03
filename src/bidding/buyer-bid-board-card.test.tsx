@@ -46,6 +46,16 @@ const renderSellers = (currentBid: Bid, sellers: BuyerSellerComparison[]) => {
 };
 
 describe('BuyerBidBoardCard', () => {
+  it('exposes non-gesture reorder controls without invoking Manage bid', () => {
+    const onManage = vi.fn(); const onMoveEarlier = vi.fn(); const onMoveLater = vi.fn();
+    render(<BuyerBidBoardCard bid={bid()} sellerState={{ status: 'success', sellers: [] }} currentTimeMs={Date.parse(now)} selected={false} onManage={onManage} reorder={{ enabled: true, canMoveEarlier: false, canMoveLater: true, onMoveEarlier, onMoveLater, onDropBefore: vi.fn() }} />);
+    const card = screen.getByRole('article', { name: /MV Synthetic/ });
+    expect(within(card).getByRole('button', { name: 'Move earlier' })).toBeDisabled();
+    fireEvent.click(within(card).getByRole('button', { name: 'Move later' }));
+    expect(onMoveLater).toHaveBeenCalledOnce();
+    expect(onMoveEarlier).not.toHaveBeenCalled();
+    expect(onManage).not.toHaveBeenCalled();
+  });
   it('renders the operational bid summary and BUYER-visible quote table in one semantic card', () => {
     const { card, onManage } = renderCard(bid(), [quote('Synthetic Trader', 1007)]);
     expect(within(card).getByText('Test Port')).toBeInTheDocument();

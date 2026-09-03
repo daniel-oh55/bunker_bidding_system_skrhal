@@ -49,6 +49,7 @@ export type BidTraderAccess = { bid_id: string; trader_organization_id: string; 
 export type Quote = { id: string; bid_id: string; trader_organization_id: string; trader_organization_label: string; revision: number; created_by: string; fuel_prices: QuoteFuelPrice[]; barge_fee: number; total_amount: number; created_at: string; updated_at: string; access_active: boolean; organization_active: boolean; eligible_for_award: boolean; is_awarded: boolean; response_status: QuoteResponseStatus };
 export type QuoteResponse = { bid_id: string; trader_organization_id: string; response_status: QuoteResponseStatus; revision: number; quote_id: string | null; quote_revision: number | null };
 export type BuyerSellerComparison = { bid_id: string; trader_organization_id: string; trader_organization_label: string; access_active: boolean; organization_active: boolean; response_status: QuoteResponseStatus; quote: Quote | null };
+export type BuyerBidOrder = { revision: number; ordered_bid_ids: string[] };
 export type BidAuditEvent = { id: string; bid_id: string; event_type: string; actor_user_id: string; actor_membership_id: string; actor_organization_id: string; actor_role: 'buyer_admin' | 'buyer_operator' | 'trader'; occurred_at: string; prior_revision: number | null; resulting_revision: number; prior_status: BidStatus | null; resulting_status: BidStatus; prior_responsible_buyer_user_id: string | null; resulting_responsible_buyer_user_id: string; before_snapshot: Record<string, unknown> | null; after_snapshot: Record<string, unknown> };
 export type WorkflowErrorKind = 'authorization' | 'conflict' | 'lifecycle' | 'validation' | 'not_found' | 'duplicate' | 'unknown' | 'protocol';
 export type WorkflowError = { kind: WorkflowErrorKind; code: string | null; message: string };
@@ -65,6 +66,7 @@ function text(value: unknown): string | null { return typeof value === 'string' 
 function id(value: unknown): string | null { const candidate = text(value); return candidate && uuid.test(candidate) ? candidate : null; }
 function finite(value: unknown): number | null { const candidate = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN; return Number.isFinite(candidate) ? candidate : null; }
 function revision(value: unknown): number | null { const candidate = finite(value); return candidate !== null && Number.isInteger(candidate) && candidate >= 1 ? candidate : null; }
+function orderRevision(value: unknown): number | null { const candidate = finite(value); return candidate !== null && Number.isSafeInteger(candidate) && candidate >= 0 ? candidate : null; }
 function date(value: unknown, nullable = false): string | null | undefined { if (value === null && nullable) return null; const candidate = text(value); return candidate && Number.isFinite(Date.parse(candidate)) ? candidate : undefined; }
 function nullableId(value: unknown): string | null | undefined { if (value === null) return null; return id(value) ?? undefined; }
 function nullableNumber(value: unknown): number | null | undefined { if (value === null) return null; return finite(value) ?? undefined; }
@@ -99,6 +101,7 @@ const buyerSellerComparisonKeys = new Set([
   'bid_id', 'trader_organization_id', 'trader_organization_label', 'access_active',
   'organization_active', 'response_status', 'quote',
 ]);
+const buyerBidOrderKeys = new Set(['revision', 'ordered_bid_ids']);
 function exactKeys(value: Record<string, unknown>, allowed: Set<string>): boolean { return Object.keys(value).length === allowed.size && Object.keys(value).every((key) => allowed.has(key)); }
 function boundedText(value: unknown, maximum: number, allowEmpty = false): string | null {
   const candidate = text(value);
@@ -238,6 +241,17 @@ export function parseBuyerSellerComparison(value: unknown): BuyerSellerCompariso
   if (!quote || quote.bid_id !== r.bid_id || quote.trader_organization_id !== r.trader_organization_id || quote.trader_organization_label !== r.trader_organization_label || quote.access_active !== r.access_active || quote.organization_active !== r.organization_active) return null;
   if (quote.response_status !== responseStatus) return null;
   return { bid_id: r.bid_id, trader_organization_id: r.trader_organization_id, trader_organization_label: r.trader_organization_label, access_active: r.access_active, organization_active: r.organization_active, response_status: responseStatus, quote };
+}
+export function parseBuyerBidOrder(value: unknown): BuyerBidOrder | null {
+  const r = record(value);
+  if (!r || !exactKeys(r, buyerBidOrderKeys) || orderRevision(r.revision) === null || !Array.isArray(r.ordered_bid_ids)) return null;
+  const ids: string[] = [];
+  for (const candidate of r.ordered_bid_ids) {
+    const candidateId = id(candidate);
+    if (!candidateId || ids.includes(candidateId)) return null;
+    ids.push(candidateId);
+  }
+  return { revision: orderRevision(r.revision)!, ordered_bid_ids: ids };
 }
 export function parseBidAuditEvent(value: unknown): BidAuditEvent | null { const r = record(value); const role = r && text(r.actor_role); const eventType = r && text(r.event_type); const prior = r && (r.prior_revision === null ? null : revision(r.prior_revision) ?? undefined); const priorStatus = r && (r.prior_status === null ? null : text(r.prior_status)); const before = r && objectOrNull(r.before_snapshot); const after = r && record(r.after_snapshot); if (!r || !id(r.id) || !id(r.bid_id) || !eventType || !auditEvents.has(eventType) || !id(r.actor_user_id) || !id(r.actor_membership_id) || !id(r.actor_organization_id) || !role || !roles.has(role as BidAuditEvent['actor_role']) || !date(r.occurred_at) || prior === undefined || revision(r.resulting_revision) === null || (prior !== null && prior + 1 !== revision(r.resulting_revision)!) || priorStatus === undefined || (priorStatus !== null && !statuses.has(priorStatus as BidStatus)) || !text(r.resulting_status) || !statuses.has(r.resulting_status as BidStatus) || nullableId(r.prior_responsible_buyer_user_id) === undefined || !id(r.resulting_responsible_buyer_user_id) || before === undefined || !after) return null; return { id: r.id as string, bid_id: r.bid_id as string, event_type: eventType, actor_user_id: r.actor_user_id as string, actor_membership_id: r.actor_membership_id as string, actor_organization_id: r.actor_organization_id as string, actor_role: role as BidAuditEvent['actor_role'], occurred_at: r.occurred_at as string, prior_revision: prior, resulting_revision: revision(r.resulting_revision)!, prior_status: priorStatus as BidStatus | null, resulting_status: r.resulting_status as BidStatus, prior_responsible_buyer_user_id: r.prior_responsible_buyer_user_id as string | null, resulting_responsible_buyer_user_id: r.resulting_responsible_buyer_user_id as string, before_snapshot: before, after_snapshot: after }; }
 export function parseArray<T>(value: unknown, parser: (candidate: unknown) => T | null): T[] | null { if (!Array.isArray(value)) return null; const result: T[] = []; for (const candidate of value) { const item = parser(candidate); if (!item) return null; result.push(item); } return result; }

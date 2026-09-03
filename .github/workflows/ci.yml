@@ -177,6 +177,9 @@ jobs:
       - name: Run bid lifecycle concurrency regression tests
         run: npm run db:test:bid-concurrency -- "$LOCAL_DB_URL"
 
+      - name: Run personal BUYER BID ordering concurrency regression tests
+        run: node scripts/test-buyer-bid-order-concurrency.mjs "$LOCAL_DB_URL"
+
       - name: Run trader quote and award concurrency regression tests
         run: npm run db:test:quote-concurrency -- "$LOCAL_DB_URL"
 

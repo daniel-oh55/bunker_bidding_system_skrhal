@@ -1,3 +1,4 @@
+import { useState, type DragEvent } from 'react';
 import type { Bid, BuyerSellerComparison, Quote } from './types';
 import { StatusBadge } from '../ui/workspace-ui';
 
@@ -5,6 +6,14 @@ export type BuyerBidBoardSellerState =
   | { status: 'loading' }
   | { status: 'success'; sellers: BuyerSellerComparison[] }
   | { status: 'error' };
+export type BuyerBidReorderControls = {
+  enabled: boolean;
+  canMoveEarlier: boolean;
+  canMoveLater: boolean;
+  onMoveEarlier: () => void;
+  onMoveLater: () => void;
+  onDropBefore: (sourceBidId: string) => void;
+};
 
 const number = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 const money = (value: number) => `$${number(value)}`;
@@ -76,12 +85,13 @@ function AdvisoryComparison({ bid, quotes }: { bid: Bid; quotes: Quote[] }) {
   </div>;
 }
 
-export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, onManage }: {
+export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, onManage, reorder }: {
   bid: Bid;
   sellerState: BuyerBidBoardSellerState;
   currentTimeMs: number;
   selected: boolean;
   onManage: () => void;
+  reorder?: BuyerBidReorderControls;
 }) {
   const headingId = `buyer-board-card-${bid.id}`;
   const remaining = remainingTime(bid.deadline_at, currentTimeMs);
@@ -98,7 +108,19 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
     quotes.filter((quote) => isComparisonEligible(bid, quote)).sort((a, b) => a.total_amount - b.total_amount || a.id.localeCompare(b.id)).map((quote, index) => [quote.id, index + 1]),
   );
 
-  return <article className={`buyer-board-card status-${bid.effective_status}${selected ? ' is-selected' : ''}`} aria-labelledby={headingId}>
+  const [dragOver, setDragOver] = useState(false);
+  const onDragStart = (event: DragEvent<HTMLButtonElement>) => {
+    if (!reorder?.enabled) return;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', bid.id);
+  };
+  const onDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setDragOver(false);
+    const sourceId = event.dataTransfer.getData('text/plain');
+    if (reorder?.enabled && sourceId) reorder.onDropBefore(sourceId);
+  };
+  return <article className={`buyer-board-card status-${bid.effective_status}${selected ? ' is-selected' : ''}${dragOver ? ' is-reorder-target' : ''}`} aria-labelledby={headingId} onDragOver={(event) => { if (reorder?.enabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOver(true); } }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
     <header className="buyer-board-card-heading">
       <div><p className="eyebrow">Vessel / voyage</p><h3 id={headingId}>{bid.vessel_voyage}</h3><p className="buyer-board-port">{bid.port_name}</p></div>
       <div className="buyer-bid-card-status"><span className="buyer-card-label">Effective status</span><StatusBadge status={bid.effective_status} label={bid.effective_status === 'open' ? 'Bidding open' : bid.effective_status === 'closed' ? 'Bidding closed' : undefined} /></div>
@@ -140,6 +162,11 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
       ? <div className="buyer-board-result is-awarded"><span>Awarded result · authoritative</span><strong>{bid.awarded_trader_organization_label} · {money(bid.awarded_total_amount)}</strong><small>Manual server-authorized award; not an automatic lowest-price selection.</small></div>
       : sellerState.status === 'success' && sellers.length > 0 ? <AdvisoryComparison bid={bid} quotes={quotes} /> : null}
     <footer className="buyer-board-card-footer">
+      {reorder ? <div className="buyer-bid-reorder-controls" aria-label={`Reorder ${bid.vessel_voyage}`}>
+        <button type="button" className="secondary buyer-bid-drag-handle" draggable={reorder.enabled} disabled={!reorder.enabled} aria-label={`Drag to reorder ${bid.vessel_voyage}`} title="Drag to reorder" onDragStart={onDragStart} onClick={(event) => event.stopPropagation()}>Reorder</button>
+        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveEarlier} onClick={reorder.onMoveEarlier}>Move earlier</button>
+        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveLater} onClick={reorder.onMoveLater}>Move later</button>
+      </div> : null}
       <span>Creator: {bid.created_by_label} · Revision {bid.revision}</span>
       <button type="button" aria-pressed={selected} onClick={onManage}>{selected ? 'Managing bid' : 'Manage bid'}</button>
     </footer>

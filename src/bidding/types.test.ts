@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArray, parseBid, parseBidAuditEvent, parseBidDate, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
+import { parseArray, parseBid, parseBidAuditEvent, parseBidDate, parseBuyerBidOrder, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
 
 const id = '10000000-0000-4000-8000-000000000001';
 const otherId = '10000000-0000-4000-8000-000000000002';
@@ -25,6 +25,10 @@ function sellerOrganization(overrides: Record<string, unknown> = {}) {
 }
 
 describe('bidding protocol parsers', () => {
+  it('strictly parses a narrow personal BID order including revision zero', () => {
+    expect(parseBuyerBidOrder({ revision: 0, ordered_bid_ids: [id, otherId] })).toEqual({ revision: 0, ordered_bid_ids: [id, otherId] });
+    for (const value of [{ revision: -1, ordered_bid_ids: [] }, { revision: 1.5, ordered_bid_ids: [] }, { revision: 1, ordered_bid_ids: [id, id] }, { revision: 1, ordered_bid_ids: ['bad'] }, { revision: 1, ordered_bid_ids: [], user_id: id }]) expect(parseBuyerBidOrder(value)).toBeNull();
+  });
   it('requires an exact valid YYYY-MM-DD BID operational date', () => {
     expect(parseBidDate('2026-08-03')).toBe('2026-08-03');
     expect(parseBidDate('0001-01-01')).toBe('0001-01-01');
