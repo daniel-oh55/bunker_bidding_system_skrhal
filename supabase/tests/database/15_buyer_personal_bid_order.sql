@@ -24,8 +24,8 @@ insert into app_private.bids (id, vessel_voyage, port_name, delivery_window, sta
 
 select has_table('app_private', 'buyer_bid_order_states', 'private order state table exists'); -- 1
 select has_table('app_private', 'buyer_bid_preferences', 'private preference table exists'); -- 2
-select row_security_is_on('app_private', 'buyer_bid_order_states', 'state RLS is enabled'); -- 3
-select row_security_is_on('app_private', 'buyer_bid_preferences', 'preference RLS is enabled'); -- 4
+select ok((select relation.relrowsecurity from pg_class relation join pg_namespace namespace on namespace.oid = relation.relnamespace where namespace.nspname = 'app_private' and relation.relname = 'buyer_bid_order_states'), 'state RLS is enabled'); -- 3
+select ok((select relation.relrowsecurity from pg_class relation join pg_namespace namespace on namespace.oid = relation.relnamespace where namespace.nspname = 'app_private' and relation.relname = 'buyer_bid_preferences'), 'preference RLS is enabled'); -- 4
 select ok(not has_table_privilege('anon', 'app_private.buyer_bid_order_states', 'select,insert,update,delete'), 'anon has no state table privileges'); -- 5
 select ok(not has_table_privilege('authenticated', 'app_private.buyer_bid_order_states', 'select,insert,update,delete'), 'authenticated has no state table privileges'); -- 6
 select ok(not has_table_privilege('anon', 'app_private.buyer_bid_preferences', 'select,insert,update,delete'), 'anon has no preference table privileges'); -- 7
