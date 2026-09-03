@@ -6,7 +6,7 @@ import { BuyerBidDetail } from './buyer-bid-detail';
 import { MailIntakeQueue } from './mail-intake-queue';
 import { SellerManagement } from './seller-management';
 import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, MailIntakeItem, Quote, TraderOrganization, WorkflowError } from './types';
-import { WorkspaceEmptyState, WorkspaceSummary } from '../ui/workspace-ui';
+import { WorkspaceEmptyState } from '../ui/workspace-ui';
 import { currentSeoulDate } from './datetime';
 
 type View = 'all' | 'created_by_me' | 'responsible_buyer';
@@ -36,9 +36,9 @@ const groupBidsByCreator = (bids: Bid[]) => {
 };
 
 export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_operator', onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; membershipRole?: 'buyer_admin' | 'buyer_operator'; onAuthorizationFailure: () => void; reloadVersion?: number }) {
-  const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null); const detailRegionRef = useRef<HTMLElement | null>(null); const detailAttentionBidId = useRef<string | null>(null);
+  const listOperation = useRef(0); const detailOperation = useRef(0); const mutationOperation = useRef(0); const selectedRef = useRef<Bid | null>(null); const detailRegionRef = useRef<HTMLElement | null>(null); const detailAttentionBidId = useRef<string | null>(null); const composerZoneRef = useRef<HTMLElement | null>(null);
   const [buyers, setBuyers] = useState<ActiveBuyer[]>([]); const [organizations, setOrganizations] = useState<TraderOrganization[]>([]); const [bids, setBids] = useState<Bid[]>([]); const [boardSellers, setBoardSellers] = useState<Record<string, BuyerBidBoardSellerState>>({}); const [view, setView] = useState<View>('all'); const [responsible, setResponsible] = useState(''); const [selectedDate, setSelectedDate] = useState(() => currentSeoulDate()); const [selected, setSelected] = useState<Bid | null>(null); const [detail, setDetail] = useState<Detail | null>(null); const [error, setError] = useState<WorkflowError | null>(null); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false);
-  const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({}); const [preparedItem, setPreparedItem] = useState<MailIntakeItem | null>(null); const [mailIntakeReloadVersion, setMailIntakeReloadVersion] = useState(0);
+  const [collapsedCreators, setCollapsedCreators] = useState<Record<string, boolean>>({}); const [manualComposerOpen, setManualComposerOpen] = useState(false); const [preparedItem, setPreparedItem] = useState<MailIntakeItem | null>(null); const [mailIntakeReloadVersion, setMailIntakeReloadVersion] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const initialDateRef = useRef(selectedDate);
   const clearVisible = useCallback(() => { detailAttentionBidId.current = null; selectedRef.current = null; setBids([]); setBoardSellers({}); setSelected(null); setDetail(null); }, []);
@@ -164,35 +164,44 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     return published;
   };
   const changeView = (next: View) => { setView(next); setResponsible(''); void loadList(next, selectedDate); };
-  const changeDate = (nextDate: string) => { setSelectedDate(nextDate); void loadList(view, nextDate, responsible || undefined, selectedRef.current?.id); };
+  const changeDate = (nextDate: string) => {
+    if (nextDate === selectedDate) return;
+    setManualComposerOpen(false);
+    setPreparedItem(null);
+    setSelectedDate(nextDate);
+    void loadList(view, nextDate, responsible || undefined, selectedRef.current?.id);
+  };
   const todayDate = currentSeoulDate(nowMs);
   const historicalDateSelected = selectedDate !== todayDate;
   const effectiveOpenCount = bids.filter((bid) => bid.effective_status === 'open').length;
   const terminalCount = bids.length - effectiveOpenCount;
   const creatorGroups = view === 'all' ? groupBidsByCreator(bids) : [];
+  const prepareMailIntakeBid = (item: MailIntakeItem) => {
+    if (historicalDateSelected || preparedItem) return;
+    setManualComposerOpen(false);
+    setPreparedItem(item);
+  };
+  useEffect(() => {
+    if (!manualComposerOpen && !preparedItem) return;
+    composerZoneRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [manualComposerOpen, preparedItem]);
   const renderBidCard = (bid: Bid) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid, true)} />;
   return <div className="workspace buyer-workspace">
-    <WorkspaceSummary
-      eyebrow="BUYER operations"
-      title="Bid management"
-      summary={<span className="buyer-summary-metrics"><span><strong>{bids.length}</strong> total bids</span><span><strong>{effectiveOpenCount}</strong> effective open</span><span><strong>{terminalCount}</strong> closed / terminal</span></span>}
-      action={<button type="button" className="secondary" onClick={refresh} disabled={loading || pending}>Refresh</button>}
-    />
-    {error ? <p className="notice error" role="alert">{error.message}</p> : null}
-    <section className="panel filters buyer-filters" aria-label="Bid filters">
-      <label className="buyer-operational-date">Operational date<input aria-label="Operational date" type="date" value={selectedDate} onChange={(event) => { if (event.target.value) changeDate(event.target.value); }} /></label>
-      <fieldset>
-        <legend>Bid view</legend>
-        <div className="buyer-filter-options">
-          {views.map((option) => <label key={option.value}><input type="radio" name="bid-view" aria-label={option.label} checked={view === option.value} onChange={() => changeView(option.value)} /> <span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}
-        </div>
-      </fieldset>
-      {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', selectedDate, target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
+    <section className="panel buyer-bids-header" aria-labelledby="buyer-bids-heading">
+      <div className="buyer-bids-title"><p className="eyebrow">BUYER operations</p><h2 id="buyer-bids-heading">BIDS</h2><p className="buyer-summary-metrics"><span><strong>{bids.length}</strong> total</span><span><strong>{effectiveOpenCount}</strong> bidding open</span><span><strong>{terminalCount}</strong> closed / terminal</span></p></div>
+      <div className="buyer-bids-toolbar" aria-label="BID workspace toolbar">
+        <label className="buyer-operational-date">Operational date<input aria-label="Operational date" type="date" value={selectedDate} onChange={(event) => { if (event.target.value) changeDate(event.target.value); }} /></label>
+        <fieldset><legend>Bid view</legend><div className="buyer-filter-options">{views.map((option) => <label key={option.value}><input type="radio" name="bid-view" aria-label={option.label} checked={view === option.value} onChange={() => changeView(option.value)} /> <span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</div></fieldset>
+        {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', selectedDate, target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
+        <div className="buyer-toolbar-actions"><button type="button" className="secondary" onClick={refresh} disabled={loading || pending}>Refresh</button><button type="button" className="buyer-new-bid" disabled={pending || historicalDateSelected || !!preparedItem} title={historicalDateSelected ? `New BIDs can be published only for today's Seoul operational date (${todayDate}).` : preparedItem ? 'Close the open prepared draft before starting a new BID.' : undefined} onClick={() => setManualComposerOpen(true)}>+ New BID</button></div>
+      </div>
+      {historicalDateSelected ? <p className="buyer-date-context" role="note">New BIDs and mail preparation are available only for today’s Seoul operational date ({todayDate}).</p> : null}
     </section>
-    {preparedItem ? <PreparedMailIntakeBidForm key={`${preparedItem.id}:${preparedItem.revision}`} item={preparedItem} buyers={buyers} organizations={organizations} disabled={pending} onSubmit={publishPrepared} onClose={() => setPreparedItem(null)} /> : null}
-    {historicalDateSelected ? <section className="panel historical-create-notice" role="note"><h2>Publish new BID unavailable</h2><p>New BIDs are published only for today’s Seoul operational date ({todayDate}). Select today to publish a BID.</p></section> : <CreateBidForm buyers={buyers} organizations={organizations} disabled={pending} onSubmit={create} />}
-    {membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id)} /> : null}
-    <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} reloadVersion={mailIntakeReloadVersion} onPrepare={setPreparedItem} onAuthorizationFailure={onAuthorizationFailure} />
+    {error ? <p className="notice error" role="alert">{error.message}</p> : null}
+    <section className="buyer-composer-zone" aria-label="BID composer" ref={composerZoneRef}>
+      {preparedItem ? <PreparedMailIntakeBidForm key={`${preparedItem.id}:${preparedItem.revision}`} item={preparedItem} buyers={buyers} organizations={organizations} disabled={pending} onSubmit={publishPrepared} onClose={() => setPreparedItem(null)} /> : null}
+      {manualComposerOpen && !preparedItem && !historicalDateSelected ? <CreateBidForm buyers={buyers} organizations={organizations} disabled={pending} onSubmit={create} inline onClose={() => setManualComposerOpen(false)} /> : null}
+    </section>
     <section className="panel buyer-bid-board" aria-label="BUYER operational bid board">
         <div className="buyer-list-heading"><div><p className="eyebrow">Current view</p><h2>Bids</h2></div><span>{bids.length} loaded</span></div>
         {loading ? <WorkspaceEmptyState title="Loading bids" description="Retrieving the current bid list." /> : view === 'responsible_buyer' && !responsible ? <WorkspaceEmptyState title="Select a BUYER to load responsible bids." description="Choose an active BUYER to view their responsible bids." /> : bids.length === 0 ? <WorkspaceEmptyState title="No bids in this view" description="Try another view or refresh the current bid list." /> : view === 'all' ? <div className="buyer-creator-groups">{creatorGroups.map((group) => {
@@ -212,5 +221,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
         })}</div> : <div className="buyer-bid-cards">{bids.map(renderBidCard)}</div>}
     </section>
     {selected ? <section className="panel bid-detail buyer-bid-detail" aria-label="Selected bid detail" aria-live="polite" ref={detailRegionRef} tabIndex={-1}><BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /></section> : null}
+    <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} reloadVersion={mailIntakeReloadVersion} canPrepare={!historicalDateSelected && !preparedItem} prepareUnavailableMessage={historicalDateSelected ? `Prepare BID is available only for today’s Seoul operational date (${todayDate}).` : preparedItem ? 'Close the open prepared draft before preparing another BID.' : undefined} onPrepare={prepareMailIntakeBid} onAuthorizationFailure={onAuthorizationFailure} />
+    {membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id)} /> : null}
   </div>;
 }

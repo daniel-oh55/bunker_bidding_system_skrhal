@@ -257,6 +257,24 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-form-helper, .buyer-section-helper { margin: 0; color: var(--color-muted); font-size: .86rem; line-height: 1.5; }
 .buyer-create-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); padding-top: var(--space-1); }
 .buyer-create-actions button { min-width: 140px; }
+.buyer-bids-header { display: grid; gap: var(--space-4); border-top: 4px solid var(--color-primary); }
+.buyer-bids-title h2 { margin: 0; color: var(--color-primary); font-size: clamp(1.4rem, 2vw, 1.8rem); letter-spacing: .04em; }
+.buyer-bids-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-3) var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.buyer-bids-toolbar fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.buyer-bids-toolbar legend { margin-bottom: var(--space-1); color: var(--color-muted); font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.buyer-bids-toolbar .buyer-filter-options { gap: var(--space-1); }
+.buyer-bids-toolbar .buyer-filter-options label { width: auto; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); }
+.buyer-bids-toolbar .buyer-filter-options small { display: none; }
+.buyer-toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+.buyer-new-bid { min-width: 130px; color: #fff; background: var(--color-accent); box-shadow: 0 2px 8px rgba(166, 106, 8, .2); }
+.buyer-new-bid:hover:not(:disabled) { background: #8f5700; }
+.buyer-date-context { margin: 0; color: #6e4d00; font-size: .82rem; line-height: 1.45; }
+.buyer-composer-zone:empty { display: none; }
+.buyer-composer-zone { scroll-margin-top: var(--space-4); }
+.buyer-create-inline { margin-top: var(--space-4); }
+.buyer-create-inline-heading { display: flex; align-items: start; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); border-bottom: 1px solid var(--color-border); background: #fffaf0; }
+.buyer-create-inline-heading h2 { margin: 0; color: var(--color-primary); font-size: 1.1rem; }
+.buyer-create-inline-heading p:not(.eyebrow) { margin: var(--space-1) 0 0; color: var(--color-muted); font-size: .82rem; }
 .buyer-bid-board { min-width: 0; }
 .buyer-list-heading, .buyer-section-heading, .buyer-overview-heading { display: flex; align-items: start; justify-content: space-between; gap: var(--space-3); }
 .buyer-list-heading { padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
@@ -311,9 +329,11 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-board-quote-scroll tbody tr:nth-child(even) > * { background: #f5f8fb; }
 .buyer-board-quote-scroll tbody tr.is-comparison-excluded > * { color: #6f7c8f; }
 .buyer-board-quote-scroll tbody tr.is-awarded > * { color: var(--color-success); background: var(--color-success-surface); font-weight: 800; }
+.buyer-board-quote-scroll tbody tr.is-lowest-comparison > * { background: #fff8df; }
 .buyer-board-quote-scroll tr > :last-child { border-right: 0; }
 .buyer-board-quote-scroll tbody tr:last-child > * { border-bottom: 0; }
 .buyer-board-rank { text-align: center !important; font-weight: 900; }
+.buyer-board-lowest { display: inline-block; padding: 3px 6px; border-radius: 999px; color: #6e4d00; background: #fff0bd; font-size: .66rem; letter-spacing: .03em; text-transform: uppercase; }
 .buyer-board-seller-status { text-align: left !important; font-weight: 800; }
 .buyer-board-total { color: var(--color-primary); background: #e8eef7; font-weight: 900; }
 .buyer-board-result { display: grid; gap: 2px; margin: 0 var(--space-4) var(--space-4); padding: var(--space-3); border: 1px solid #b7c8da; border-left: 4px solid var(--color-primary); border-radius: var(--radius-sm); background: #edf3f9; }
@@ -415,5 +435,5 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 
 @media (max-width: 1080px) { .buyer-bid-cards { grid-template-columns: 1fr; } .buyer-bid-board, .buyer-bid-detail { padding: var(--space-4); } .buyer-overview-primary { grid-template-columns: 1fr; } }
 @media (max-width: 820px) { .bid-layout { grid-template-columns: 1fr; } .bid-list { position: static; } .buyer-detail-form-grid { grid-template-columns: 1fr; } .mail-intake-candidates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 720px) { .app-shell { width: min(100% - 24px, 1400px); padding-top: var(--space-5); } .workspace-header, .workspace-summary, .seller-management-heading, .seller-list-row, .seller-confirmation-actions { align-items: stretch; flex-direction: column; } .workspace-summary-action > button { width: 100%; } .buyer-create-fields, .msg-intake-preview dl, .seller-create-form { grid-template-columns: 1fr; } .trader-bids { grid-template-columns: 1fr; } .mail-intake-heading, .mail-intake-heading-actions { align-items: stretch; flex-direction: column; } .mail-intake-heading-actions button { width: 100%; } }
+@media (max-width: 720px) { .app-shell { width: min(100% - 24px, 1400px); padding-top: var(--space-5); } .workspace-header, .workspace-summary, .seller-management-heading, .seller-list-row, .seller-confirmation-actions, .buyer-create-inline-heading { align-items: stretch; flex-direction: column; } .workspace-summary-action > button { width: 100%; } .buyer-bids-toolbar { align-items: stretch; flex-direction: column; } .buyer-bids-toolbar .buyer-filter-options label { width: 100%; } .buyer-toolbar-actions { margin-left: 0; } .buyer-toolbar-actions button { flex: 1 1 10rem; } .buyer-create-fields, .msg-intake-preview dl, .seller-create-form { grid-template-columns: 1fr; } .trader-bids { grid-template-columns: 1fr; } .mail-intake-heading, .mail-intake-heading-actions { align-items: stretch; flex-direction: column; } .mail-intake-heading-actions button { width: 100%; } }
 @media (max-width: 480px) { .panel { padding: var(--space-4); border-radius: var(--radius-md); } .workspace-header { align-items: stretch; } .header-actions { align-items: stretch; flex-direction: column; } .trader-bids, .fuel-row { grid-template-columns: 1fr; } .context-chip { overflow-wrap: anywhere; } .trader-summary-metrics { display: grid; } .trader-card-heading, .trader-quote-editor-heading { align-items: start; flex-direction: column; } .trader-card-status { justify-items: start; } .trader-bid-timing, .trader-fuel-price-row, .trader-quote-totals, .trader-quote-state { grid-template-columns: 1fr; } .trader-quote-state dl { justify-content: start; } .trader-barge-fee label { max-width: none; } .trader-quote-actions button { width: 100%; } .buyer-summary-metrics { display: grid; } .buyer-filter-options, .buyer-filter-options label { width: 100%; } .buyer-creator-group-header, .buyer-creator-group-actions { align-items: stretch; flex-direction: column; } .buyer-creator-group-counts { justify-content: start; white-space: normal; } .buyer-creator-toggle { width: 100%; } .buyer-board-card-heading { align-items: start; flex-direction: column; } .buyer-board-summary, .buyer-overview-primary, .buyer-overview-award, .mail-intake-candidates { grid-template-columns: 1fr; } .buyer-board-fuels { grid-column: auto; } .buyer-board-card-footer { align-items: stretch; flex-direction: column; } .buyer-board-card-footer button { width: 100%; } .mail-intake-item-heading { align-items: start; flex-direction: column; } .mail-intake-confirmation button { width: 100%; } .buyer-bid-card-status, .buyer-overview-status { justify-items: start; } .buyer-overview-heading, .buyer-section-heading { align-items: start; flex-direction: column; } .buyer-action-row-field button, .buyer-create-actions button { width: 100%; } .buyer-access-item { align-items: stretch; flex-direction: column; } .buyer-access-item button { width: 100%; } .buyer-quote-board, .buyer-board-quote-scroll { margin-inline: calc(-1 * var(--space-2)); } }

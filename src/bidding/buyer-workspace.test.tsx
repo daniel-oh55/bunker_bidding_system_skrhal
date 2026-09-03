@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { describe, expect, it, vi } from 'vitest';
 import { BuyerWorkspace } from './buyer-workspace';
 import type { BiddingClient, BiddingResult } from './bidding-client';
-import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerSellerComparison, Quote, TraderBid, TraderOrganization } from './types';
+import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerSellerComparison, MailIntakeItem, Quote, TraderBid, TraderOrganization } from './types';
 
 vi.mock('./datetime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./datetime')>()),
@@ -64,25 +64,56 @@ describe('BUYER workspace', () => {
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     expect(await screen.findByRole('article', { name: 'MV Today' })).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'MV Historical' })).not.toBeInTheDocument();
-    expect(screen.getByText('Publish new BID')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New BID' })).toBeEnabled();
     fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
     expect(await screen.findByRole('article', { name: 'MV Historical' })).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'MV Today' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Publish new BID unavailable' })).toBeInTheDocument();
-    expect(screen.getByText(/published only for today’s Seoul operational date/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New BID' })).toBeDisabled();
+    expect(screen.getByText(/New BIDs and mail preparation are available only/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Publish BID' })).not.toBeInTheDocument();
   });
 
-  it('places today’s Publish new BID ahead of SELLER management and Mail Intake', async () => {
+  it('places the BIDS board before Mail Intake and buyer-admin SELLER Management', async () => {
     const { client } = fakeClient();
     render(<BuyerWorkspace client={client} membershipId={id} membershipRole="buyer_admin" onAuthorizationFailure={vi.fn()} />);
 
     await screen.findByRole('article', { name: 'MV Buyer' });
-    const createBid = screen.getByText('Publish new BID');
+    const board = screen.getByRole('region', { name: 'BUYER operational bid board' });
     const sellerManagement = screen.getByRole('region', { name: 'SELLER management' });
     const mailIntake = screen.getByRole('heading', { name: 'Mail intake' });
-    expect(createBid.compareDocumentPosition(sellerManagement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(createBid.compareDocumentPosition(mailIntake) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(board.compareDocumentPosition(mailIntake) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(mailIntake.compareDocumentPosition(sellerManagement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('opens the existing manual Publish composer directly from + New BID and clears it when the operational date changes', async () => {
+    const { client } = fakeClient();
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByRole('article', { name: 'MV Buyer' });
+    fireEvent.click(screen.getByRole('button', { name: '+ New BID' }));
+    expect(screen.getByRole('heading', { name: 'Publish new BID' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Vessel / voyage')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish BID' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
+    await screen.findByText(/New BIDs and mail preparation are available only/);
+    expect(screen.queryByRole('heading', { name: 'Publish new BID' })).not.toBeInTheDocument();
+  });
+
+  it('opens a current-date mail preparation in the primary composer and blocks only Prepare on a historical date', async () => {
+    const { client } = fakeClient();
+    const intake: MailIntakeItem = { id: '20000000-0000-4000-8000-000000000020', received_at: now, subject: 'MV Mail request', vessel_voyage: 'MV Prepared', port_name: 'Ulsan', delivery_window: 'Tomorrow', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null };
+    const historicalIntake = { ...intake, id: '20000000-0000-4000-8000-000000000021', received_at: '2026-08-02T03:00:00.000Z', subject: 'Historical mail request' };
+    client.listMailIntakeItems = vi.fn(() => Promise.resolve(ok([intake, historicalIntake])));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepare BID' }));
+    const composer = screen.getByRole('region', { name: 'BID composer' });
+    expect(within(composer).getByRole('heading', { name: 'Prepare BID from mail intake' })).toBeInTheDocument();
+    expect(screen.getByText('This private prepared form does not create a BID until you explicitly Publish.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
+    expect(await screen.findByRole('button', { name: 'Prepare BID' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled();
+    expect(within(composer).queryByRole('heading', { name: 'Prepare BID from mail intake' })).not.toBeInTheDocument();
   });
 
   it('scrolls and focuses the selected detail only after an explicit Manage bid load succeeds', async () => {
@@ -138,7 +169,7 @@ describe('BUYER workspace', () => {
 
     expect(await screen.findByRole('article', { name: 'MV Buyer' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('The mail intake request could not be completed. Please try again.');
-    expect(screen.getByText('Publish new BID')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New BID' })).toBeInTheDocument();
     expect(listBids).toHaveBeenCalledWith(id, '2026-08-03', 'all', undefined);
     expect(screen.queryByText('No bid selected')).not.toBeInTheDocument();
   });
@@ -285,7 +316,7 @@ describe('BUYER workspace', () => {
     const card = await screen.findByRole('article', { name: 'MV Buyer' });
     fireEvent.click(within(card).getByRole('button', { name: 'Manage bid' }));
     await waitFor(() => expect(listBidTraderAccess).toHaveBeenCalledOnce());
-    expect(screen.getAllByRole('option', { name: 'Target buyer' })).toHaveLength(2);
+    expect(screen.getAllByRole('option', { name: 'Target buyer' })).toHaveLength(1);
     expect(screen.getByRole('option', { name: 'Trader A' })).toBeInTheDocument();
     listBids.mockResolvedValueOnce({ data: null, error: { kind: 'authorization', code: '42501', message: 'Authorization changed' } });
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));

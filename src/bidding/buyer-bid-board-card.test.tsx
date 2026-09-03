@@ -83,10 +83,11 @@ describe('BuyerBidBoardCard', () => {
     const { card } = renderCard(bid(), quotes);
     const lowRow = within(card).getByRole('rowheader', { name: /Current Low/ }).closest('tr')!;
     const secondRow = within(card).getByRole('rowheader', { name: /Current Second/ }).closest('tr')!;
-    expect(within(lowRow).getByText('1')).toBeInTheDocument();
+    expect(within(lowRow).getByText('Lowest current')).toBeInTheDocument();
     expect(within(secondRow).getByText('2')).toBeInTheDocument();
     expect(lowRow).not.toHaveClass('is-comparison-excluded');
-    expect(within(lowRow).getByRole('rowheader')).toHaveTextContent('Current comparison eligible · Award unavailable while bid is open');
+    expect(within(lowRow).getByRole('rowheader')).toHaveTextContent('Current Low');
+    expect(within(lowRow).queryByText(/Award unavailable while bid is open/)).not.toBeInTheDocument();
     const result = within(card).getByText(/Lowest current offer/).closest('.buyer-board-result')!;
     expect(result).toHaveTextContent('comparison only');
     expect(result).toHaveTextContent('Current Low · $100');
@@ -109,7 +110,7 @@ describe('BuyerBidBoardCard', () => {
     expect(organizationRow).toHaveClass('is-comparison-excluded');
     expect(within(accessRow).getByText('—')).toBeInTheDocument();
     expect(within(organizationRow).getByText('—')).toBeInTheDocument();
-    expect(within(activeRow).getByText('1')).toBeInTheDocument();
+    expect(within(activeRow).getByText('Lowest current')).toBeInTheDocument();
     expect(within(accessRow).getByRole('rowheader')).toHaveTextContent('Access inactive · Excluded from current comparison');
     expect(within(organizationRow).getByRole('rowheader')).toHaveTextContent('Organization inactive · Excluded from current comparison');
     const result = within(card).getByText(/Lowest current offer/).closest('.buyer-board-result')!;
@@ -140,7 +141,7 @@ describe('BuyerBidBoardCard', () => {
     const eligibleRow = within(card).getByRole('rowheader', { name: /Award Eligible Low/ }).closest('tr')!;
     expect(ineligibleRow).toHaveClass('is-comparison-excluded');
     expect(within(ineligibleRow).getByText('—')).toBeInTheDocument();
-    expect(within(eligibleRow).getByText('1')).toBeInTheDocument();
+    expect(within(eligibleRow).getByText('Lowest advisory')).toBeInTheDocument();
     const result = within(card).getByText(/Lowest award-eligible offer/).closest('.buyer-board-result')!;
     expect(result).toHaveTextContent('Award Eligible Low · $100');
     expect(result).toHaveTextContent('Gap to second award-eligible offer: $25 (25%)');
@@ -160,10 +161,10 @@ describe('BuyerBidBoardCard', () => {
     expect(within(within(card).getByRole('rowheader', { name: /Chosen Trader/ }).closest('tr')!).getAllByText('Awarded')).toHaveLength(2);
   });
 
-  it('renders a scoped unquoted SELLER as Awaiting quote with no rank or commercial values', () => {
+  it('renders a scoped unquoted SELLER as Awaiting with no rank or commercial values', () => {
     const card = renderSellers(bid(), [awaiting('Waiting Seller', '71')]);
     const row = within(card).getByRole('rowheader', { name: /Waiting Seller/ }).closest('tr')!;
-    expect(within(row).getByText('Awaiting quote')).toBeInTheDocument();
+    expect(within(row).getByText('Awaiting')).toBeInTheDocument();
     expect(within(row).getAllByText('—')).toHaveLength(4);
     expect(row).toHaveClass('is-comparison-excluded');
     expect(within(card).getByText('No current comparison offers')).toBeInTheDocument();
@@ -176,7 +177,7 @@ describe('BuyerBidBoardCard', () => {
     const waitingRow = within(card).getByRole('rowheader', { name: /Waiting Seller/ }).closest('tr')!;
     const quotedRow = within(card).getByRole('rowheader', { name: /Quoted Seller/ }).closest('tr')!;
     expect(within(waitingRow).getAllByText('—')).toHaveLength(4);
-    expect(within(quotedRow).getByText('1')).toBeInTheDocument();
+    expect(within(quotedRow).getByText('Lowest current')).toBeInTheDocument();
     expect(within(quotedRow).getByText('Quoted')).toBeInTheDocument();
     expect(within(card).getByText(/Quoted Seller · \$100/)).toBeInTheDocument();
     expect(within(card).getByText('2 SELLERs · 1 current quote')).toBeInTheDocument();
