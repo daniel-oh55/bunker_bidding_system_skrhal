@@ -18,7 +18,7 @@ const displayError = (error: WorkflowError) => {
   return 'The mail intake request could not be completed. Please try again.';
 };
 
-export function MailIntakeQueue({ client, membershipId, selectedBidDate, reloadVersion = 0, onPrepare = () => {}, onAuthorizationFailure }: { client: BiddingClient; membershipId: string; selectedBidDate: string; reloadVersion?: number; onPrepare?: (item: MailIntakeItem) => void; onAuthorizationFailure: () => void }) {
+export function MailIntakeQueue({ client, membershipId, selectedBidDate, reloadVersion = 0, canPrepare = true, prepareUnavailableMessage, onPrepare = () => {}, onAuthorizationFailure }: { client: BiddingClient; membershipId: string; selectedBidDate: string; reloadVersion?: number; canPrepare?: boolean; prepareUnavailableMessage?: string; onPrepare?: (item: MailIntakeItem) => void; onAuthorizationFailure: () => void }) {
   const operation = useRef(0);
   const [items, setItems] = useState<MailIntakeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,7 +108,7 @@ export function MailIntakeQueue({ client, membershipId, selectedBidDate, reloadV
             </dl>
             {item.warnings.length ? <aside className="notice warning mail-intake-warnings"><strong>Extraction warnings</strong><ul>{item.warnings.map((warning, index) => <li key={`${item.id}:warning:${index}`}>{warning}</li>)}</ul></aside> : null}
             <footer className="mail-intake-dismiss">
-              <button type="button" disabled={pending} onClick={() => onPrepare(item)}>Prepare BID</button>
+              <button type="button" disabled={pending || !canPrepare} title={!canPrepare ? prepareUnavailableMessage : undefined} onClick={() => onPrepare(item)}>Prepare BID</button>
               {confirming ? <div className="mail-intake-confirmation" role="group" aria-label={`Confirm dismissal of ${item.subject || 'item with no subject'}`}><p>Dismissal is shared and irreversible.</p><div><button type="button" className="danger" disabled={pending} onClick={() => void dismiss(dismissTarget)}>Confirm dismiss for all BUYERs</button><button type="button" className="secondary" disabled={pending} onClick={() => setDismissTarget(null)}>Cancel</button></div></div> : <button type="button" className="secondary mail-intake-dismiss-button" disabled={pending} onClick={() => setDismissTarget({ id: item.id, revision: item.revision })}>Dismiss</button>}
             </footer>
           </article>
