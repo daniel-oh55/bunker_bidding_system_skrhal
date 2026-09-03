@@ -25,7 +25,11 @@ declare
   v_bid_id uuid;
   v_result app_private.bid_api_result;
   v_selected_count integer;
+  v_distinct_selected_count integer;
+  v_existing_selected_count integer;
   v_active_selected_count integer;
+  v_inserted_access_count integer;
+  v_inserted_response_count integer;
 begin
   if p_deadline_at is null then
     raise exception using errcode = '22023', message = 'Publish deadline is required';
@@ -44,25 +48,40 @@ begin
   if cardinality(p_selected_trader_organization_ids) < 1 then
     raise exception using errcode = '22023', message = 'At least one selected active SELLER is required';
   end if;
+
+  v_selected_count := cardinality(p_selected_trader_organization_ids);
+
+  -- Lock every existing selected organization in a common order before
+  -- validating the complete set. FOR SHARE conflicts with the ordinary
+  -- non-key UPDATE lock used by organization status changes and is retained
+  -- until the surrounding Publish transaction ends.
+  select count(*), count(*) filter (
+    where locked_organization.kind = 'trader'::app_private.organization_kind
+      and locked_organization.status = 'active'::app_private.organization_status
+  )
+  into v_existing_selected_count, v_active_selected_count
+  from (
+    select organization.id, organization.kind, organization.status
+    from app_private.organizations as organization
+    where organization.id = any(p_selected_trader_organization_ids)
+    order by organization.id
+    for share
+  ) as locked_organization;
+
   if array_position(p_selected_trader_organization_ids, null) is not null then
     raise exception using errcode = '22023', message = 'Selected SELLER organizations are invalid';
   end if;
 
-  select cardinality(p_selected_trader_organization_ids), count(distinct selected.organization_id)
-  into v_selected_count, v_active_selected_count
+  select count(distinct selected.organization_id)
+  into v_distinct_selected_count
   from unnest(p_selected_trader_organization_ids) as selected(organization_id);
 
-  if v_selected_count <> v_active_selected_count then
+  if v_selected_count <> v_distinct_selected_count then
     raise exception using errcode = '22023', message = 'Selected SELLER organizations are duplicated';
   end if;
 
-  select count(*) into v_active_selected_count
-  from app_private.organizations as organization
-  where organization.id = any(p_selected_trader_organization_ids)
-    and organization.kind = 'trader'::app_private.organization_kind
-    and organization.status = 'active'::app_private.organization_status;
-
-  if v_selected_count <> v_active_selected_count then
+  if v_selected_count <> v_existing_selected_count
+    or v_selected_count <> v_active_selected_count then
     raise exception using errcode = '22023', message = 'Selected SELLER organizations must be active';
   end if;
 
@@ -100,6 +119,11 @@ begin
     and organization.status = 'active'::app_private.organization_status
     and organization.id = any(p_selected_trader_organization_ids);
 
+  get diagnostics v_inserted_access_count = row_count;
+  if v_inserted_access_count <> v_selected_count then
+    raise exception using errcode = 'P0004', message = 'Selected SELLER access creation was incomplete';
+  end if;
+
   insert into app_private.bid_trader_organization_responses (
     bid_id,
     trader_organization_id,
@@ -109,6 +133,11 @@ begin
   select access.bid_id, access.trader_organization_id, 'awaiting', 1
   from app_private.bid_trader_organization_access as access
   where access.bid_id = v_bid_id;
+
+  get diagnostics v_inserted_response_count = row_count;
+  if v_inserted_response_count <> v_selected_count then
+    raise exception using errcode = 'P0004', message = 'Selected SELLER response creation was incomplete';
+  end if;
 
   perform app_private.append_bid_audit(
     v_bid_id,
