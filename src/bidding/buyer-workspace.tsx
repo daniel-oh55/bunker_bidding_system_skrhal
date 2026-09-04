@@ -34,11 +34,12 @@ const groupBidsByCreator = (bids: Bid[]) => {
   }
   return groups;
 };
-const completeOrder = (bids: Bid[], order: BuyerBidOrder | null) => {
-  const known = new Set(bids.map((bid) => bid.id));
-  const saved = order?.ordered_bid_ids.filter((id) => known.has(id)) ?? [];
-  return [...saved, ...bids.map((bid) => bid.id).filter((id) => !saved.includes(id))];
+const hasCompleteOrderForVisibleBids = (bids: Bid[], order: BuyerBidOrder | null) => {
+  if (!order) return false;
+  const ordered = new Set(order.ordered_bid_ids);
+  return bids.every((bid) => ordered.has(bid.id));
 };
+const sameOrder = (left: string[], right: string[]) => left.length === right.length && left.every((id, index) => id === right[index]);
 const rankBids = (bids: Bid[], orderedIds: string[]) => {
   const ranks = new Map(orderedIds.map((id, index) => [id, index]));
   return [...bids].sort((a, b) => (ranks.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (ranks.get(b.id) ?? Number.MAX_SAFE_INTEGER));
@@ -148,7 +149,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
       setOrganizations(orgResult.data ?? []);
       setBids(nextBids);
       setBidOrder(orderResult.data ?? null);
-      setOrderAvailable(orderResult.error === null);
+      setOrderAvailable(orderResult.error === null && hasCompleteOrderForVisibleBids(nextBids, orderResult.data));
       setBoardSellers(Object.fromEntries(nextBids.map((bid) => [bid.id, { status: 'loading' } satisfies BuyerBidBoardSellerState])));
       setLoading(false);
       void loadBoardSellers(nextBids, operation);
@@ -207,11 +208,12 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     setManualComposerOpen(false);
     setPreparedItem(null);
   }, [historicalDateSelected]);
-  const orderedIds = completeOrder(bids, bidOrder);
-  const orderedBids = rankBids(bids, orderedIds);
+  const fullDateOrderedIds = bidOrder?.ordered_bid_ids ?? [];
+  const fullDateOrderAvailable = orderAvailable && hasCompleteOrderForVisibleBids(bids, bidOrder);
+  const orderedBids = rankBids(bids, fullDateOrderedIds);
   const effectiveOpenCount = bids.filter((bid) => bid.effective_status === 'open').length;
   const terminalCount = bids.length - effectiveOpenCount;
-  const creatorGroups = view === 'all' ? groupBidsByCreator(bids).map((group) => ({ ...group, bids: rankBids(group.bids, orderedIds) })) : [];
+  const creatorGroups = view === 'all' ? groupBidsByCreator(bids).map((group) => ({ ...group, bids: rankBids(group.bids, fullDateOrderedIds) })) : [];
   const prepareMailIntakeBid = (item: MailIntakeItem) => {
     if (historicalDateSelected || preparedItem) return;
     setManualComposerOpen(false);
@@ -222,7 +224,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     composerZoneRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }, [manualComposerOpen, preparedItem]);
   const saveOrder = async (nextIds: string[]) => {
-    if (!bidOrder || !orderAvailable || orderPending || nextIds.every((id, index) => id === orderedIds[index])) return;
+    if (!bidOrder || !fullDateOrderAvailable || orderPending || sameOrder(nextIds, fullDateOrderedIds)) return;
     const previous = bidOrder; const operation = ++orderOperation.current;
     setBidOrder({ ...previous, ordered_bid_ids: nextIds }); setOrderPending(true); setError(null);
     let result: BiddingResult<BuyerBidOrder>;
@@ -234,13 +236,13 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     if (result.error?.kind === 'conflict') {
       const latest = await client.getMyBidOrder(membershipId, selectedDate);
       if (latest.error?.kind === 'authorization') { handleError(latest.error); return; }
-      setBidOrder(latest.data ?? previous); setOrderAvailable(latest.error === null);
+      setBidOrder(latest.data ?? previous); setOrderAvailable(latest.error === null && hasCompleteOrderForVisibleBids(bids, latest.data));
       setError({ kind: 'conflict', code: '40001', message: 'BID order changed elsewhere. The latest order was restored.' });
       return;
     }
     setBidOrder(previous); setOrderAvailable(false); setError(result.error ?? unknownError);
   };
-  const renderBidCard = (bid: Bid, visibleIds: string[]) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid, true)} reorder={{ enabled: orderAvailable && !orderPending && bidOrder !== null, canMoveEarlier: visibleIds.indexOf(bid.id) > 0, canMoveLater: visibleIds.indexOf(bid.id) >= 0 && visibleIds.indexOf(bid.id) < visibleIds.length - 1, onMoveEarlier: () => void saveOrder(moveVisible(orderedIds, visibleIds, bid.id, -1)), onMoveLater: () => void saveOrder(moveVisible(orderedIds, visibleIds, bid.id, 1)), onDropBefore: (sourceId) => { if (visibleIds.includes(sourceId)) void saveOrder(moveBefore(orderedIds, sourceId, bid.id)); } }} />;
+  const renderBidCard = (bid: Bid, visibleIds: string[]) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} onManage={() => void loadDetail(bid, true)} reorder={{ enabled: fullDateOrderAvailable && !orderPending, canMoveEarlier: visibleIds.indexOf(bid.id) > 0, canMoveLater: visibleIds.indexOf(bid.id) >= 0 && visibleIds.indexOf(bid.id) < visibleIds.length - 1, onMoveEarlier: () => void saveOrder(moveVisible(fullDateOrderedIds, visibleIds, bid.id, -1)), onMoveLater: () => void saveOrder(moveVisible(fullDateOrderedIds, visibleIds, bid.id, 1)), onDropBefore: (sourceId) => { if (visibleIds.includes(sourceId)) void saveOrder(moveBefore(fullDateOrderedIds, sourceId, bid.id)); } }} />;
   return <div className="workspace buyer-workspace">
     <section className="panel buyer-bids-header" aria-labelledby="buyer-bids-heading">
       <div className="buyer-bids-title"><p className="eyebrow">BUYER operations</p><h2 id="buyer-bids-heading">BIDS</h2><p className="buyer-summary-metrics"><span><strong>{bids.length}</strong> total</span><span><strong>{effectiveOpenCount}</strong> bidding open</span><span><strong>{terminalCount}</strong> closed / terminal</span></p></div>

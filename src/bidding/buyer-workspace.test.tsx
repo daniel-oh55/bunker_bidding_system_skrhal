@@ -57,6 +57,97 @@ describe('BUYER workspace', () => {
     expect(within(secondCard).getByRole('button', { name: 'Manage bid' })).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('keeps hidden Created-by-me BIDs in the authoritative full-date order when moving visible cards', async () => {
+    const first = bid({ id: '10000000-0000-4000-8000-000000000031', vessel_voyage: 'Created first', created_by: id });
+    const hiddenFirst = bid({ id: '10000000-0000-4000-8000-000000000032', vessel_voyage: 'Hidden first', created_by: target });
+    const hiddenSecond = bid({ id: '10000000-0000-4000-8000-000000000033', vessel_voyage: 'Hidden second', created_by: target });
+    const last = bid({ id: '10000000-0000-4000-8000-000000000034', vessel_voyage: 'Created last', created_by: id });
+    const fullDateBids = [first, hiddenFirst, hiddenSecond, last];
+    const { client, getMyBidOrder, listBids, saveMyBidOrder } = fakeClient(fullDateBids);
+    getMyBidOrder.mockResolvedValue(ok({ revision: 7, ordered_bid_ids: fullDateBids.map((current) => current.id) }));
+    listBids.mockImplementation((_membershipId, _date, nextView) => Promise.resolve(ok(nextView === 'created_by_me' ? [first, last] : fullDateBids)));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByRole('article', { name: 'Created first' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
+    const lastCard = await screen.findByRole('article', { name: 'Created last' });
+    expect(screen.queryByRole('article', { name: 'Hidden first' })).not.toBeInTheDocument();
+    fireEvent.click(within(lastCard).getByRole('button', { name: 'Move earlier' }));
+
+    await waitFor(() => expect(saveMyBidOrder).toHaveBeenCalledWith(id, '2026-08-03', 7, [last.id, first.id, hiddenFirst.id, hiddenSecond.id]));
+    const submitted = saveMyBidOrder.mock.calls[0]![3];
+    expect(submitted.filter((current) => current === hiddenFirst.id)).toHaveLength(1);
+    expect(submitted.filter((current) => current === hiddenSecond.id)).toHaveLength(1);
+    expect(submitted.indexOf(hiddenFirst.id)).toBeLessThan(submitted.indexOf(hiddenSecond.id));
+  });
+
+  it('keeps hidden By-BUYER BIDs in the authoritative full-date order when moving visible cards', async () => {
+    const first = bid({ id: '10000000-0000-4000-8000-000000000041', vessel_voyage: 'Responsible first', responsible_buyer_user_id: target });
+    const hiddenFirst = bid({ id: '10000000-0000-4000-8000-000000000042', vessel_voyage: 'Other buyer first', responsible_buyer_user_id: id });
+    const hiddenSecond = bid({ id: '10000000-0000-4000-8000-000000000043', vessel_voyage: 'Other buyer second', responsible_buyer_user_id: id });
+    const last = bid({ id: '10000000-0000-4000-8000-000000000044', vessel_voyage: 'Responsible last', responsible_buyer_user_id: target });
+    const fullDateBids = [first, hiddenFirst, hiddenSecond, last];
+    const { client, getMyBidOrder, listBids, saveMyBidOrder } = fakeClient(fullDateBids);
+    getMyBidOrder.mockResolvedValue(ok({ revision: 8, ordered_bid_ids: fullDateBids.map((current) => current.id) }));
+    listBids.mockImplementation((_membershipId, _date, nextView, responsibleBuyerId) => Promise.resolve(ok(nextView === 'responsible_buyer' && responsibleBuyerId === target ? [first, last] : fullDateBids)));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByRole('article', { name: 'Responsible first' });
+    fireEvent.click(screen.getByRole('radio', { name: 'By BUYER' }));
+    fireEvent.change(screen.getByLabelText('Responsible BUYER filter'), { target: { value: target } });
+    await screen.findByRole('article', { name: 'Responsible last' });
+    expect(screen.queryByRole('article', { name: 'Other buyer first' })).not.toBeInTheDocument();
+    fireEvent.drop(screen.getByRole('article', { name: 'Responsible first' }), { dataTransfer: { getData: () => last.id } });
+
+    await waitFor(() => expect(saveMyBidOrder).toHaveBeenCalledWith(id, '2026-08-03', 8, [last.id, first.id, hiddenFirst.id, hiddenSecond.id]));
+    const submitted = saveMyBidOrder.mock.calls[0]![3];
+    expect(submitted.filter((current) => current === hiddenFirst.id)).toHaveLength(1);
+    expect(submitted.filter((current) => current === hiddenSecond.id)).toHaveLength(1);
+    expect(submitted.indexOf(hiddenFirst.id)).toBeLessThan(submitted.indexOf(hiddenSecond.id));
+  });
+
+  it('reorders a creator group through the complete full-date order and ignores cross-creator drops', async () => {
+    const creatorA = '10000000-0000-4000-8000-000000000051';
+    const creatorB = '10000000-0000-4000-8000-000000000052';
+    const first = bid({ id: '10000000-0000-4000-8000-000000000053', vessel_voyage: 'Alpha first', created_by: creatorA, created_by_label: 'Creator Alpha' });
+    const hiddenByGrouping = bid({ id: '10000000-0000-4000-8000-000000000054', vessel_voyage: 'Beta only', created_by: creatorB, created_by_label: 'Creator Beta' });
+    const last = bid({ id: '10000000-0000-4000-8000-000000000055', vessel_voyage: 'Alpha last', created_by: creatorA, created_by_label: 'Creator Alpha' });
+    const fullDateBids = [first, hiddenByGrouping, last];
+    const { client, getMyBidOrder, saveMyBidOrder } = fakeClient(fullDateBids);
+    getMyBidOrder.mockResolvedValue(ok({ revision: 9, ordered_bid_ids: fullDateBids.map((current) => current.id) }));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    const firstCard = await screen.findByRole('article', { name: 'Alpha first' });
+    fireEvent.drop(firstCard, { dataTransfer: { getData: () => hiddenByGrouping.id } });
+    expect(saveMyBidOrder).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole('article', { name: 'Alpha last' })).getByRole('button', { name: 'Move earlier' }));
+
+    await waitFor(() => expect(saveMyBidOrder).toHaveBeenCalledWith(id, '2026-08-03', 9, [last.id, first.id, hiddenByGrouping.id]));
+  });
+
+  it('keeps a raced visible BID rendered but disables ordering until a fresh full-date order includes it', async () => {
+    const existing = bid({ id: '10000000-0000-4000-8000-000000000061', vessel_voyage: 'Existing created', created_by: id });
+    const raced = bid({ id: '10000000-0000-4000-8000-000000000062', vessel_voyage: 'Raced created', created_by: id });
+    const { client, getMyBidOrder, listBids, saveMyBidOrder } = fakeClient([existing]);
+    listBids.mockImplementation((_membershipId, _date, nextView) => Promise.resolve(ok(nextView === 'created_by_me' ? [existing, raced] : [existing])));
+    getMyBidOrder
+      .mockResolvedValueOnce(ok({ revision: 10, ordered_bid_ids: [existing.id] }))
+      .mockResolvedValueOnce(ok({ revision: 10, ordered_bid_ids: [existing.id] }))
+      .mockResolvedValueOnce(ok({ revision: 10, ordered_bid_ids: [existing.id, raced.id] }));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    await screen.findByRole('article', { name: 'Existing created' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Created by me' }));
+    const racedCard = await screen.findByRole('article', { name: 'Raced created' });
+    expect(within(racedCard).getByRole('button', { name: 'Move earlier' })).toBeDisabled();
+    expect(saveMyBidOrder).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(within(screen.getByRole('article', { name: 'Raced created' })).getByRole('button', { name: 'Move earlier' })).toBeEnabled());
+    fireEvent.click(within(screen.getByRole('article', { name: 'Raced created' })).getByRole('button', { name: 'Move earlier' }));
+    await waitFor(() => expect(saveMyBidOrder).toHaveBeenCalledWith(id, '2026-08-03', 10, [raced.id, existing.id]));
+  });
+
   it('defaults to Seoul today and retains the selected date across view, Refresh, and Realtime reloads', async () => {
     const { client, listBids } = fakeClient();
     const view = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
