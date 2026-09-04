@@ -9,10 +9,20 @@ const sellerComparison = { bid_id: other, trader_organization_id: id, trader_org
 const pendingMail = { id, received_at: now, subject: 'Request', vessel_voyage: null, port_name: 'Busan', delivery_window: null, fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null };
 const dismissedMail = { ...pendingMail, status: 'dismissed', revision: 2, dismissed_at: now };
 const sellerOrganization = { organization_id: other, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 0, created_at: now, updated_at: now };
+const bidOrder = { revision: 0, ordered_bid_ids: [id, other] };
 type Rpc = BiddingRpcClient['rpc'];
 function harness(data: unknown = bid, error: { code?: string | null } | null = null) { const rpc = vi.fn<Rpc>(() => Promise.resolve({ data, error })); return { rpc, client: createSupabaseBiddingClient({ rpc }) }; }
 
 describe('BiddingClient RPC adapter', () => {
+  it('maps personal BID ordering without a caller-selected user identity', async () => {
+    const get = harness([bidOrder]);
+    expect(await get.client.getMyBidOrder(id, '2026-08-03')).toEqual({ data: bidOrder, error: null });
+    expect(get.rpc).toHaveBeenCalledWith('get_my_bid_order', { p_actor_membership_id: id, p_bid_date: '2026-08-03' });
+    const save = harness([{ revision: 1, ordered_bid_ids: [other, id] }]);
+    await save.client.saveMyBidOrder(id, '2026-08-03', 0, [other, id]);
+    expect(save.rpc).toHaveBeenCalledWith('save_my_bid_order', { p_actor_membership_id: id, p_bid_date: '2026-08-03', p_expected_revision: 0, p_ordered_bid_ids: [other, id] });
+    for (const [, args] of [...get.rpc.mock.calls, ...save.rpc.mock.calls]) expect(args).not.toHaveProperty('p_user_id');
+  });
   it('maps exact SELLER-admin RPC names and arguments and requires one mutation result row', async () => {
     const list = harness([sellerOrganization]);
     expect(await list.client.listTraderOrganizationsForAdmin!(id)).toMatchObject({ data: [sellerOrganization], error: null });

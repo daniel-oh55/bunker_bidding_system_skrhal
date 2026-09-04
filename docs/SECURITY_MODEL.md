@@ -2,6 +2,8 @@
 
 ## Core rules
 
+- Personal BUYER BID ordering is private `app_private` state keyed by server-derived authenticated active BUYER user and BID date. RLS is enabled and direct browser table privileges are revoked. Fixed-empty-search-path `get_my_bid_order(uuid,date)` and `save_my_bid_order(uuid,date,integer,uuid[])` are authenticated-only SECURITY DEFINER RPCs with no user target argument; they use the active BUYER verifier, validate a complete authoritative BID-date set, and use an independent optimistic preference revision. This presentation preference never changes BID authority, visibility, revision, audit, lifecycle, quote, response, or participant state.
+
 - No real secret values are stored in the repository.
 - Browser code uses only the Supabase publishable key.
 - Secret values and backend credentials never enter browser code, Vite variables, repository source values, logs, or test output. Symbolic runtime names are confined to server-only Edge Function files.
