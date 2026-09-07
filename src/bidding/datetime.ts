@@ -32,6 +32,24 @@ export function localInputToIso(value: string): string | null {
 const seoulOffsetMs = 9 * 60 * 60 * 1_000;
 const padDatePart = (part: number) => String(part).padStart(2, '0');
 
+/**
+ * Return the next 18:30 Asia/Seoul Publish target as a datetime-local value.
+ * Seoul determines the target instant; the browser timezone is used only to
+ * display that instant so localInputToIso() can round-trip it unchanged.
+ */
+export function defaultPublishDeadlineInput(nowMs = Date.now()): string {
+  const seoulWallClock = new Date(nowMs + seoulOffsetMs);
+  const todayTargetMs = Date.UTC(
+    seoulWallClock.getUTCFullYear(),
+    seoulWallClock.getUTCMonth(),
+    seoulWallClock.getUTCDate(),
+    18,
+    30,
+  ) - seoulOffsetMs;
+  const targetMs = nowMs < todayTargetMs ? todayTargetMs : todayTargetMs + 24 * 60 * 60 * 1_000;
+  return isoToLocalInput(new Date(targetMs).toISOString());
+}
+
 /** Classify an instant by its Asia/Seoul calendar date without using the browser timezone. */
 export function seoulDateFromInstant(value: string | number | Date): string | null {
   const instant = value instanceof Date ? new Date(value.getTime()) : new Date(value);

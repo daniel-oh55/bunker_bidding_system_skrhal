@@ -1,12 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const msgIntake = vi.hoisted(() => ({ readMsgFile: vi.fn() }));
 vi.mock('./msg-intake', () => ({ readMsgFile: msgIntake.readMsgFile }));
 
 import { CreateBidForm, PreparedMailIntakeBidForm } from './bid-form';
 import { BuyerBidDetail } from './buyer-bid-detail';
-import { localInputToIso } from './datetime';
+import { defaultPublishDeadlineInput, localInputToIso } from './datetime';
 import type { BiddingClient } from './bidding-client';
 import type { Bid, MailIntakeItem, Quote } from './types';
 
@@ -17,6 +17,9 @@ const bid: Bid = { id: bidId, bid_date: '2026-08-03', vessel_voyage: 'MV Before'
 const updateBid = vi.fn<BiddingClient['updateBid']>(() => Promise.resolve({ data: bid, error: null }));
 const fakeClient = { updateBid } as unknown as BiddingClient;
 const preparedItem: MailIntakeItem = { id: bidId, received_at: now, subject: 'Mail request', vessel_voyage: 'Parsed vessel', port_name: 'Parsed port', delivery_window: 'Parsed delivery', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: ['Check parsed delivery'], status: 'pending', revision: 4, created_at: now, updated_at: now, dismissed_at: null };
+const beforePublishCutoffMs = Date.parse('2026-08-03T08:00:00.000Z');
+
+afterEach(() => vi.restoreAllMocks());
 
 function fillCreateForm() {
   fireEvent.change(screen.getByLabelText('Vessel / voyage'), { target: { value: 'MV New' } }); fireEvent.change(screen.getByLabelText('Port'), { target: { value: 'Ulsan' } }); fireEvent.change(screen.getByLabelText('Delivery window'), { target: { value: 'Next week' } }); fireEvent.change(screen.getByLabelText('Create deadline'), { target: { value: '2026-08-04T12:30' } }); fireEvent.change(screen.getByLabelText('Responsible BUYER'), { target: { value: buyerId } }); fireEvent.change(screen.getByLabelText('Fuel quantity 1'), { target: { value: '15' } });
@@ -24,12 +27,14 @@ function fillCreateForm() {
 
 describe('BUYER bid forms and detail editor', () => {
   it('prefills a private prepared BID, selects active SELLERs by default, and publishes only reviewed values', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(beforePublishCutoffMs);
     const submit = vi.fn().mockResolvedValue(true);
     render(<PreparedMailIntakeBidForm item={preparedItem} buyers={buyers} organizations={[{ organization_id: membership, organization_label: 'First SELLER' }, { organization_id: buyerId, organization_label: 'Second SELLER' }]} disabled={false} onSubmit={submit} onClose={vi.fn()} />);
     expect(screen.getByText('Check parsed delivery')).toBeInTheDocument();
     expect(screen.getByLabelText('Prepared vessel / voyage')).toHaveValue('Parsed vessel');
     expect(screen.getByLabelText('Prepared port')).toHaveValue('Parsed port');
     expect(screen.getByLabelText('Prepared delivery window')).toHaveValue('Parsed delivery');
+    expect(screen.getByLabelText('Publish deadline')).toHaveValue(defaultPublishDeadlineInput(beforePublishCutoffMs));
     expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(10);
     expect(screen.getByLabelText('Include SELLER First SELLER')).toBeChecked();
     expect(screen.getByLabelText('Include SELLER Second SELLER')).toBeChecked();
@@ -45,9 +50,11 @@ describe('BUYER bid forms and detail editor', () => {
     expect(submit).toHaveBeenCalledWith({ intakeItemId: bidId, expectedIntakeRevision: 4, vesselVoyage: 'Edited vessel', portName: 'Parsed port', deliveryWindow: 'Parsed delivery', deadlineAt: localInputToIso('2026-08-04T12:30'), responsibleBuyerUserId: null, fuelGrades: ['vlsfo'], quantities: [10], selectedTraderOrganizationIds: [membership] });
   });
 
-  it('preserves every create draft field after failure and clears all of them only after success', async () => {
+  it('preserves an edited deadline after failure and refreshes the default only after success', async () => {
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(beforePublishCutoffMs);
     const submit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true); render(<CreateBidForm buyers={buyers} organizations={sellers} disabled={false} onSubmit={submit} />);
     expect(screen.getByText('Publish new BID').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByLabelText('Create deadline')).toHaveValue(defaultPublishDeadlineInput(beforePublishCutoffMs));
     expect(screen.getByLabelText('Include SELLER First SELLER')).toBeChecked(); expect(screen.getByLabelText('Include SELLER Second SELLER')).toBeChecked();
     fireEvent.click(screen.getByLabelText('Include SELLER Second SELLER'));
     fillCreateForm();
@@ -55,8 +62,10 @@ describe('BUYER bid forms and detail editor', () => {
     expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ deadlineAt: localInputToIso('2026-08-04T12:30'), selectedTraderOrganizationIds: [membership] }));
     expect(screen.getByLabelText('Vessel / voyage')).toHaveValue('MV New'); expect(screen.getByLabelText('Port')).toHaveValue('Ulsan'); expect(screen.getByLabelText('Delivery window')).toHaveValue('Next week'); expect(screen.getByLabelText('Create deadline')).toHaveValue('2026-08-04T12:30'); expect(screen.getByLabelText('Responsible BUYER')).toHaveValue(buyerId); expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(15);
     expect(screen.getByLabelText('Include SELLER Second SELLER')).not.toBeChecked();
+    const afterPublishCutoffMs = Date.parse('2026-08-03T10:00:00.000Z');
+    dateNow.mockReturnValue(afterPublishCutoffMs);
     fireEvent.click(screen.getByRole('button', { name: 'Publish BID' })); await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
-    expect(screen.getByLabelText('Vessel / voyage')).toHaveValue(''); expect(screen.getByLabelText('Port')).toHaveValue(''); expect(screen.getByLabelText('Delivery window')).toHaveValue(''); expect(screen.getByLabelText('Create deadline')).toHaveValue(''); expect(screen.getByLabelText('Responsible BUYER')).toHaveValue(''); expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(null);
+    expect(screen.getByLabelText('Vessel / voyage')).toHaveValue(''); expect(screen.getByLabelText('Port')).toHaveValue(''); expect(screen.getByLabelText('Delivery window')).toHaveValue(''); expect(screen.getByLabelText('Create deadline')).toHaveValue(defaultPublishDeadlineInput(afterPublishCutoffMs)); expect(screen.getByLabelText('Responsible BUYER')).toHaveValue(''); expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(null);
     expect(screen.getByLabelText('Include SELLER First SELLER')).toBeChecked(); expect(screen.getByLabelText('Include SELLER Second SELLER')).toBeChecked();
   });
 
@@ -72,6 +81,7 @@ describe('BUYER bid forms and detail editor', () => {
   });
 
   it('parses locally, applies only after confirmation, stays editable, and submits only visible values', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(beforePublishCutoffMs);
     msgIntake.readMsgFile.mockResolvedValueOnce({
       ok: true,
       content: {
@@ -82,6 +92,8 @@ describe('BUYER bid forms and detail editor', () => {
     const submit = vi.fn().mockResolvedValue(false);
     render(<CreateBidForm buyers={buyers} organizations={sellers} disabled={false} onSubmit={submit} />);
     const fileInput = screen.getByLabelText('Bunker request .msg file');
+    const generatedDeadline = defaultPublishDeadlineInput(beforePublishCutoffMs);
+    expect(screen.getByLabelText('Create deadline')).toHaveValue(generatedDeadline);
     expect(fileInput).toHaveAttribute('accept', '.msg');
     expect(fileInput).not.toHaveAttribute('multiple');
 
@@ -100,7 +112,7 @@ describe('BUYER bid forms and detail editor', () => {
     expect(screen.getByLabelText('Fuel quantity 1')).toHaveValue(400);
     expect(screen.getByLabelText('Fuel grade 2')).toHaveValue('lsmgo');
     expect(screen.getByLabelText('Fuel quantity 2')).toHaveValue(15);
-    expect(screen.getByLabelText('Create deadline')).toHaveValue('');
+    expect(screen.getByLabelText('Create deadline')).toHaveValue(generatedDeadline);
     expect(screen.getByLabelText('Responsible BUYER')).toHaveValue('');
     expect(screen.getByText(/Imported values are a draft/)).toBeInTheDocument();
 

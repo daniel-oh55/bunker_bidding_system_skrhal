@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentSeoulDate, isoToInputAtOffset, isoToLocalInput, localInputToIso, millisecondsUntilNextSeoulDate, seoulDateFromInstant } from './datetime';
+import { currentSeoulDate, defaultPublishDeadlineInput, isoToInputAtOffset, isoToLocalInput, localInputToIso, millisecondsUntilNextSeoulDate, seoulDateFromInstant } from './datetime';
 
 describe('datetime-local conversion', () => {
   it('preserves null and empty deadlines', () => {
@@ -33,5 +33,25 @@ describe('datetime-local conversion', () => {
   it('calculates the next Seoul midnight without the browser timezone', () => {
     expect(millisecondsUntilNextSeoulDate(Date.parse('2026-08-30T14:59:59.900Z'))).toBe(100);
     expect(millisecondsUntilNextSeoulDate(Date.parse('2026-08-30T15:00:00.000Z'))).toBe(86_400_000);
+  });
+
+  it('uses today at 18:30 Seoul when now is before the cutoff', () => {
+    const input = defaultPublishDeadlineInput(Date.parse('2026-08-03T09:29:59.999Z'));
+    expect(localInputToIso(input)).toBe('2026-08-03T09:30:00.000Z');
+  });
+
+  it('rolls exactly 18:30 Seoul over to the next Seoul calendar day', () => {
+    const input = defaultPublishDeadlineInput(Date.parse('2026-08-03T09:30:00.000Z'));
+    expect(localInputToIso(input)).toBe('2026-08-04T09:30:00.000Z');
+  });
+
+  it('rolls after 18:30 Seoul over to the next Seoul calendar day', () => {
+    const input = defaultPublishDeadlineInput(Date.parse('2026-08-03T10:00:00.000Z'));
+    expect(localInputToIso(input)).toBe('2026-08-04T09:30:00.000Z');
+  });
+
+  it('round-trips the Seoul target instant through the runner local timezone', () => {
+    const beforeCutoff = defaultPublishDeadlineInput(Date.parse('2026-08-03T00:00:00.000Z'));
+    expect(localInputToIso(beforeCutoff)).toBe('2026-08-03T09:30:00.000Z');
   });
 });
