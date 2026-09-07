@@ -193,7 +193,7 @@ describe('BUYER workspace', () => {
     expect(await screen.findByRole('article', { name: 'MV Historical' })).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'MV Today' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ New BID' })).toBeDisabled();
-    expect(screen.getByText(/New BIDs and mail preparation are available only/)).toBeInTheDocument();
+    expect(screen.getByText(/New BIDs and Mail Intake actions are available only/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Publish BID' })).not.toBeInTheDocument();
   });
 
@@ -219,25 +219,48 @@ describe('BUYER workspace', () => {
     expect(screen.getByLabelText('Vessel / voyage')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish BID' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
-    await screen.findByText(/New BIDs and mail preparation are available only/);
+    await screen.findByText(/New BIDs and Mail Intake actions are available only/);
     expect(screen.queryByRole('heading', { name: 'Publish new BID' })).not.toBeInTheDocument();
   });
 
-  it('opens a current-date mail preparation in the primary composer and blocks only Prepare on a historical date', async () => {
+  it('opens a current-date Mail Intake editor in the primary composer and blocks Edit BID on a historical date', async () => {
     const { client } = fakeClient();
     const intake: MailIntakeItem = { id: '20000000-0000-4000-8000-000000000020', received_at: now, subject: 'MV Mail request', vessel_voyage: 'MV Prepared', port_name: 'Ulsan', delivery_window: 'Tomorrow', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null };
     const historicalIntake = { ...intake, id: '20000000-0000-4000-8000-000000000021', received_at: '2026-08-02T03:00:00.000Z', subject: 'Historical mail request' };
     client.listMailIntakeItems = vi.fn(() => Promise.resolve(ok([intake, historicalIntake])));
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Prepare BID' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit BID' }));
     const composer = screen.getByRole('region', { name: 'BID composer' });
-    expect(within(composer).getByRole('heading', { name: 'Prepare BID from mail intake' })).toBeInTheDocument();
-    expect(screen.getByText('This private prepared form does not create a BID until you explicitly Publish.')).toBeInTheDocument();
+    expect(within(composer).getByRole('heading', { name: 'Edit BID from mail intake' })).toBeInTheDocument();
+    expect(screen.getByText('This private editor does not create a BID until you explicitly Publish.')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
-    expect(await screen.findByRole('button', { name: 'Prepare BID' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Edit BID' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled();
-    expect(within(composer).queryByRole('heading', { name: 'Prepare BID from mail intake' })).not.toBeInTheDocument();
+    expect(within(composer).queryByRole('heading', { name: 'Edit BID from mail intake' })).not.toBeInTheDocument();
+  });
+
+  it('routes Direct Mail Intake Publish through publishMailIntakeBid and refreshes the authoritative lists', async () => {
+    const { client, listBids, listActiveTraderOrganizations } = fakeClient();
+    const intake: MailIntakeItem = { id: '20000000-0000-4000-8000-000000000030', received_at: now, subject: 'Direct mail request', vessel_voyage: 'MV Direct', port_name: 'Ulsan', delivery_window: 'Tomorrow', fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 5, created_at: now, updated_at: now, dismissed_at: null };
+    const seller = '30000000-0000-4000-8000-000000000030';
+    const createBid = vi.fn<BiddingClient['createBid']>();
+    const publishMailIntakeBid = vi.fn<BiddingClient['publishMailIntakeBid']>(() => Promise.resolve(ok(bid({ id: '40000000-0000-4000-8000-000000000030', vessel_voyage: 'MV Direct' }))));
+    const listMailIntakeItems = vi.fn<BiddingClient['listMailIntakeItems']>().mockResolvedValueOnce(ok([intake])).mockResolvedValue(ok([]));
+    client.createBid = createBid;
+    client.publishMailIntakeBid = publishMailIntakeBid;
+    client.listMailIntakeItems = listMailIntakeItems;
+    listActiveTraderOrganizations.mockResolvedValue(ok([{ organization_id: seller, organization_label: 'Direct SELLER' }]));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish BID' }));
+    expect(publishMailIntakeBid).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Publish BID' }));
+    await waitFor(() => expect(publishMailIntakeBid).toHaveBeenCalledOnce());
+    expect(publishMailIntakeBid).toHaveBeenCalledWith(id, expect.objectContaining({ intakeItemId: intake.id, expectedIntakeRevision: 5, responsibleBuyerUserId: null, selectedTraderOrganizationIds: [seller] }));
+    expect(createBid).not.toHaveBeenCalled();
+    await waitFor(() => expect(listBids.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() => expect(listMailIntakeItems.mock.calls.length).toBeGreaterThan(1));
   });
 
   it('clears a prepared mail composer when Seoul rolls over without changing the operational date', async () => {
@@ -246,17 +269,18 @@ describe('BUYER workspace', () => {
     client.listMailIntakeItems = vi.fn(() => Promise.resolve(ok([intake])));
     const view = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Prepare BID' }));
-    expect(screen.getByRole('heading', { name: 'Prepare BID from mail intake' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Publish BID' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit BID' }));
+    expect(screen.getByRole('heading', { name: 'Edit BID from mail intake' })).toBeInTheDocument();
+    const composer = screen.getByRole('region', { name: 'BID composer' });
+    expect(within(composer).getByRole('button', { name: 'Publish BID' })).toBeInTheDocument();
 
     mockedSeoulDate.value = '2026-08-04';
     view.rerender(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
 
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Prepare BID from mail intake' })).not.toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: 'Publish BID' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Edit BID from mail intake' })).not.toBeInTheDocument());
+    expect(within(composer).queryByRole('button', { name: 'Publish BID' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ New BID' })).toBeDisabled();
-    expect(screen.getByRole('note')).toHaveTextContent('New BIDs and mail preparation are available only for today’s Seoul operational date (2026-08-04).');
+    expect(screen.getByText('New BIDs and Mail Intake actions are available only for today’s Seoul operational date (2026-08-04).')).toBeInTheDocument();
   });
 
   it('scrolls and focuses the selected detail only after an explicit Manage bid load succeeds', async () => {

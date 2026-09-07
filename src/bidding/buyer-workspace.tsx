@@ -215,7 +215,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
   const terminalCount = bids.length - effectiveOpenCount;
   const creatorGroups = view === 'all' ? groupBidsByCreator(bids).map((group) => ({ ...group, bids: rankBids(group.bids, fullDateOrderedIds) })) : [];
   const prepareMailIntakeBid = (item: MailIntakeItem) => {
-    if (historicalDateSelected || preparedItem) return;
+    if (historicalDateSelected || preparedItem || manualComposerOpen) return;
     setManualComposerOpen(false);
     setPreparedItem(item);
   };
@@ -252,7 +252,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
         {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', selectedDate, target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
         <div className="buyer-toolbar-actions"><button type="button" className="secondary" onClick={refresh} disabled={loading || pending}>Refresh</button><button type="button" className="buyer-new-bid" disabled={pending || historicalDateSelected || !!preparedItem} title={historicalDateSelected ? `New BIDs can be published only for today's Seoul operational date (${todayDate}).` : preparedItem ? 'Close the open prepared draft before starting a new BID.' : undefined} onClick={() => setManualComposerOpen(true)}>+ New BID</button></div>
       </div>
-      {historicalDateSelected ? <p className="buyer-date-context" role="note">New BIDs and mail preparation are available only for today’s Seoul operational date ({todayDate}).</p> : null}
+      {historicalDateSelected ? <p className="buyer-date-context" role="note">New BIDs and Mail Intake actions are available only for today’s Seoul operational date ({todayDate}).</p> : null}
     </section>
     {error ? <p className="notice error" role="alert">{error.message}</p> : null}
     <section className="buyer-composer-zone" aria-label="BID composer" ref={composerZoneRef}>
@@ -278,7 +278,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
         })}</div> : <div className="buyer-bid-cards">{orderedBids.map((bid) => renderBidCard(bid, orderedBids.map((item) => item.id)))}</div>}
     </section>
     {selected ? <section className="panel bid-detail buyer-bid-detail" aria-label="Selected bid detail" aria-live="polite" ref={detailRegionRef} tabIndex={-1}><BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /></section> : null}
-    <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} reloadVersion={mailIntakeReloadVersion} canPrepare={!historicalDateSelected && !preparedItem} prepareUnavailableMessage={historicalDateSelected ? `Prepare BID is available only for today’s Seoul operational date (${todayDate}).` : preparedItem ? 'Close the open prepared draft before preparing another BID.' : undefined} onPrepare={prepareMailIntakeBid} onAuthorizationFailure={onAuthorizationFailure} />
+    <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} reloadVersion={mailIntakeReloadVersion} canEdit={!historicalDateSelected && !preparedItem && !manualComposerOpen} editUnavailableMessage={historicalDateSelected ? `Edit BID is available only for today’s Seoul operational date (${todayDate}).` : 'Close the open BID editor before editing another Mail Intake item.'} canPublish={!historicalDateSelected && !preparedItem && !manualComposerOpen} publishUnavailableMessage={historicalDateSelected ? `Publish BID is available only for today’s Seoul operational date (${todayDate}).` : 'Close the open BID editor before directly publishing another Mail Intake item.'} activeSellerOrganizationIds={organizations.map((organization) => organization.organization_id)} onPrepare={prepareMailIntakeBid} onPublish={publishPrepared} onAuthorizationFailure={onAuthorizationFailure} />
     {membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id)} /> : null}
   </div>;
 }

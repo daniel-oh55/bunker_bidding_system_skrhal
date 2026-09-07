@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { MailIntakeQueue as OperationalDateMailIntakeQueue } from './mail-intake-queue';
-import type { BiddingClient, BiddingResult } from './bidding-client';
+import type { BiddingClient, BiddingResult, PreparedMailIntakeBidInput } from './bidding-client';
 import type { MailIntakeItem, WorkflowErrorKind } from './types';
 
 const membershipId = '10000000-0000-4000-8000-000000000001';
@@ -69,16 +69,56 @@ describe('BUYER mail intake queue', () => {
     expect(screen.getAllByText('Not extracted')).toHaveLength(3);
     expect(screen.getByText('None extracted')).toBeInTheDocument();
     expect(screen.getByText('Received time is source metadata, not the bidding deadline.')).toBeInTheDocument();
-    expect(screen.getByText('Items prepare a private BUYER draft. Only explicit Publish creates an authoritative BID.')).toBeInTheDocument();
+    expect(screen.getByText('Only explicit BUYER Publish creates an authoritative BID. Gmail never auto-publishes.')).toBeInTheDocument();
     expect(screen.queryByText(/secret-provider|secret-box|secret-message/)).not.toBeInTheDocument();
   });
 
-  it('opens the exact pending item as a private prepared BID draft', async () => {
+  it('opens the exact pending item in the private Edit BID workflow', async () => {
     const onPrepare = vi.fn();
     const { client } = queueClient(vi.fn(() => Promise.resolve(ok([item()]))));
     render(<MailIntakeQueue client={client} membershipId={membershipId} onPrepare={onPrepare} onAuthorizationFailure={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Prepare BID' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit BID' }));
     expect(onPrepare).toHaveBeenCalledWith(item());
+  });
+
+  it('enables clean complete candidates only after active SELLERs are loaded, then requires exact target confirmation', async () => {
+    const onPublish = vi.fn().mockResolvedValue(true);
+    const listMailIntakeItems = vi.fn<BiddingClient['listMailIntakeItems']>().mockResolvedValueOnce(ok([item({ warnings: [] })])).mockResolvedValueOnce(ok([]));
+    const { client } = queueClient(listMailIntakeItems);
+    render(<MailIntakeQueue client={client} membershipId={membershipId} activeSellerOrganizationIds={[membershipId, nextMembershipId]} onPublish={onPublish} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish BID' }));
+    expect(onPublish).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Confirm Publish BID' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onPublish).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Publish BID' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Publish BID' }));
+    await waitFor(() => expect(onPublish).toHaveBeenCalledOnce());
+    expect(onPublish.mock.calls[0]![0]).toMatchObject({ intakeItemId: itemId, expectedIntakeRevision: 1, vesselVoyage: 'MV Horizon / 024', portName: 'Busan', deliveryWindow: '22-23 Aug 2026', fuelGrades: ['vlsfo', 'lsmgo'], quantities: [500, 25], responsibleBuyerUserId: null, selectedTraderOrganizationIds: [membershipId, nextMembershipId] });
+    expect(listMailIntakeItems).toHaveBeenCalledTimes(2);
+  });
+
+  it('computes the Direct Publish next-18:30 Seoul deadline at confirmation time', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-03T09:30:00.000Z'));
+    const onPublish = vi.fn<(input: PreparedMailIntakeBidInput) => Promise<boolean>>(() => Promise.resolve(false));
+    const { client } = queueClient(vi.fn(() => Promise.resolve(ok([item({ warnings: [] })]))));
+    render(<MailIntakeQueue client={client} membershipId={membershipId} activeSellerOrganizationIds={[membershipId]} onPublish={onPublish} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish BID' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Publish BID' }));
+    await waitFor(() => expect(onPublish).toHaveBeenCalledOnce());
+    expect(onPublish.mock.calls[0]![0].deadlineAt).toBe('2026-08-04T09:30:00.000Z');
+  });
+
+  it('blocks warning-bearing, incomplete, and no-SELLER candidates from Direct Publish while retaining Edit BID', async () => {
+    const incomplete = item({ id: nextMembershipId, warnings: [], vessel_voyage: null });
+    const noSellers = item({ id: '30000000-0000-4000-8000-000000000001', warnings: [], subject: 'Clean candidate without sellers' });
+    const { client } = queueClient(vi.fn(() => Promise.resolve(ok([item(), incomplete, noSellers]))));
+    render(<MailIntakeQueue client={client} membershipId={membershipId} activeSellerOrganizationIds={[]} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByText('Clean candidate without sellers');
+    expect(screen.getAllByRole('button', { name: 'Publish BID' }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole('button', { name: 'Edit BID' })).toHaveLength(3);
+    expect(screen.getByText('Use Edit BID to review these warnings before publishing.')).toBeInTheDocument();
+    expect(screen.getByText('At least one active SELLER is required before publishing.')).toBeInTheDocument();
   });
 
   it('manually refreshes the authoritative pending queue and invalidates open confirmation', async () => {
@@ -94,6 +134,28 @@ describe('BUYER mail intake queue', () => {
     expect(await screen.findByText('Revision 2')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Confirm dismiss for all BUYERs' })).not.toBeInTheDocument();
     expect(dismissMailIntakeItem).not.toHaveBeenCalled();
+  });
+
+  it('clears a Direct Publish confirmation when the queue reloads', async () => {
+    const revised = item({ warnings: [], revision: 2, updated_at: '2026-08-21T04:00:00.000Z' });
+    const listMailIntakeItems = vi.fn<BiddingClient['listMailIntakeItems']>().mockResolvedValueOnce(ok([item({ warnings: [] })])).mockResolvedValueOnce(ok([revised]));
+    const { client } = queueClient(listMailIntakeItems);
+    render(<MailIntakeQueue client={client} membershipId={membershipId} activeSellerOrganizationIds={[membershipId]} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish BID' }));
+    expect(screen.getByRole('button', { name: 'Confirm Publish BID' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh mail intake' }));
+    await waitFor(() => expect(listMailIntakeItems).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Revision 2')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirm Publish BID' })).not.toBeInTheDocument();
+  });
+
+  it('clears a Direct Publish confirmation after a selected-date change', async () => {
+    const { client } = queueClient(vi.fn(() => Promise.resolve(ok([item({ warnings: [] })]))));
+    const view = render(<OperationalDateMailIntakeQueue client={client} membershipId={membershipId} selectedBidDate="2026-08-21" activeSellerOrganizationIds={[membershipId]} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish BID' }));
+    expect(screen.getByRole('button', { name: 'Confirm Publish BID' })).toBeInTheDocument();
+    view.rerender(<OperationalDateMailIntakeQueue client={client} membershipId={membershipId} selectedBidDate="2026-08-22" activeSellerOrganizationIds={[membershipId]} onAuthorizationFailure={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirm Publish BID' })).not.toBeInTheDocument());
   });
 
   it('requires target-bound two-step dismissal and supports cancel', async () => {
