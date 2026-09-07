@@ -162,8 +162,8 @@ export function PreparedMailIntakeBidForm({ item, buyers, organizations, disable
   };
 
   return <section className="panel prepared-mail-bid" aria-labelledby="prepared-mail-bid-heading">
-    <header className="prepared-mail-bid-heading"><div><p className="eyebrow">BUYER preparation</p><h2 id="prepared-mail-bid-heading">Prepare BID from mail intake</h2></div><button type="button" className="secondary" disabled={disabled} onClick={onClose}>Close prepared draft</button></header>
-    <div className="mail-intake-boundary"><p>This private prepared form does not create a BID until you explicitly Publish.</p><p>Received time is source metadata, not the bidding deadline.</p></div>
+    <header className="prepared-mail-bid-heading"><div><p className="eyebrow">BUYER review</p><h2 id="prepared-mail-bid-heading">Edit BID from mail intake</h2></div><button type="button" className="secondary" disabled={disabled} onClick={onClose}>Close BID editor</button></header>
+    <div className="mail-intake-boundary"><p>This private editor does not create a BID until you explicitly Publish.</p><p>Received time is source metadata, not the bidding deadline.</p></div>
     {item.warnings.length ? <aside className="notice warning mail-intake-warnings"><strong>Extraction warnings — review before Publish</strong><ul>{item.warnings.map((warning, index) => <li key={`${item.id}:prepared-warning:${index}`}>{warning}</li>)}</ul></aside> : null}
     <form className="operation-form buyer-create-form" onSubmit={(event) => void submit(event)}>
       <section className="buyer-create-manual" aria-labelledby="prepared-bid-details-heading">

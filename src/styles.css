@@ -227,8 +227,9 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .mail-intake-candidates dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; font-weight: 700; line-height: 1.4; }
 .mail-intake-warnings { margin: 0 var(--space-4) var(--space-4); }
 .mail-intake-warnings ul { margin: var(--space-1) 0 0; padding-left: 20px; }
-.mail-intake-dismiss { display: flex; justify-content: end; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.mail-intake-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-surface-subtle); }
 .mail-intake-dismiss-button { border-color: #c78d96; color: var(--color-danger); }
+.mail-intake-publish-note { margin: 0 var(--space-4) var(--space-4); color: var(--color-muted); font-size: .84rem; }
 .mail-intake-confirmation { width: 100%; padding: var(--space-3); border: 1px solid #d99ca5; border-radius: var(--radius-sm); color: #751c29; background: var(--color-danger-surface); }
 .mail-intake-confirmation p { margin: 0 0 var(--space-2); font-weight: 700; }
 .mail-intake-confirmation > div { display: flex; flex-wrap: wrap; gap: var(--space-2); }

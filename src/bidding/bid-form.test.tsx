@@ -30,6 +30,8 @@ describe('BUYER bid forms and detail editor', () => {
     vi.spyOn(Date, 'now').mockReturnValue(beforePublishCutoffMs);
     const submit = vi.fn().mockResolvedValue(true);
     render(<PreparedMailIntakeBidForm item={preparedItem} buyers={buyers} organizations={[{ organization_id: membership, organization_label: 'First SELLER' }, { organization_id: buyerId, organization_label: 'Second SELLER' }]} disabled={false} onSubmit={submit} onClose={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: 'Edit BID from mail intake' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close BID editor' })).toBeInTheDocument();
     expect(screen.getByText('Check parsed delivery')).toBeInTheDocument();
     expect(screen.getByLabelText('Prepared vessel / voyage')).toHaveValue('Parsed vessel');
     expect(screen.getByLabelText('Prepared port')).toHaveValue('Parsed port');
