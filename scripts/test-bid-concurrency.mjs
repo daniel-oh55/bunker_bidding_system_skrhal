@@ -76,6 +76,10 @@ async function closeBid(client, fixture, bidId) {
   await asBuyer(client, fixture, () => client.query('select public.close_bid($1, $2, 1)', [fixture.membershipId, bidId]));
 }
 
+async function cancelBid(client, fixture, bidId) {
+  await asBuyer(client, fixture, () => client.query('select public.cancel_bid($1, $2, 1)', [fixture.membershipId, bidId]));
+}
+
 async function waitForLock(observer, waitingPid, blockingPid, raceName) {
   const until = Date.now() + 5_000;
   while (Date.now() < until) {
@@ -241,6 +245,53 @@ async function race({ name, fixture, clients, pids, firstQuery, secondQuery, exp
   }
 }
 
+async function archiveRace({ fixture, clients, pids }) {
+  const name = 'archive-vs-archive';
+  const bidId = await createBid(clients.observer, fixture, name);
+  await cancelBid(clients.observer, fixture, bidId);
+  const expectedRevision = 2;
+  let firstOpen = false;
+  let secondOpen = false;
+  try {
+    await beginAsBuyer(clients.a, fixture); firstOpen = true;
+    const { rows: winnerRows } = await clients.a.query(
+      'select (public.archive_bid($1, $2, $3)).revision as revision',
+      [fixture.membershipId, bidId, expectedRevision],
+    );
+    assert(Number(winnerRows[0]?.revision) === expectedRevision + 1, `${name}: first archive did not stage one revision increment.`);
+
+    await beginAsBuyer(clients.b, fixture); secondOpen = true;
+    const pendingSecond = clients.b.query(
+      'select public.archive_bid($1, $2, $3)',
+      [fixture.membershipId, bidId, expectedRevision],
+    );
+    pendingSecond.catch(() => {});
+    await waitForLock(clients.observer, pids.b, pids.a, name);
+
+    await clients.a.query('commit'); firstOpen = false;
+    const loser = await outcome(pendingSecond);
+    assert(!loser.ok && loser.error.code === '40001', `${name}: stale archive must receive 40001, got ${loser.ok ? 'success' : loser.error.code}`);
+    await clients.b.query('rollback'); secondOpen = false;
+
+    const { rows } = await clients.observer.query(
+      `select bid.revision, bid.status::text as status, bid.archived_at,
+              (select count(*)::int from app_private.bid_audit_events as event where event.bid_id = bid.id and event.event_type = 'archived') as archived_events,
+              (select count(*)::int from app_private.bid_audit_events as event where event.bid_id = bid.id and event.resulting_revision = bid.revision) as final_revision_events
+       from app_private.bids as bid
+       where bid.id = $1`,
+      [bidId],
+    );
+    const result = rows[0];
+    assert(Number(result?.revision) === expectedRevision + 1, `${name}: final revision did not increase exactly once.`);
+    assert(result.status === 'cancelled', `${name}: archive changed the terminal raw status.`);
+    assert(result.archived_at instanceof Date, `${name}: final archived_at was not set.`);
+    assert(result.archived_events === 1 && result.final_revision_events === 1, `${name}: final revision must have exactly one archived audit event.`);
+  } finally {
+    if (firstOpen) await rollback(clients.a);
+    if (secondOpen) await rollback(clients.b);
+  }
+}
+
 async function cleanup(client, fixture) {
   await client.query('begin');
   try {
@@ -279,9 +330,10 @@ try {
   await race({ name: 'update-vs-update', fixture, clients, pids, expectedEvent: 'details_updated', expectedStatus: 'open', expectedVessel: 'A', expectedQuantity: 11, firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query("select public.update_bid($1, $2, $3, 'B', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[12]::numeric[])", [fixture.membershipId, id, rev]) });
   await race({ name: 'update-vs-close', fixture, clients, pids, expectedEvent: 'details_updated', expectedStatus: 'open', expectedVessel: 'A', expectedQuantity: 11, firstQuery: (id, rev) => clients.a.query("select public.update_bid($1, $2, $3, 'A', 'Busan', 'window', clock_timestamp() + interval '2 days', array['vlsfo'], array[11]::numeric[])", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.close_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
   await race({ name: 'reopen-vs-cancel', fixture, clients, pids, expectedEvent: 'reopened', expectedStatus: 'open', expectedVessel: `race-reopen-vs-cancel`, expectedQuantity: 10, firstQuery: (id, rev) => clients.a.query("select public.reopen_bid($1, $2, $3, clock_timestamp() + interval '2 days')", [fixture.membershipId, id, rev]), secondQuery: (id, rev) => clients.b.query('select public.cancel_bid($1, $2, $3)', [fixture.membershipId, id, rev]) });
+  await archiveRace({ fixture, clients, pids });
   await publishWinsDeactivationRace({ fixture, clients, pids });
   await deactivationWinsPublishRace({ fixture, clients, pids });
-  console.log('Bid concurrency tests passed: 5 deterministic races.');
+  console.log('Bid concurrency tests passed: 6 deterministic races.');
 } catch (error) {
   primaryError = error;
 } finally {
