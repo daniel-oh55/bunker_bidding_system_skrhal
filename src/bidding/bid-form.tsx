@@ -1,7 +1,7 @@
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { parseBunkerRequest, type BunkerRequestDraft } from './bid-intake';
 import type { BidInput, PreparedMailIntakeBidInput } from './bidding-client';
-import { localInputToIso } from './datetime';
+import { defaultPublishDeadlineInput, localInputToIso } from './datetime';
 import { readMsgFile } from './msg-intake';
 import { fuelGrades, type ActiveBuyer, type FuelGrade, type MailIntakeItem, type TraderOrganization } from './types';
 
@@ -28,7 +28,7 @@ export function CreateBidForm({ buyers, organizations, disabled, onSubmit, inlin
   const [vessel, setVessel] = useState('');
   const [port, setPort] = useState('');
   const [window, setWindow] = useState('');
-  const [deadline, setDeadline] = useState('');
+  const [deadline, setDeadline] = useState(defaultPublishDeadlineInput);
   const [responsible, setResponsible] = useState('');
   const [msgDraft, setMsgDraft] = useState<BunkerRequestDraft | null>(null);
   const [msgError, setMsgError] = useState('');
@@ -104,7 +104,7 @@ export function CreateBidForm({ buyers, organizations, disabled, onSubmit, inlin
       setVessel('');
       setPort('');
       setWindow('');
-      setDeadline('');
+      setDeadline(defaultPublishDeadlineInput());
       setResponsible('');
       setMsgDraft(null);
       setMsgError('');
@@ -125,7 +125,7 @@ export function PreparedMailIntakeBidForm({ item, buyers, organizations, disable
   const [vessel, setVessel] = useState(item.vessel_voyage ?? '');
   const [port, setPort] = useState(item.port_name ?? '');
   const [window, setWindow] = useState(item.delivery_window ?? '');
-  const [deadline, setDeadline] = useState('');
+  const [deadline, setDeadline] = useState(defaultPublishDeadlineInput);
   const [responsible, setResponsible] = useState('');
   const [selectedSellerIds, setSelectedSellerIds] = useState(() => new Set(organizations.map((organization) => organization.organization_id)));
   const sellerSelectionInitialized = useRef(organizations.length > 0);

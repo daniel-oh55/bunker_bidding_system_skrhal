@@ -83,8 +83,6 @@
 ## Requested post-V1 / V1.1 backlog
 
 - BUYER-visible removal of unnecessary BIDs, subject to an audit-preserving deletion/archive design.
-- Default editable BUYER Publish deadline UX around 18:30 Seoul time.
-- SELLER participant checkbox layout/alignment improvement.
 - Mail Intake direct Publish and a rename of the current Prepare action toward Edit BID, subject to separate safety/default design.
 - Expanded editing of published BID commercial terms/participants, subject to separate quote-invalidation/version semantics.
 - Improved discoverability of the existing Award/final SELLER selection flow.
@@ -97,6 +95,7 @@
 
 ## Completed refinements
 
+- Manual and prepared-mail Publish forms default to the next 18:30 Asia/Seoul target, rolling to the next Seoul calendar day at or after the cutoff while remaining freely editable by the BUYER. This is presentation/default UX only; the server remains authoritative for requiring a future deadline. SELLER participant checkboxes now use compact, aligned presentation without changing the submitted selected-active-SELLER scope authority.
 - The BUYER main bid presentation is a full-width responsive operational board: each bid card places its server-returned summary above a per-bid SELLER comparison loaded through `listBidSellerComparisonForBuyers`. Current scoped SELLERs without quotes display `Awaiting quote` with dashes and never rank, affect price gaps, or become award candidates. Quoted rows retain the authoritative quote values and eligibility rules; retained quotes remain visible after scope revoke or organization inactivation with explicit metadata. Awarded cards use authoritative Bid award fields, and cancelled cards show no award candidate. Full Manage bid detail continues to use the existing access, actual-quote, and audit RPCs. Board comparison loads retain bounded concurrency, isolated non-authorization failures, fail-closed authorization handling, and stale-generation rejection.
 - Final BUYER/TRADER workspace presentation polish strengthens operational hierarchy, quote comparison scanning, editor/read-only distinction, terminal results, responsive behavior, and keyboard/focus presentation without changing backend, authorization, deadline, award, quote, or Realtime contracts.
 - The BUYER All bids view groups and locally collapses bids by immutable creator; Created by me, responsible-BUYER filtering, and all authorization, lifecycle, RPC, and Realtime contracts remain unchanged.

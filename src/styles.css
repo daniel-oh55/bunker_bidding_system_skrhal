@@ -254,6 +254,10 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-create-fields, .buyer-detail-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3) var(--space-4); }
 .operation-form .buyer-fuel-block { min-width: 0; margin: var(--space-1) 0 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
 .buyer-fuel-block legend { padding: 0 var(--space-2); color: var(--color-text); font-weight: 800; }
+.operation-form .prepared-seller-selection { display: grid; min-width: 0; gap: var(--space-3); }
+.prepared-seller-selection > div { display: grid; gap: var(--space-2); }
+.operation-form .prepared-seller-selection label { display: flex; align-items: center; gap: var(--space-2); }
+.operation-form .prepared-seller-selection input[type="checkbox"] { display: inline-block; flex: 0 0 auto; width: auto; height: auto; margin: 0; padding: 0; border: initial; border-radius: initial; background: initial; box-shadow: none; }
 .buyer-form-helper, .buyer-section-helper { margin: 0; color: var(--color-muted); font-size: .86rem; line-height: 1.5; }
 .buyer-create-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); padding-top: var(--space-1); }
 .buyer-create-actions button { min-width: 140px; }
