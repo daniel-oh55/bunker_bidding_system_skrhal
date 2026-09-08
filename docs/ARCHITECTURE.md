@@ -3,7 +3,7 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: aligned repository and Production migration histories at eighteen migrations, ending `20260903055531_buyer_personal_bid_order.sql`, plus pgTAP tests
+- Supabase access: twenty repository migrations plus pgTAP tests; Production remains at eighteen migrations ending `20260903055531_buyer_personal_bid_order.sql`, with the two BID Archive migrations pending separate owner approval
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()`, an integrated RPC-only BUYER/TRADER workspace with active-BUYER mail-intake list/explicit-Publish/dismiss actions and frontend-prepared form state derived from listed normalized candidates, and a private Realtime invalidation adapter
 - Local intake: a BUYER form-local `.msg` binary adapter validates extension, size, and CFBF signature before browser parsing; a separate pure parser converts only plain-text subject/body into advisory candidates and warnings
@@ -21,7 +21,8 @@
 - The browser does not receive direct access to private authorization tables.
 - The loopback-only integration harness uses elevated local access only to prepare and delete fixtures. Its sign-in and RPC assertions use the normal publishable client.
 - Bid records, fuel items, and audit events are private RLS-enabled tables. Public bid RPCs verify the selected active BUYER membership server-side and use row locks plus revisions for every non-create mutation.
-- Personal BUYER BID ordering is a distinct private presentation subsystem: state/preferences are keyed by server-derived authenticated user plus BID date, protected by RLS and no direct browser grants, and exposed through narrow active-BUYER GET/SAVE RPCs. Its optimistic revision serializes complete-order writes without mutating BID rows, BID revisions/audits, quotes, responses, participants, or business Realtime. The UI applies personal rank within original creator groups for All-bids and globally for filtered views.
+- `bids.archived_at` is a retained state orthogonal to raw/effective lifecycle status. A database constraint limits non-null values to raw `cancelled`/`awarded`, a trigger makes the transition one-way, and the authenticated-only Archive RPC supplies verified-actor, row-lock, revision, and audit enforcement. Normal BUYER listing selects null archive timestamps; a narrow history RPC selects non-null timestamps with the same date/view semantics. The BID result shape and all TRADER RPCs remain unchanged.
+- Personal BUYER BID ordering is a distinct private presentation subsystem: state/preferences are keyed by server-derived authenticated user plus BID date, protected by RLS and no direct browser grants, and exposed through narrow active-BUYER GET/SAVE RPCs. Its optimistic revision serializes complete full-date order writes without mutating BID rows, BID revisions/audits, quotes, responses, participants, or business Realtime. Archived BID IDs remain in the full-date server sequence and stored preferences even when normal BUYER listing hides those cards. The UI applies personal rank within original creator groups for All-bids and globally for filtered views.
 - Audit events are append-only and contain server-generated before/after snapshots, actor membership/organization/role snapshots, and the resulting revision.
 - Bid/TRADER scope is a private current access relation. A separate private retained response relation records `awaiting`, `quoted`, and `gave_up`; neither response existence nor status is authorization. Quotes, response records, and their audits are RLS-enabled with no browser policies.
 - Response mutation and award lock BID → response → quote where applicable, re-evaluate active actor/scope/current Seoul date/effective state server-side, calculate totals from stored bid quantities, and append server-generated audit snapshots. `gave_up` retains any quote but makes it ineligible for comparison/award.
@@ -53,6 +54,7 @@
 - Realtime service is enabled in Production with public channel access disabled, so those Broadcast topics are enforced as private channels.
 - The Broadcast application payload is only `{"kind":"workspace_changed"}` or `{"kind":"access_changed"}`; Realtime adds its own opaque delivery ID. No bid, quote, organization, or identity data is placed in the application payload.
 - Bid-specific visibility and mutation authority remain in the existing RPC/server functions. A bid-scope revoke sends one final invalidation to the removed organization, then later changes to that bid no longer fan out there. The active member can still join its organization topic and receive notifications for other current bid scopes.
+- Archive updates the existing BID row, so `broadcast_bid_workspace_changed()` sends the existing generic, data-free `workspace_changed` notification to `workspace:buyer` and every currently scoped `workspace:trader:<trader_organization_id>` topic for that BID. Archive creates no Realtime topic or payload shape: the application payload contains no BID ID, Archive state, or other business detail. This generic BID-row invalidation does not change TRADER visibility, authorization, scope, or quote semantics.
 
 ## Enforced access contracts
 
@@ -69,7 +71,7 @@ PR #47 adds a private operational-date authority alongside the existing lifecycl
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- repository and Production histories are aligned at eighteen migrations through `20260903055531_buyer_personal_bid_order.sql`; the controlled alignment did not create synthetic BID or mail business rows
+- the repository contains twenty migrations through `20260907093100_bid_archive_retention.sql`; Production remains at eighteen through `20260903055531_buyer_personal_bid_order.sql` until the two Archive migrations receive separate owner approval, and this PR performs no remote apply or deployment
 - retained seller response states are `awaiting`, `quoted`, and `gave_up`; response state never authorizes access, and explicit BID scope remains the authority
 - browser access remains RPC-only and publishable-key-only; the PR #44 frontend is merged and its merged-main Vercel deployment completed successfully, while no direct browser-authenticated Production UI smoke of the rendered `Awaiting quote` row is claimed
 - PR #47 Production verification preserved the pre-apply baseline and reviewed security boundaries. A real authenticated BUYER browser created and normally cancelled one retained `PR47 PROD SMOKE` BID with five active SELLER scope snapshots and matching created/cancelled audits. Authenticated WORLD FUEL browser verification subsequently covered TRADER quote submit, update, GIVE UP, and resume paths under the seller-response model.
