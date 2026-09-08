@@ -54,7 +54,7 @@
 - Realtime service is enabled in Production with public channel access disabled, so those Broadcast topics are enforced as private channels.
 - The Broadcast application payload is only `{"kind":"workspace_changed"}` or `{"kind":"access_changed"}`; Realtime adds its own opaque delivery ID. No bid, quote, organization, or identity data is placed in the application payload.
 - Bid-specific visibility and mutation authority remain in the existing RPC/server functions. A bid-scope revoke sends one final invalidation to the removed organization, then later changes to that bid no longer fan out there. The active member can still join its organization topic and receive notifications for other current bid scopes.
-- Archive updates the existing BID row and therefore reuses the data-free BUYER workspace invalidation. It creates no topic or payload shape and exposes no BID identity or Archive detail through Broadcast.
+- Archive updates the existing BID row, so `broadcast_bid_workspace_changed()` sends the existing generic, data-free `workspace_changed` notification to `workspace:buyer` and every currently scoped `workspace:trader:<trader_organization_id>` topic for that BID. Archive creates no Realtime topic or payload shape: the application payload contains no BID ID, Archive state, or other business detail. This generic BID-row invalidation does not change TRADER visibility, authorization, scope, or quote semantics.
 
 ## Enforced access contracts
 
