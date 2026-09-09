@@ -14,6 +14,55 @@ type Rpc = BiddingRpcClient['rpc'];
 function harness(data: unknown = bid, error: { code?: string | null } | null = null) { const rpc = vi.fn<Rpc>(() => Promise.resolve({ data, error })); return { rpc, client: createSupabaseBiddingClient({ rpc }) }; }
 
 describe('BiddingClient RPC adapter', () => {
+  it.each(['all', 'created_by_me', 'responsible_buyer'] as const)('maps archived list date and %s view exactly', async (view) => {
+    const retained = { ...bid, raw_status: 'cancelled', effective_status: 'cancelled', revision: 4, cancelled_at: now };
+    const { client, rpc } = harness([retained]);
+    expect(await client.listArchivedBids(id, '2026-08-03', view, other)).toEqual({ data: [retained], error: null });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('list_archived_bids', {
+      p_actor_membership_id: id, p_bid_date: '2026-08-03', p_view: view,
+      p_responsible_buyer_user_id: view === 'responsible_buyer' ? other : null,
+    });
+  });
+
+  it('sends a null missing responsible target and accepts an empty archive list', async () => {
+    const { client, rpc } = harness([]);
+    expect(await client.listArchivedBids(id, '2026-08-03', 'responsible_buyer')).toEqual({ data: [], error: null });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('list_archived_bids', {
+      p_actor_membership_id: id, p_bid_date: '2026-08-03', p_view: 'responsible_buyer', p_responsible_buyer_user_id: null,
+    });
+  });
+
+  it('maps archive with only membership, BID and displayed revision and reuses the BID response', async () => {
+    const retained = { ...bid, raw_status: 'cancelled', effective_status: 'cancelled', revision: 4, cancelled_at: now };
+    const { client, rpc } = harness(retained);
+    expect(await client.archiveBid(other, id, 3)).toEqual({ data: retained, error: null });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('archive_bid', { p_actor_membership_id: other, p_bid_id: id, p_expected_revision: 3 });
+  });
+
+  it('fails closed on malformed archive list and mutation responses', async () => {
+    for (const data of [null, {}, [bid], { ...bid, revision: 'bad' }, { ...bid, raw_status: 'archived' }]) {
+      expect(await harness(data).client.archiveBid(id, other, 3)).toMatchObject({ data: null, error: { kind: 'protocol' } });
+    }
+    for (const data of [null, bid, [null], [{ ...bid, bid_date: 'bad' }], [bid, { ...bid, revision: 0 }]]) {
+      expect(await harness(data).client.listArchivedBids(id, '2026-08-03', 'all')).toMatchObject({ data: null, error: { kind: 'protocol' } });
+    }
+  });
+
+  it.each([['42501', 'authorization'], ['40001', 'conflict'], ['55000', 'lifecycle'], ['P0002', 'not_found'], ['22023', 'validation'], ['unexpected', 'unknown']])('maps archive server error %s', async (code, kind) => {
+    const { client } = harness(null, { code });
+    expect(await client.archiveBid(id, other, 3)).toMatchObject({ data: null, error: { kind, code } });
+    expect(await client.listArchivedBids(id, '2026-08-03', 'all')).toMatchObject({ data: null, error: { kind, code } });
+  });
+
+  it('maps rejected archive requests without exposing transport details', async () => {
+    const { client, rpc } = harness();
+    rpc.mockRejectedValue(new Error('private transport details'));
+    for (const result of [await client.archiveBid(id, other, 3), await client.listArchivedBids(id, '2026-08-03', 'all')]) {
+      expect(result).toMatchObject({ data: null, error: { kind: 'unknown' } });
+      expect(result.error?.message).not.toContain('private');
+    }
+  });
+
   it('maps personal BID ordering without a caller-selected user identity', async () => {
     const get = harness([bidOrder]);
     expect(await get.client.getMyBidOrder(id, '2026-08-03')).toEqual({ data: bidOrder, error: null });

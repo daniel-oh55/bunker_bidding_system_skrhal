@@ -19,16 +19,190 @@ const boardComparison = (currentQuote: Quote): BuyerSellerComparison => ({ bid_i
 const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
 function fakeClient(bids: Bid[] = [bid()]) {
   const listBids = vi.fn<BiddingClient['listBids']>(() => Promise.resolve(ok(bids)));
+  const listArchivedBids = vi.fn<BiddingClient['listArchivedBids']>(() => Promise.resolve(ok<Bid[]>([])));
+  const archiveBid = vi.fn<BiddingClient['archiveBid']>(() => Promise.resolve(ok(bid({ revision: 4 }))));
   const listActiveBuyers = vi.fn(() => Promise.resolve(ok<ActiveBuyer[]>([{ user_id: target, display_label: 'Target buyer', active_buyer_membership_count: 1 }])));
   const listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok<TraderOrganization[]>([])));
   const getMyBidOrder = vi.fn(() => Promise.resolve(ok<BuyerBidOrder>({ revision: 0, ordered_bid_ids: bids.map((current) => current.id) })));
   const saveMyBidOrder = vi.fn((_m: string, _d: string, revision: number, ids: string[]) => Promise.resolve(ok<BuyerBidOrder>({ revision: revision + 1, ordered_bid_ids: ids })));
-  const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, getMyBidOrder, saveMyBidOrder, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), publishMailIntakeBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listBidSellerComparisonForBuyers: () => Promise.resolve(ok<BuyerSellerComparison[]>([])), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), submitQuoteResponse: () => Promise.resolve(ok<Quote>(null as never)), giveUpQuoteResponse: () => Promise.resolve(ok(null as never)) };
-  return { client, listBids, listActiveBuyers, listActiveTraderOrganizations, getMyBidOrder, saveMyBidOrder };
+  const client: BiddingClient = { listMailIntakeItems: () => Promise.resolve(ok([])), dismissMailIntakeItem: () => Promise.resolve(ok(null as never)), listActiveBuyers, listBids, listArchivedBids, archiveBid, getMyBidOrder, saveMyBidOrder, listBidAudit: () => Promise.resolve(ok<BidAuditEvent[]>([])), createBid: () => Promise.resolve(ok<Bid>(null as never)), publishMailIntakeBid: () => Promise.resolve(ok<Bid>(null as never)), updateBid: () => Promise.resolve(ok<Bid>(null as never)), reassignBid: () => Promise.resolve(ok<Bid>(null as never)), closeBid: () => Promise.resolve(ok<Bid>(null as never)), reopenBid: () => Promise.resolve(ok<Bid>(null as never)), cancelBid: () => Promise.resolve(ok<Bid>(null as never)), listActiveTraderOrganizations, listBidTraderAccess: () => Promise.resolve(ok<BidTraderAccess[]>([])), grantBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), revokeBidTraderAccess: () => Promise.resolve(ok<Bid>(null as never)), listBidSellerComparisonForBuyers: () => Promise.resolve(ok<BuyerSellerComparison[]>([])), listQuotesForBuyers: () => Promise.resolve(ok<Quote[]>([])), awardBid: () => Promise.resolve(ok<Bid>(null as never)), listTraderBids: () => Promise.resolve(ok<TraderBid[]>([])), listMyQuotes: () => Promise.resolve(ok<Quote[]>([])), submitQuoteResponse: () => Promise.resolve(ok<Quote>(null as never)), giveUpQuoteResponse: () => Promise.resolve(ok(null as never)) };
+  return { client, listBids, listArchivedBids, archiveBid, listActiveBuyers, listActiveTraderOrganizations, getMyBidOrder, saveMyBidOrder };
 }
 
 describe('BUYER workspace', () => {
   beforeEach(() => { mockedSeoulDate.value = '2026-08-03'; });
+
+  it.each(['all', 'created_by_me', 'responsible_buyer'] as const)('preserves date and %s semantics across modes, Refresh and Realtime', async (view) => {
+    const { client, listBids, listArchivedBids, saveMyBidOrder } = fakeClient();
+    const listArchived = listArchivedBids;
+    const onAuthorizationFailure = vi.fn();
+    const { rerender } = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
+    await screen.findByRole('article', { name: 'MV Buyer' });
+    fireEvent.change(screen.getByLabelText('Operational date'), { target: { value: '2026-08-02' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
+    if (view !== 'all') fireEvent.click(screen.getByRole('radio', { name: view === 'created_by_me' ? 'Created by me' : 'By BUYER' }));
+    if (view === 'responsible_buyer') fireEvent.change(screen.getByLabelText('Responsible BUYER filter'), { target: { value: target } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
+    const args = [id, '2026-08-02', view, view === 'responsible_buyer' ? target : undefined];
+    expect(listBids).toHaveBeenLastCalledWith(...args);
+    const activeCalls = listBids.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Archived history' }));
+    await waitFor(() => expect(listArchived).toHaveBeenCalledExactlyOnceWith(...args));
+    expect(screen.getByLabelText('Operational date')).toHaveValue('2026-08-02');
+    if (view === 'responsible_buyer') expect(screen.getByLabelText('Responsible BUYER filter')).toHaveValue(target);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(listArchived).toHaveBeenCalledTimes(2));
+    rerender(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} reloadVersion={1} />);
+    await waitFor(() => expect(listArchived).toHaveBeenCalledTimes(3));
+    expect(listArchived).toHaveBeenLastCalledWith(...args);
+    expect(listBids).toHaveBeenCalledTimes(activeCalls);
+    fireEvent.click(screen.getByRole('button', { name: 'Active bids' }));
+    await waitFor(() => expect(listBids).toHaveBeenCalledTimes(activeCalls + 1));
+    expect(listBids).toHaveBeenLastCalledWith(...args);
+    rerender(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} reloadVersion={2} />);
+    await waitFor(() => expect(listBids).toHaveBeenCalledTimes(activeCalls + 2));
+    expect(listArchived).toHaveBeenCalledTimes(3);
+    expect(saveMyBidOrder).not.toHaveBeenCalled();
+  });
+
+  it('does not list responsible archived history without a target and clears stale list responses on a mode change', async () => {
+    const { client, listBids, listArchivedBids } = fakeClient();
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByRole('article', { name: 'MV Buyer' });
+    const lateActive = deferred<BiddingResult<Bid[]>>();
+    listBids.mockReturnValueOnce(lateActive.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Archived history' }));
+    await screen.findByText('No bids in this view');
+    await act(async () => { lateActive.resolve(ok([bid()])); await lateActive.promise; });
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'By BUYER' }));
+    expect(screen.getByText('Select a BUYER to load responsible bids.')).toBeInTheDocument();
+    expect(listArchivedBids).toHaveBeenCalledTimes(1);
+  });
+
+  it('archives via authoritative active-list reload and retains archived IDs for the next personal-order save', async () => {
+    const archived = bid({ raw_status: 'cancelled', effective_status: 'cancelled' });
+    const first = bid({ id: target, vessel_voyage: 'Remaining first' });
+    const last = bid({ id, vessel_voyage: 'Remaining last' });
+    const { client, listBids, archiveBid, listArchivedBids, getMyBidOrder, saveMyBidOrder } = fakeClient([archived, first, last]);
+    getMyBidOrder.mockResolvedValue(ok({ revision: 8, ordered_bid_ids: [archived.id, first.id, last.id] }));
+    const archiveResponse = deferred<BiddingResult<Bid>>();
+    archiveBid.mockReturnValue(archiveResponse.promise);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(within(await screen.findByRole('article', { name: 'MV Buyer' })).getByRole('button', { name: 'Manage bid' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
+    expect(archiveBid).toHaveBeenCalledExactlyOnceWith(id, archived.id, archived.revision);
+    expect(screen.getByRole('article', { name: 'MV Buyer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archived history' })).toBeDisabled();
+    expect(listBids).toHaveBeenCalledTimes(1);
+    // Keep the archived card in the first server reload to discriminate local removal from authoritative reload.
+    await act(async () => { archiveResponse.resolve(ok({ ...archived, revision: 4 })); await archiveResponse.promise; });
+    await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('article', { name: 'MV Buyer' })).toBeInTheDocument();
+    expect(saveMyBidOrder).not.toHaveBeenCalled();
+    listBids.mockResolvedValue(ok([first, last]));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'MV Buyer' })).not.toBeInTheDocument());
+    await screen.findByRole('article', { name: 'Remaining last' });
+    expect(screen.queryByRole('region', { name: 'Selected bid detail' })).not.toBeInTheDocument();
+    expect(listArchivedBids).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole('article', { name: 'Remaining last' })).getByRole('button', { name: 'Move earlier' }));
+    await waitFor(() => expect(saveMyBidOrder).toHaveBeenCalledExactlyOnceWith(id, '2026-08-03', 8, [archived.id, last.id, first.id]));
+  });
+
+  it('removes the archived BID when the success reload excludes it', async () => {
+    const { client, listBids, archiveBid, saveMyBidOrder } = fakeClient([bid({ raw_status: 'awarded', effective_status: 'awarded' })]);
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(within(await screen.findByRole('article')).getByRole('button', { name: 'Manage bid' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    listBids.mockResolvedValue(ok([]));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
+    await screen.findByText('No bids in this view');
+    expect(listBids).toHaveBeenCalledTimes(2);
+    expect(listBids).toHaveBeenLastCalledWith(id, '2026-08-03', 'all', undefined);
+    expect(archiveBid).toHaveBeenCalledExactlyOnceWith(id, bidId, 3);
+    expect(screen.queryByRole('region', { name: 'Selected bid detail' })).not.toBeInTheDocument();
+    expect(saveMyBidOrder).not.toHaveBeenCalled();
+  });
+
+  it.each(['conflict', 'lifecycle', 'not_found'] as const)('reloads and surfaces an Archive %s failure', async (kind) => {
+    const { client, listBids, archiveBid, saveMyBidOrder } = fakeClient([bid({ raw_status: 'cancelled', effective_status: 'cancelled' })]);
+    archiveBid.mockResolvedValue({ data: null, error: { kind, code: null, message: `Archive ${kind}` } });
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    fireEvent.click(within(await screen.findByRole('article')).getByRole('button', { name: 'Manage bid' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(`Archive ${kind}`));
+    expect(listBids).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('button', { name: 'Confirm archive' })).not.toBeInTheDocument();
+    expect(saveMyBidOrder).not.toHaveBeenCalled();
+  });
+
+  it('invalidates an open Archive confirmation after Realtime changes the displayed revision', async () => {
+    const original = bid({ raw_status: 'cancelled', effective_status: 'cancelled' });
+    const { client, listBids, archiveBid } = fakeClient([original]);
+    const onAuthorizationFailure = vi.fn();
+    const { rerender } = render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
+    fireEvent.click(within(await screen.findByRole('article')).getByRole('button', { name: 'Manage bid' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    const stale = screen.getByRole('button', { name: 'Confirm archive' });
+    listBids.mockResolvedValue(ok([{ ...original, revision: 4 }]));
+    rerender(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} reloadVersion={1} />);
+    await screen.findByRole('button', { name: 'Archive' });
+    expect(screen.queryByRole('button', { name: 'Confirm archive' })).not.toBeInTheDocument();
+    fireEvent.click(stale);
+    expect(archiveBid).not.toHaveBeenCalled();
+  });
+
+  it('loads retained details as read-only history without mutation, restore, delete or ordering operations', async () => {
+    const retained = bid({ raw_status: 'awarded', effective_status: 'awarded', awarded_trader_organization_label: 'Retained winner', awarded_total_amount: 1000 });
+    const { client, archiveBid, listArchivedBids, saveMyBidOrder } = fakeClient();
+    listArchivedBids.mockResolvedValue(ok([retained]));
+    const listAccess = vi.spyOn(client, 'listBidTraderAccess').mockResolvedValue(ok<BidTraderAccess[]>([]));
+    const listQuotes = vi.spyOn(client, 'listQuotesForBuyers').mockResolvedValue(ok([boardQuote(retained, 'Retained winner', '1', 1000, { is_awarded: true })]));
+    const listAudit = vi.spyOn(client, 'listBidAudit').mockResolvedValue(ok<BidAuditEvent[]>([]));
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+    await screen.findByRole('article');
+    fireEvent.click(screen.getByRole('button', { name: 'Archived history' }));
+    const viewHistory = await screen.findByRole('button', { name: 'View history' });
+    expect(screen.getByRole('region', { name: 'BUYER archived history board' })).toBeInTheDocument();
+    fireEvent.click(viewHistory);
+    await screen.findByRole('region', { name: 'Buyer quote comparison' });
+    const detail = screen.getByRole('region', { name: 'Selected bid detail' });
+    expect(within(detail).getAllByRole('button', { hidden: true }).map((button) => button.textContent)).toEqual(['Refresh detail']);
+    expect(screen.getByRole('button', { name: 'Viewing history' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Manage bid|Archive$|Restore|Unarchive|Delete|Reorder|Move earlier|Move later|New BID/i })).not.toBeInTheDocument();
+    fireEvent.drop(screen.getByRole('article'), { dataTransfer: { getData: () => target } });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh detail' }));
+    await waitFor(() => expect(listAudit).toHaveBeenCalledTimes(2));
+    for (const read of [listAccess, listQuotes, listAudit]) expect(read).toHaveBeenLastCalledWith(id, retained.id);
+    expect(archiveBid).not.toHaveBeenCalled();
+    expect(saveMyBidOrder).not.toHaveBeenCalled();
+  });
+
+  it.each(['history list', 'archive mutation'] as const)('clears protected data and invokes the existing failure callback on denied %s', async (source) => {
+    const { client, archiveBid, listArchivedBids } = fakeClient([bid({ raw_status: 'cancelled', effective_status: 'cancelled' })]);
+    const denied = { data: null, error: { kind: 'authorization' as const, code: '42501', message: 'Membership denied' } };
+    const onAuthorizationFailure = vi.fn();
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={onAuthorizationFailure} />);
+    fireEvent.click(within(await screen.findByRole('article')).getByRole('button', { name: 'Manage bid' }));
+    await screen.findByRole('button', { name: 'Archive' });
+    if (source === 'history list') {
+      listArchivedBids.mockResolvedValue(denied);
+      fireEvent.click(screen.getByRole('button', { name: 'Archived history' }));
+    } else {
+      archiveBid.mockResolvedValue(denied);
+      fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
+    }
+    await waitFor(() => expect(onAuthorizationFailure).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Selected bid detail' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Membership denied');
+  });
 
   it('keeps server order without a saved preference and applies personal rank within immutable creator groups', async () => {
     const a1 = bid({ id: '10000000-0000-4000-8000-000000000011', vessel_voyage: 'A first', created_by: id, created_by_label: 'Creator A' });

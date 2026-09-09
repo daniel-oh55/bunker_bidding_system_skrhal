@@ -59,7 +59,7 @@ const grades = new Set<FuelGrade>(['vlsfo', 'hsfo', 'ulsfo', 'lsfo', 'lsmgo']);
 const statuses = new Set<BidStatus>(['open', 'closed', 'cancelled', 'awarded']);
 const responseStatuses = new Set<QuoteResponseStatus>(['awaiting', 'quoted', 'gave_up']);
 const roles = new Set<BidAuditEvent['actor_role']>(['buyer_admin', 'buyer_operator', 'trader']);
-const auditEvents = new Set(['created', 'details_updated', 'responsible_buyer_changed', 'closed', 'reopened', 'cancelled', 'trader_access_granted', 'trader_access_revoked', 'awarded']);
+const auditEvents = new Set(['created', 'details_updated', 'responsible_buyer_changed', 'closed', 'reopened', 'cancelled', 'trader_access_granted', 'trader_access_revoked', 'awarded', 'archived']);
 
 function record(value: unknown): Record<string, unknown> | null { return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null; }
 function text(value: unknown): string | null { return typeof value === 'string' ? value : null; }

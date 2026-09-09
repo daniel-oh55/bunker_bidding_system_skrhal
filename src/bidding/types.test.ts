@@ -118,6 +118,12 @@ describe('bidding protocol parsers', () => {
     expect(parseBid(bid({ raw_status: 'cancelled', effective_status: 'cancelled', closed_at: now, cancelled_at: now }))).not.toBeNull();
   });
 
+  it.each(['cancelled', 'awarded'])('parses archived audit with retained %s status and rejects unknown events', (status) => {
+    const event = audit({ event_type: 'archived', prior_revision: 3, resulting_revision: 4, prior_status: status, resulting_status: status, before_snapshot: {}, after_snapshot: {} });
+    expect(parseBidAuditEvent(event)).toEqual(event);
+    for (const event_type of ['restored', 'unarchived', 'deleted', 'invented']) expect(parseBidAuditEvent({ ...event, event_type })).toBeNull();
+  });
+
   it('rejects an invalid non-null audit revision and unknown event', () => {
     expect(parseBidAuditEvent(audit({ prior_revision: 'bad' }))).toBeNull();
     expect(parseBidAuditEvent(audit({ event_type: 'invented' }))).toBeNull();
