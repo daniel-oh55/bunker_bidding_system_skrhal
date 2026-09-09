@@ -84,7 +84,6 @@
 
 ## Requested post-V1 / V1.1 backlog
 
-- Restore/unarchive and hard deletion; no hard-delete UX is planned by this foundation.
 - Expanded editing of published BID commercial terms/participants, subject to separate quote-invalidation/version semantics.
 - Improved discoverability of the existing Award/final SELLER selection flow.
 
