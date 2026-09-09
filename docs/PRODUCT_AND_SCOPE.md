@@ -8,9 +8,9 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 
 - BUYERs may arrange BID cards as a private per-user, per-operational-date presentation preference. It is never a shared BUYER queue or an authorization/visibility control: every approved BUYER retains the same BID/quote visibility, newly created BIDs remain visible in fallback order, and All-bids keeps its immutable creator grouping.
 
-- Production remains at eighteen migrations ending `20260903055531_buyer_personal_bid_order.sql`. The repository contains twenty migrations; `20260907093000_bid_archive_event_enum.sql` and `20260907093100_bid_archive_retention.sql` are repository-only and await separate owner-approved Production rollout. Retained `awaiting`, `quoted`, and `gave_up` response states are commercial history only: explicit BID scope and active organization status remain the authorization authority.
+- Repository and Production migration histories are aligned at twenty migrations through `20260907093100_bid_archive_retention.sql`. The BID Archive backend contract from `20260907093000_bid_archive_event_enum.sql` and `20260907093100_bid_archive_retention.sql` is applied in Production. Retained `awaiting`, `quoted`, and `gave_up` response states are commercial history only: explicit BID scope and active organization status remain the authorization authority.
 
-- The repository-side BID Archive contract is one-way retention, not hard deletion and not a new lifecycle status. Only raw `cancelled` or `awarded` BIDs may be archived; raw/effectively expired `open`, raw `closed`, and already archived BIDs are rejected. Archive preserves the raw status and all ownership, date, commercial, scope/response, quote, award, Mail Intake-link, audit, and personal-order data while incrementing the BID revision and adding one verified-actor audit. Normal BUYER listing excludes archived BIDs, and a separate archived-history RPC applies the same selected-date and all/created-by-me/responsible-BUYER filters for every active BUYER. TRADER listing, quote, and authorization semantics remain unchanged; currently scoped TRADER workspaces may still receive the existing generic, data-free BID-row invalidation after Archive. Frontend Archive controls/history remain pending.
+- The Production-applied BID Archive contract is one-way retention, not hard deletion and not a new lifecycle status. Only raw `cancelled` or `awarded` BIDs may be archived; raw/effectively expired `open`, raw `closed`, and already archived BIDs are rejected. Archive preserves the raw status and all ownership, date, commercial, scope/response, quote, award, Mail Intake-link, audit, and personal-order data while incrementing the BID revision and adding one verified-actor audit. Normal BUYER listing excludes archived BIDs, and a separate archived-history RPC applies the same selected-date and all/created-by-me/responsible-BUYER filters for every active BUYER. TRADER listing, quote, and authorization semantics remain unchanged; currently scoped TRADER workspaces may still receive the existing generic, data-free BID-row invalidation after Archive. The frontend cannot invoke `archive_bid` yet: Archive controls/history and authenticated Archive mutation smoke remain pending.
 
 - The PR #1 application foundation and preserved legacy reference are complete.
 - Local Supabase migrations, pgTAP testing, and a CI database-validation job are implemented.
@@ -36,7 +36,7 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 
 ## Excluded from this phase
 
-- frontend BUYER Archive action/history presentation, restore/unarchive, hard deletion, and Production application of the two repository-only Archive migrations
+- frontend BUYER Archive action/history presentation, restore/unarchive, and hard deletion
 - public signup, invitation, Auth-account or membership provisioning flows, SELLER rename/reactivation, and generic organization-status administration
 - quote withdrawal, unaward, or award replacement
 - historical `.msg`/`.eml` migration
