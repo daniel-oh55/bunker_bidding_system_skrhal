@@ -11,6 +11,8 @@ export interface BiddingClient {
   dismissMailIntakeItem(membershipId: string, itemId: string, expectedRevision: number): Promise<BiddingResult<MailIntakeItem>>;
   listActiveBuyers(membershipId: string): Promise<BiddingResult<ActiveBuyer[]>>;
   listBids(membershipId: string, bidDate: string, view: 'all' | 'created_by_me' | 'responsible_buyer', responsibleBuyerUserId?: string): Promise<BiddingResult<Bid[]>>;
+  listArchivedBids(membershipId: string, bidDate: string, view: 'all' | 'created_by_me' | 'responsible_buyer', responsibleBuyerUserId?: string): Promise<BiddingResult<Bid[]>>;
+  archiveBid(membershipId: string, bidId: string, expectedRevision: number): Promise<BiddingResult<Bid>>;
   getMyBidOrder(membershipId: string, bidDate: string): Promise<BiddingResult<BuyerBidOrder>>;
   saveMyBidOrder(membershipId: string, bidDate: string, expectedRevision: number, orderedBidIds: string[]): Promise<BiddingResult<BuyerBidOrder>>;
   listBidAudit(membershipId: string, bidId: string): Promise<BiddingResult<BidAuditEvent[]>>;
@@ -56,6 +58,8 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
     dismissMailIntakeItem: (m, i, r) => rpc('dismiss_mail_intake_item', { p_actor_membership_id: m, p_item_id: i, p_expected_revision: r }, parseDismissedMailIntakeItem),
     listActiveBuyers: (m) => rpc('list_active_buyers', { p_actor_membership_id: m }, many(parseActiveBuyer)),
     listBids: (m, bidDate, view, user) => rpc('list_bids', { p_actor_membership_id: m, p_bid_date: bidDate, p_view: view, p_responsible_buyer_user_id: view === 'responsible_buyer' ? user ?? null : null }, many(parseBid)),
+    listArchivedBids: (m, bidDate, view, user) => rpc('list_archived_bids', { p_actor_membership_id: m, p_bid_date: bidDate, p_view: view, p_responsible_buyer_user_id: view === 'responsible_buyer' ? user ?? null : null }, many(parseBid)),
+    archiveBid: (m, b, r) => rpc('archive_bid', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r }, parseBid),
     getMyBidOrder: (m, bidDate) => rpc('get_my_bid_order', { p_actor_membership_id: m, p_bid_date: bidDate }, oneRow(parseBuyerBidOrder)),
     saveMyBidOrder: (m, bidDate, revision, orderedBidIds) => rpc('save_my_bid_order', { p_actor_membership_id: m, p_bid_date: bidDate, p_expected_revision: revision, p_ordered_bid_ids: orderedBidIds }, oneRow(parseBuyerBidOrder)),
     listBidAudit: (m, b) => rpc('list_bid_audit', { p_actor_membership_id: m, p_bid_id: b }, many(parseBidAuditEvent)),

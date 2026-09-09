@@ -239,3 +239,75 @@ describe('BUYER bid detail organization', () => {
     expect(screen.getByRole('button', { name: 'Keep access' })).toBeDisabled();
   });
 });
+
+
+describe('BUYER archive confirmation and read-only detail', () => {
+  it.each([
+    ['open', 'open', false], ['open', 'closed', false], ['closed', 'closed', false],
+    ['cancelled', 'cancelled', true], ['awarded', 'awarded', true],
+  ] as const)('offers Archive for active raw %s / effective %s: %s', (raw_status, effective_status, offered) => {
+    renderDetail(bid({ raw_status, effective_status }));
+    expect(screen.queryByRole('button', { name: 'Archive' }) !== null).toBe(offered);
+  });
+
+  it('requires explicit target-bound confirmation and passes the displayed revision exactly once', () => {
+    const archiveBid = vi.fn();
+    const mutate = vi.fn((operation: () => unknown) => { operation(); return Promise.resolve(true); });
+    renderDetail(bid({ raw_status: 'cancelled', effective_status: 'cancelled', revision: 7 }), [], [], [], { client: { ...client, archiveBid }, mutate });
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    const confirmation = screen.getByRole('alert');
+    for (const copy of ['MV Detail', 'Revision 7', 'one-way', 'leave the active board', 'History and commercial records are retained', 'no restore/unarchive in V1.1']) expect(confirmation).toHaveTextContent(copy);
+    expect(archiveBid).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep on active board' }));
+    expect(screen.queryByRole('button', { name: 'Confirm archive' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm archive' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(archiveBid).toHaveBeenCalledExactlyOnceWith(currentBuyerId, bidId, 7);
+    expect(mutate).toHaveBeenCalledOnce();
+  });
+
+  it.each(['id', 'revision', 'readOnly'] as const)('invalidates confirmation when %s changes, including switching back', (change) => {
+    const archiveBid = vi.fn();
+    const mutate = vi.fn((operation: () => unknown) => { operation(); return Promise.resolve(true); });
+    const current = bid({ raw_status: 'awarded', effective_status: 'awarded' });
+    const props = { bid: current, buyers, organizations: [], detail: { access: [], quotes: [], audit: [] }, pending: false, client: { ...client, archiveBid }, membershipId: currentBuyerId, mutate, refresh: vi.fn() };
+    const { rerender } = render(<BuyerBidDetail {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    const staleConfirm = screen.getByRole('button', { name: 'Confirm archive' });
+    rerender(<BuyerBidDetail {...props} bid={change === 'id' ? { ...current, id: inactiveBuyerId } : change === 'revision' ? { ...current, revision: current.revision + 1 } : current} readOnly={change === 'readOnly'} />);
+    expect(screen.queryByRole('button', { name: 'Confirm archive' })).not.toBeInTheDocument();
+    fireEvent.click(staleConfirm);
+    rerender(<BuyerBidDetail {...props} />);
+    expect(screen.queryByRole('button', { name: 'Confirm archive' })).not.toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+    expect(archiveBid).not.toHaveBeenCalled();
+  });
+
+  it('blocks confirmation during another pending mutation and clears it on refresh', () => {
+    const mutate = vi.fn(); const refresh = vi.fn();
+    const props = { bid: bid({ raw_status: 'cancelled', effective_status: 'cancelled' }), buyers, organizations: [], detail: { access: [], quotes: [], audit: [] }, pending: false, client, membershipId: currentBuyerId, mutate, refresh };
+    const { rerender } = render(<BuyerBidDetail {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    rerender(<BuyerBidDetail {...props} pending />);
+    expect(screen.getByRole('button', { name: 'Confirm archive' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
+    expect(mutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh detail' }));
+    expect(screen.queryByRole('button', { name: 'Confirm archive' })).not.toBeInTheDocument();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it.each(['open', 'closed', 'cancelled', 'awarded'] as const)('renders retained history without any mutation controls even for supplied %s status', (status) => {
+    const retainedAudit: BidAuditEvent = { id: bidId, bid_id: bidId, event_type: 'archived', actor_user_id: currentBuyerId, actor_membership_id: currentBuyerId, actor_organization_id: currentBuyerId, actor_role: 'buyer_operator', occurred_at: now, prior_revision: 2, resulting_revision: 3, prior_status: 'awarded', resulting_status: 'awarded', prior_responsible_buyer_user_id: responsibleBuyerId, resulting_responsible_buyer_user_id: responsibleBuyerId, before_snapshot: {}, after_snapshot: {} };
+    const { container } = renderDetail(bid({ raw_status: status, effective_status: status, awarded_trader_organization_label: 'Retained winner', awarded_total_amount: 102 }), [retainedAudit], [quote(), quote({ id: inactiveBuyerId, is_awarded: true })], [access()], { readOnly: true });
+    expect(screen.getByRole('note')).toHaveTextContent('Read-only');
+    expect(screen.getByText('Retained winner')).toBeInTheDocument();
+    expect(screen.getByText('archived')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Buyer quote comparison' })).toHaveTextContent('102');
+    expect(container.querySelectorAll('input, select')).toHaveLength(0);
+    expect(screen.getAllByRole('button', { hidden: true }).map((button) => button.textContent)).toEqual(['Refresh detail']);
+    expect(screen.queryByText('Manage bid')).not.toBeInTheDocument();
+  });
+});

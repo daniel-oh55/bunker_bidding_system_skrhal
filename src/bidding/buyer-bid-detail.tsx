@@ -8,6 +8,7 @@ import { StatusBadge } from '../ui/workspace-ui';
 type Detail = { access: BidTraderAccess[]; quotes: Quote[]; audit: BidAuditEvent[] };
 type Row = { grade: typeof fuelGrades[number]; quantity: string };
 type AwardConfirmation = { quoteId: string; quoteRevision: number; signature: string };
+type ArchiveConfirmation = { bidId: string; bidRevision: number };
 type RevokeConfirmation = { bidId: string; bidRevision: number; traderOrganizationId: string; accessSignature: string };
 
 const number = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
@@ -43,7 +44,7 @@ function buyerLabel(id: string | null, buyers: ActiveBuyer[]) {
   return buyers.find((buyer) => buyer.user_id === id)?.display_label ?? `Unknown or inactive BUYER · …${id.slice(-4)}`;
 }
 
-export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, client, membershipId, mutate, refresh, currentTimeMs = Date.now() }: {
+export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, client, membershipId, mutate, refresh, readOnly = false, currentTimeMs = Date.now() }: {
   bid: Bid;
   buyers: ActiveBuyer[];
   organizations: TraderOrganization[];
@@ -54,6 +55,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
   mutate: (operation: () => Promise<BiddingResult<Bid>>) => Promise<boolean>;
   refresh: () => void;
   currentTimeMs?: number;
+  readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState(() => ({
     vessel: bid.vessel_voyage,
@@ -64,6 +66,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
   }));
   const [responsible, setResponsible] = useState(bid.responsible_buyer_user_id);
   const [scope, setScope] = useState('');
+  const [archiveConfirm, setArchiveConfirm] = useState<ArchiveConfirmation | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [awardConfirm, setAwardConfirm] = useState<AwardConfirmation | null>(null);
   const [revokeConfirm, setRevokeConfirm] = useState<RevokeConfirmation | null>(null);
@@ -78,6 +81,18 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
     setRevokeConfirm(null);
   }, [bid.id, bid.revision, currentAccessSignature]);
 
+  useEffect(() => {
+    setArchiveConfirm(null);
+  }, [bid.id, bid.revision, readOnly]);
+
+  const canArchive = !readOnly && (bid.raw_status === 'cancelled' || bid.raw_status === 'awarded');
+  const archiveIsCurrent = canArchive && archiveConfirm?.bidId === bid.id && archiveConfirm.bidRevision === bid.revision;
+  const confirmArchive = () => {
+    if (!archiveIsCurrent || pending) return;
+    setArchiveConfirm(null);
+    void mutate(() => client.archiveBid(membershipId, bid.id, bid.revision));
+  };
+
   const commercialOpen = detail !== null && detail.quotes.length === 0 && bid.effective_status === 'open';
   const deadlineOpen = bid.effective_status === 'open';
   const validRows = draft.rows.length > 0 && draft.rows.every((row) => Number.isFinite(Number(row.quantity)) && Number(row.quantity) > 0);
@@ -88,7 +103,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
     && confirmation.accessSignature === currentAccessSignature
     && detail?.access.some((access) => access.trader_organization_id === confirmation.traderOrganizationId) === true;
   const confirmRevoke = () => {
-    if (revokeConfirm === null || !revokeIsCurrent(revokeConfirm) || pending) return;
+    if (readOnly || revokeConfirm === null || !revokeIsCurrent(revokeConfirm) || pending) return;
     const confirmation = revokeConfirm;
     setRevokeConfirm(null);
     void mutate(() => client.revokeBidTraderAccess(membershipId, bid.id, bid.revision, confirmation.traderOrganizationId));
@@ -99,12 +114,13 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
       && draft.port === bid.port_name
       && draft.window === bid.delivery_window
       && draft.rows.every((row, index) => row.grade === bid.fuel_items[index]?.fuel_grade && Number(row.quantity) === bid.fuel_items[index]?.quantity_mt);
-    if (deadlineOpen && validRows && (commercialOpen || commercialFieldsUnchanged)) {
+    if (!readOnly && deadlineOpen && validRows && (commercialOpen || commercialFieldsUnchanged)) {
       void mutate(() => client.updateBid(membershipId, bid.id, bid.revision, updateInput(draft)));
     }
   };
 
   return <div className="buyer-detail-content">
+    {readOnly ? <p className="notice" role="note">Viewing archived history &middot; Read-only. History and commercial records are retained.</p> : null}
     <div className={`bid-overview status-${bid.effective_status}`} role="region" aria-label="Selected bid overview">
       <div className="buyer-overview-heading">
         <div><p className="eyebrow">Selected bid · Vessel / voyage</p><h2>{bid.vessel_voyage}</h2><p className="buyer-overview-port"><span>Port</span>{bid.port_name}</p></div>
@@ -128,6 +144,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
       </dl>
     </div>
 
+    {!readOnly ? <>
     <details className="detail-section" open={termsOpen}>
       <summary>Bid terms &amp; deadline</summary>
       {detail === null ? <p>Loading bid detail</p> : detail.quotes.length ? <p className="notice">The first quote freezes commercial terms. Only deadline changes remain available.</p> : <p>Commercial fields are editable until the first quote is retained.</p>}
@@ -172,10 +189,24 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
       </section>
     </details>
 
-    <details className="detail-section" open={traderOpen}>
+    </> : null}
+
+    {canArchive ? <section className="buyer-operation-group" aria-label="Archive bid">
+      <button type="button" className="secondary" disabled={pending} onClick={() => setArchiveConfirm({ bidId: bid.id, bidRevision: bid.revision })}>Archive</button>
+      {archiveIsCurrent ? <div className="archive-confirmation notice" role="alert">
+        <strong>Archive {bid.vessel_voyage} &middot; Revision {bid.revision}?</strong>
+        <p>Archive is one-way. This BID will leave the active board. History and commercial records are retained. There is no restore/unarchive in V1.1.</p>
+        <div className="buyer-action-row">
+          <button type="button" className="danger" disabled={pending} onClick={confirmArchive}>Confirm archive</button>
+          <button type="button" className="secondary" disabled={pending} onClick={() => setArchiveConfirm(null)}>Keep on active board</button>
+        </div>
+      </div> : null}
+    </section> : null}
+
+    <details className="detail-section" open={readOnly || traderOpen}>
       <summary>TRADER access &amp; quotes</summary>
-      <div className="buyer-section-heading"><div><h3>TRADER access</h3><p className="buyer-section-helper">Manage which active organizations can participate in this bid.</p></div>{detail ? <span>{detail.access.length} with access</span> : null}</div>
-      {bid.effective_status === 'open' ? <>
+      <div className="buyer-section-heading"><div><h3>TRADER access</h3><p className="buyer-section-helper">{readOnly ? 'Retained organization access records.' : 'Manage which active organizations can participate in this bid.'}</p></div>{detail ? <span>{detail.access.length} with access</span> : null}</div>
+      {!readOnly && bid.effective_status === 'open' ? <>
         <div className="buyer-action-row buyer-action-row-field">
           <select aria-label="Grant TRADER organization" value={scope} onChange={(event) => setScope(event.target.value)}>
             <option value="">Select active TRADER organization</option>
@@ -185,11 +216,11 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
         </div>
       </> : null}
       <ul className="buyer-access-list">{detail?.access.map((access) => {
-        const confirmed = revokeIsCurrent(revokeConfirm) && revokeConfirm?.traderOrganizationId === access.trader_organization_id;
+        const confirmed = !readOnly && revokeIsCurrent(revokeConfirm) && revokeConfirm?.traderOrganizationId === access.trader_organization_id;
         const confirmationId = `revoke-confirmation-${access.trader_organization_id}`;
         const selectedAwardee = bid.effective_status === 'awarded' && bid.awarded_trader_organization_id === access.trader_organization_id;
         return <li key={access.trader_organization_id}>
-          <div className="buyer-access-item"><strong>{access.trader_organization_label}</strong><button type="button" className="secondary" disabled={pending} aria-describedby={confirmed ? confirmationId : undefined} onClick={() => setRevokeConfirm({ bidId: bid.id, bidRevision: bid.revision, traderOrganizationId: access.trader_organization_id, accessSignature: currentAccessSignature })}>Revoke</button></div>
+          <div className="buyer-access-item"><strong>{access.trader_organization_label}</strong>{!readOnly ? <button type="button" className="secondary" disabled={pending} aria-describedby={confirmed ? confirmationId : undefined} onClick={() => setRevokeConfirm({ bidId: bid.id, bidRevision: bid.revision, traderOrganizationId: access.trader_organization_id, accessSignature: currentAccessSignature })}>Revoke</button> : null}</div>
           {confirmed ? <div id={confirmationId} className="revoke-confirmation" role="alert">
             <strong>Revoke access for {access.trader_organization_label}?</strong>
             <p>Revoking access immediately removes this TRADER organization’s bid and quote visibility. BUYER records remain retained.</p>
@@ -214,7 +245,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
               <th scope="col">Authoritative server total</th>
               <th scope="col">Quote revision</th>
               <th scope="col">Award result</th>
-              <th scope="col">Action</th>
+              {!readOnly ? <th scope="col">Action</th> : null}
             </tr>
           </thead>
           <tbody>{detail.quotes.map((quote, index) => {
@@ -228,10 +259,10 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
               <td className="buyer-quote-total" data-label="Authoritative server total">{number(quote.total_amount)}</td>
               <td data-label="Quote revision">{quote.revision}</td>
               <td data-label="Award result"><span className={`buyer-award-marker${quote.is_awarded ? ' is-selected' : bid.effective_status === 'awarded' ? ' is-not-selected' : ''}`}>{awardResult}</span><small>{quote.eligible_for_award ? 'eligible' : 'ineligible'}</small>{quote.is_awarded ? <span className="visually-hidden">yes</span> : null}</td>
-              <td className="buyer-quote-action" data-label="Action"><div className="buyer-action-row">{quote.eligible_for_award && !quote.is_awarded ? confirmed
+              {!readOnly ? <td className="buyer-quote-action" data-label="Action"><div className="buyer-action-row">{quote.eligible_for_award && !quote.is_awarded ? confirmed
                 ? <button type="button" disabled={pending} onClick={() => void mutate(() => client.awardBid(membershipId, bid.id, bid.revision, quote.id, quote.revision))}>Confirm award</button>
                 : <button type="button" disabled={pending} onClick={() => setAwardConfirm({ quoteId: quote.id, quoteRevision: quote.revision, signature: quoteSignature })}>Award</button>
-                : null}</div></td>
+                : null}</div></td> : null}
             </tr>;
           })}</tbody>
         </table>
@@ -243,7 +274,7 @@ export function BuyerBidDetail({ bid, buyers, organizations, detail, pending, cl
       <p className="buyer-section-helper">Server-recorded changes in chronological response order.</p>
       <ol className="audit-list buyer-audit-timeline">{detail?.audit.map((event) => <AuditEvent key={event.id} event={event} buyers={buyers} />)}</ol>
     </details>
-    <button type="button" className="secondary detail-refresh" onClick={() => { setRevokeConfirm(null); refresh(); }}>Refresh detail</button>
+    <button type="button" className="secondary detail-refresh" onClick={() => { setArchiveConfirm(null); setRevokeConfirm(null); refresh(); }}>Refresh detail</button>
   </div>;
 }
 

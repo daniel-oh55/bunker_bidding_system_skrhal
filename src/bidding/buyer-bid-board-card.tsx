@@ -85,14 +85,16 @@ function AdvisoryComparison({ bid, quotes }: { bid: Bid; quotes: Quote[] }) {
   </div>;
 }
 
-export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, onManage, reorder }: {
+export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, onManage, readOnly = false, reorder: requestedReorder }: {
   bid: Bid;
   sellerState: BuyerBidBoardSellerState;
   currentTimeMs: number;
   selected: boolean;
   onManage: () => void;
   reorder?: BuyerBidReorderControls;
+  readOnly?: boolean;
 }) {
+  const reorder = readOnly ? undefined : requestedReorder;
   const headingId = `buyer-board-card-${bid.id}`;
   const remaining = remainingTime(bid.deadline_at, currentTimeMs);
   const sellers = sellerState.status === 'success'
@@ -168,7 +170,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
         <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveLater} onClick={reorder.onMoveLater}>Move later</button>
       </div> : null}
       <span>Creator: {bid.created_by_label} · Revision {bid.revision}</span>
-      <button type="button" aria-pressed={selected} onClick={onManage}>{selected ? 'Managing bid' : 'Manage bid'}</button>
+      <button type="button" aria-pressed={selected} onClick={onManage}>{readOnly ? selected ? 'Viewing history' : 'View history' : selected ? 'Managing bid' : 'Manage bid'}</button>
     </footer>
   </article>;
 }

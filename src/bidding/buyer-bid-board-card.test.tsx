@@ -46,6 +46,19 @@ const renderSellers = (currentBid: Bid, sellers: BuyerSellerComparison[]) => {
 };
 
 describe('BuyerBidBoardCard', () => {
+  it('uses history wording and ignores even supplied reorder controls in read-only mode', () => {
+    const onManage = vi.fn(); const onDropBefore = vi.fn();
+    const props = { bid: bid({ raw_status: 'awarded', effective_status: 'awarded' }), sellerState: { status: 'success' as const, sellers: [] }, currentTimeMs: Date.parse(now), selected: false, onManage, readOnly: true, reorder: { enabled: true, canMoveEarlier: true, canMoveLater: true, onMoveEarlier: vi.fn(), onMoveLater: vi.fn(), onDropBefore } };
+    const { rerender } = render(<BuyerBidBoardCard {...props} />);
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['View history']);
+    fireEvent.click(screen.getByRole('button', { name: 'View history' }));
+    expect(onManage).toHaveBeenCalledOnce();
+    fireEvent.drop(screen.getByRole('article'), { dataTransfer: { getData: () => bidId } });
+    expect(onDropBefore).not.toHaveBeenCalled();
+    rerender(<BuyerBidBoardCard {...props} selected />);
+    expect(screen.getByRole('button', { name: 'Viewing history' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('exposes non-gesture reorder controls without invoking Manage bid', () => {
     const onManage = vi.fn(); const onMoveEarlier = vi.fn(); const onMoveLater = vi.fn();
     render(<BuyerBidBoardCard bid={bid()} sellerState={{ status: 'success', sellers: [] }} currentTimeMs={Date.parse(now)} selected={false} onManage={onManage} reorder={{ enabled: true, canMoveEarlier: false, canMoveLater: true, onMoveEarlier, onMoveLater, onDropBefore: vi.fn() }} />);
