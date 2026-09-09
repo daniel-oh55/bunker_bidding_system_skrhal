@@ -3,7 +3,7 @@
 ## Current shape
 
 - Browser app: React + Vite + TypeScript
-- Supabase access: twenty aligned repository and Production migrations through `20260907093100_bid_archive_retention.sql`, plus pgTAP tests; the BID Archive backend is active in Production while frontend Archive UI remains pending
+- Supabase access: twenty aligned repository and Production migrations through `20260907093100_bid_archive_retention.sql`, plus pgTAP tests; the BID Archive backend and PR #61 BUYER Archive action/read-only history UI are active
 - Authorization data: private `app_private` PostgreSQL schema with account, organization, and membership tables
 - Frontend access coordination: sign-in and password-recovery state machine backed by `public.current_access_context()`, an integrated RPC-only BUYER/TRADER workspace with active-BUYER mail-intake list/explicit-Publish/dismiss actions and frontend-prepared form state derived from listed normalized candidates, and a private Realtime invalidation adapter
 - Local intake: a BUYER form-local `.msg` binary adapter validates extension, size, and CFBF signature before browser parsing; a separate pure parser converts only plain-text subject/body into advisory candidates and warnings
@@ -71,7 +71,7 @@ PR #47 adds a private operational-date authority alongside the existing lifecycl
 
 - no active Firebase runtime usage
 - local SQL migrations and database tests are permitted only in their dedicated Supabase directories
-- repository and Production each contain twenty migrations through `20260907093100_bid_archive_retention.sql`; the BID Archive backend is active in Production, while frontend Archive action/history UI and authenticated Archive mutation smoke remain pending
+- repository and Production each contain twenty migrations through `20260907093100_bid_archive_retention.sql`; the BID Archive backend and PR #61 BUYER Archive action/read-only history UI are implemented. The completed Production Archive smoke exercised the real database/RPC contract under PostgreSQL `authenticated` with the active BUYER's `auth.uid()` claims: raw `cancelled` status was preserved, revision moved `2 -> 3`, exactly one `archived` audit was written, retained item/access/response/personal-order state remained, normal lists excluded the BID, archived history included it, and personal full-date order retained it. This was not a browser login, Supabase JWT, PostgREST HTTP, or Archive-UI-click E2E smoke. No restore/unarchive/delete exists; TRADER contracts are unchanged.
 - retained seller response states are `awaiting`, `quoted`, and `gave_up`; response state never authorizes access, and explicit BID scope remains the authority
 - browser access remains RPC-only and publishable-key-only; the PR #44 frontend is merged and its merged-main Vercel deployment completed successfully, while no direct browser-authenticated Production UI smoke of the rendered `Awaiting quote` row is claimed
 - PR #47 Production verification preserved the pre-apply baseline and reviewed security boundaries. A real authenticated BUYER browser created and normally cancelled one retained `PR47 PROD SMOKE` BID with five active SELLER scope snapshots and matching created/cancelled audits. Authenticated WORLD FUEL browser verification subsequently covered TRADER quote submit, update, GIVE UP, and resume paths under the seller-response model.
