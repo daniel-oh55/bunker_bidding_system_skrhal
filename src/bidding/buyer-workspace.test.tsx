@@ -885,8 +885,7 @@ describe('BUYER workspace', () => {
     expect(within(card).getByText('Busan')).toBeInTheDocument();
     expect(within(card).getByText('Effective status')).toBeInTheDocument();
     expect(within(card).getByText('awarded', { selector: '.status-badge' })).toBeInTheDocument();
-    expect(within(card).getByText('Remaining time')).toBeInTheDocument();
-    expect(within(card).getByText('Expired')).toBeInTheDocument();
+    expect(within(card).getByText(/^\(Expired\)$/)).toBeInTheDocument();
     expect(within(card).getByText('Creator', { selector: '.buyer-card-label' })).toBeInTheDocument();
     expect(within(card).getByText('Creator', { selector: '.buyer-board-card-creator span:last-child' })).toBeInTheDocument();
     expect(within(card).getByText('Revision 3')).toBeInTheDocument();
@@ -901,8 +900,7 @@ describe('BUYER workspace', () => {
     const { client } = fakeClient([bid({ deadline_at: '2099-08-03T03:00:00.000Z' })]);
     render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
     const card = await screen.findByRole('article', { name: 'MV Buyer' });
-    expect(within(card).getByText('Remaining time')).toBeInTheDocument();
-    expect(within(card).getByText(/remaining$/)).toBeInTheDocument();
+    expect(within(card).getByText(/^\(\d+:\d{2}:\d{2} remaining\)$/)).toHaveAttribute('title', 'Remaining time is advisory only');
   });
 
   it('preserves the existing awarded-first then authoritative-total quote ordering in the comparison board', async () => {

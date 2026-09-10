@@ -120,7 +120,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
     if (reorder?.enabled && sourceId) reorder.onDropBefore(sourceId);
   };
   return <article className={`buyer-board-card status-${bid.effective_status}${selected ? ' is-selected' : ''}${dragOver ? ' is-reorder-target' : ''}`} aria-labelledby={headingId} onDragOver={(event) => { if (reorder?.enabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOver(true); } }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
-    {reorder ? <div className="buyer-bid-drag-strip" role="group" draggable={reorder.enabled} aria-label={`Drag to reorder ${bid.vessel_voyage}`} title="Drag to reorder" onDragStart={onDragStart}><span aria-hidden="true">⠿</span> Drag to reorder</div> : null}
+    {reorder ? <div className="buyer-bid-drag-strip" role="group" draggable={reorder.enabled} aria-label={`Drag to reorder ${bid.vessel_voyage}`} title="Drag to reorder" onDragStart={onDragStart}><span aria-hidden="true" /></div> : null}
     <header className="buyer-board-card-heading">
       <div className="buyer-board-card-creator"><span className="buyer-card-label">Creator</span><span>{bid.created_by_label}</span></div>
       <div className="buyer-bid-card-status"><span className="buyer-card-label">Effective status</span><StatusBadge status={bid.effective_status} label={bid.effective_status === 'open' ? 'Bidding open' : bid.effective_status === 'closed' ? 'Bidding closed' : undefined} /></div>
@@ -128,18 +128,18 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
     </header>
     <dl className="buyer-board-summary">
       <div><dt>Delivery window</dt><dd>{bid.delivery_window}</dd></div>
-      <div className="buyer-board-deadline"><dt>Deadline</dt><dd>{date(bid.deadline_at)}<span className={`deadline-countdown${remaining === 'Expired' ? ' is-expired' : ''}`}><span className="deadline-countdown-label">Remaining time</span>: <span>{remaining}</span></span><small className="countdown-note">Client clock, advisory only</small></dd></div>
+      <div className="buyer-board-deadline"><dt>Deadline</dt><dd>{date(bid.deadline_at)}{remaining !== 'No deadline' ? <span className={`deadline-countdown${remaining === 'Expired' ? ' is-expired' : ''}`} title="Remaining time is advisory only" aria-label={`Remaining time: ${remaining}, advisory only`}>({remaining})</span> : null}</dd></div>
       <div><dt>Responsible BUYER</dt><dd>{bid.responsible_buyer_label}</dd></div>
       <div className="buyer-board-fuels"><dt>Fuel request</dt><dd>{bid.fuel_items.map((item) => <span key={item.fuel_grade}><strong>{item.fuel_grade.toUpperCase()}</strong> {number(item.quantity_mt)} MT</span>)}</dd></div>
     </dl>
     <section className="buyer-board-quotes" aria-label={`SELLER comparison for ${bid.vessel_voyage}`}>
-      <div className="buyer-board-quotes-heading"><div><p className="eyebrow">BUYER-visible comparison</p><h4>SELLER comparison</h4></div>{sellerState.status === 'success' ? <span>{sellers.length} SELLER{sellers.length === 1 ? '' : 's'} · {currentQuoteCount} current quote{currentQuoteCount === 1 ? '' : 's'}</span> : null}</div>
+      <div className="buyer-board-quotes-heading"><h4>Buyer-visible comparison</h4>{sellerState.status === 'success' ? <span>{sellers.length} SELLER{sellers.length === 1 ? '' : 's'} · {currentQuoteCount} current quote{currentQuoteCount === 1 ? '' : 's'}</span> : null}</div>
       {sellerState.status === 'loading' ? <p className="buyer-board-quote-state" role="status">Loading SELLER comparison…</p>
         : sellerState.status === 'error' ? <p className="buyer-board-quote-state is-error" role="status">SELLER comparison temporarily unavailable. Refresh to try again.</p>
           : sellers.length === 0 ? <p className="buyer-board-quote-state">No SELLER participants</p>
             : <div className="buyer-board-quote-scroll" tabIndex={0} role="region" aria-label={`SELLER comparison table for ${bid.vessel_voyage}`}>
               <table>
-                <thead><tr><th scope="col">Rank</th><th scope="col">SELLER</th><th scope="col">Status</th>{bid.fuel_items.map((item) => <th scope="col" key={item.fuel_grade}>{item.fuel_grade.toUpperCase()} ($/MT)</th>)}<th scope="col">Barge fee ($)</th><th scope="col">Authoritative total ($)</th></tr></thead>
+                <thead><tr><th scope="col">Rank</th><th scope="col">SELLER</th><th scope="col">Status</th>{bid.fuel_items.map((item) => <th scope="col" key={item.fuel_grade}>{item.fuel_grade.toUpperCase()} ($/MT)</th>)}<th scope="col">Barge fee ($)</th><th scope="col">Total ($)</th></tr></thead>
                 <tbody>{sellers.map((seller) => {
                   const quote = seller.quote;
                   const comparisonEligible = quote ? isComparisonEligible(bid, quote) : false;
@@ -148,7 +148,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
                   const rank = quote ? comparisonRanks.get(quote.id) : undefined;
                   const status = quote?.is_awarded ? 'Awarded' : seller.response_status === 'quoted' ? 'Quoted' : seller.response_status === 'gave_up' ? 'Gave up' : 'Awaiting';
                   return <tr className={`${quote?.is_awarded ? 'is-awarded ' : ''}${rank === 1 && !quote?.is_awarded ? 'is-lowest-comparison ' : ''}${!quote?.is_awarded && !comparisonEligible ? 'is-comparison-excluded' : ''}`.trim()} key={seller.trader_organization_id}>
-                  <td className="buyer-board-rank">{quote?.is_awarded ? 'Awarded' : hasActivePrice ? rank === 1 ? <span className="buyer-board-lowest">{bid.effective_status === 'open' ? 'Lowest current' : 'Lowest advisory'}</span> : rank ?? '—' : '—'}</td>
+                  <td className="buyer-board-rank">{quote?.is_awarded ? 'Awarded' : hasActivePrice ? rank === 1 ? <span title={bid.effective_status === 'open' ? 'Lowest current comparison offer' : 'Lowest award-eligible comparison offer'} aria-label={bid.effective_status === 'open' ? 'Lowest current comparison offer' : 'Lowest award-eligible comparison offer'}>1</span> : rank ?? '—' : '—'}</td>
                   <th scope="row"><strong>{seller.trader_organization_label}</strong>{metadata ? <small>{metadata}</small> : null}</th>
                   <td className={`buyer-board-seller-status status-${seller.response_status}`}>{status}</td>
                   {bid.fuel_items.map((item) => <td key={item.fuel_grade}>{hasActivePrice ? quotePrice(quote, item.fuel_grade) : '—'}</td>)}

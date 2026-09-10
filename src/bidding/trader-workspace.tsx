@@ -311,6 +311,7 @@ function TraderBidCard({
   const resultClass = bid.effective_status === 'awarded'
     ? quote?.is_awarded ? ' result-selected' : ' result-not-selected'
     : ' result-terminal';
+  const remaining = remainingTime(bid.deadline_at, currentTimeMs);
 
   return (
     <article className={`panel trader-card status-${bid.effective_status}${editable ? ' is-editable' : ' is-terminal'}`}>
@@ -331,11 +332,7 @@ function TraderBidCard({
         <dl className="operational-data trader-bid-timing">
           <div>
             <dt>Deadline</dt>
-            <dd>{bid.deadline_at ? new Date(bid.deadline_at).toLocaleString() : 'No deadline'}</dd>
-          </div>
-          <div>
-            <dt>Remaining time</dt>
-            <dd><span className={`deadline-countdown${remainingTime(bid.deadline_at, currentTimeMs) === 'Expired' ? ' is-expired' : ''}`}>{remainingTime(bid.deadline_at, currentTimeMs)}</span><small className="countdown-note">Client clock, advisory only</small></dd>
+            <dd>{bid.deadline_at ? new Date(bid.deadline_at).toLocaleString() : 'No deadline'}{bid.deadline_at ? <span className={`deadline-countdown${remaining === 'Expired' ? ' is-expired' : ''}`} title="Remaining time is advisory only" aria-label={`Remaining time: ${remaining}, advisory only`}>({remaining})</span> : null}</dd>
           </div>
           <div>
             <dt>Delivery window</dt>

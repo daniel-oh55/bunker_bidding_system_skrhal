@@ -196,10 +196,8 @@ describe('TRADER workspace', () => {
     expect(screen.getByText('Effective status')).toBeInTheDocument();
     expect(screen.getByText('Response revision')).toBeInTheDocument();
     expect(within(requirements).getByText('Deadline')).toBeInTheDocument();
-    expect(within(requirements).getByText('Remaining time')).toBeInTheDocument();
-    expect(within(requirements).getByText(/remaining$/)).toBeInTheDocument();
-    expect(within(requirements).getByText(/\d+:\d{2}:\d{2} remaining$/)).toBeInTheDocument();
-    expect(within(requirements).getByText('Client clock, advisory only')).toBeInTheDocument();
+    expect(within(requirements).getByText(/^\(\d+:\d{2}:\d{2} remaining\)$/)).toHaveAttribute('title', 'Remaining time is advisory only');
+    expect(within(requirements).queryByText('Client clock, advisory only')).not.toBeInTheDocument();
     expect(within(requirements).getByText('Delivery window')).toBeInTheDocument();
     expect(within(requirements).getByText('LSMGO')).toBeInTheDocument();
     expect(within(requirements).getByText('20 MT requested')).toBeInTheDocument();
@@ -214,7 +212,7 @@ describe('TRADER workspace', () => {
     const { client } = clientWith([traderBid({ deadline_at: '2020-01-01T00:00:00.000Z', effective_status: 'open' })]);
     render(<TraderWorkspace client={client} membershipId={membership} onAuthorizationFailure={vi.fn()} />);
 
-    await screen.findByText('Expired');
+    await screen.findByText(/^\(Expired\)$/);
     expect(screen.getByText('Effective status')).toBeInTheDocument();
     expect(screen.getByText('open', { selector: '.status-badge' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('lsmgo unit price'), { target: { value: '3' } });

@@ -87,15 +87,18 @@ describe('BuyerBidBoardCard', () => {
     expect(within(card).getByText('VLSFO')).toBeInTheDocument();
     expect(within(card).getByRole('table')).toBeInTheDocument();
     expect(within(card).getByRole('region', { name: /SELLER comparison table/ })).toHaveAttribute('tabindex', '0');
+    expect(within(card).getByRole('heading', { name: 'Buyer-visible comparison' })).toBeInTheDocument();
+    expect(within(card).queryByRole('heading', { name: 'SELLER comparison' })).not.toBeInTheDocument();
     fireEvent.click(within(card).getByRole('button', { name: 'Manage bid' }));
     expect(onManage).toHaveBeenCalledOnce();
   });
 
-  it('keeps seconds in an advisory remaining-time value directly below the deadline', () => {
+  it('keeps seconds in a compact advisory remaining-time value directly below the deadline', () => {
     const { card } = renderCard(bid({ deadline_at: '2026-08-27T04:02:03.000Z' }));
     const deadline = within(card).getByText('Deadline').closest('div')!;
-    expect(deadline).toHaveTextContent('Remaining time: 25:02:03 remaining');
-    expect(deadline).toHaveTextContent('Client clock, advisory only');
+    expect(deadline).toHaveTextContent('(25:02:03 remaining)');
+    expect(deadline).not.toHaveTextContent('Remaining time:');
+    expect(deadline).not.toHaveTextContent('Client clock, advisory only');
   });
 
   it('follows the bid fuel-item order for dynamic unit-price columns', () => {
@@ -103,7 +106,7 @@ describe('BuyerBidBoardCard', () => {
     const prices = [{ fuel_grade: 'hsfo' as const, unit_price: 80 }, { fuel_grade: 'lsfo' as const, unit_price: 90 }, { fuel_grade: 'ulsfo' as const, unit_price: 70 }];
     const { card } = renderCard(currentBid, [quote('Dynamic Trader', 999, { fuel_prices: prices })]);
     expect(within(card).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
-      'Rank', 'SELLER', 'Status', 'ULSFO ($/MT)', 'HSFO ($/MT)', 'LSFO ($/MT)', 'Barge fee ($)', 'Authoritative total ($)',
+      'Rank', 'SELLER', 'Status', 'ULSFO ($/MT)', 'HSFO ($/MT)', 'LSFO ($/MT)', 'Barge fee ($)', 'Total ($)',
     ]);
   });
 
@@ -123,7 +126,7 @@ describe('BuyerBidBoardCard', () => {
     const { card } = renderCard(bid(), quotes);
     const lowRow = within(card).getByRole('rowheader', { name: /Current Low/ }).closest('tr')!;
     const secondRow = within(card).getByRole('rowheader', { name: /Current Second/ }).closest('tr')!;
-    expect(within(lowRow).getByText('Lowest current')).toBeInTheDocument();
+    expect(within(lowRow).getByText('1')).toHaveAttribute('title', 'Lowest current comparison offer');
     expect(within(secondRow).getByText('2')).toBeInTheDocument();
     expect(lowRow).not.toHaveClass('is-comparison-excluded');
     expect(within(lowRow).getByRole('rowheader')).toHaveTextContent('Current Low');
@@ -150,7 +153,7 @@ describe('BuyerBidBoardCard', () => {
     expect(organizationRow).toHaveClass('is-comparison-excluded');
     expect(within(accessRow).getByText('—')).toBeInTheDocument();
     expect(within(organizationRow).getByText('—')).toBeInTheDocument();
-    expect(within(activeRow).getByText('Lowest current')).toBeInTheDocument();
+    expect(within(activeRow).getByText('1')).toHaveAttribute('title', 'Lowest current comparison offer');
     expect(within(accessRow).getByRole('rowheader')).toHaveTextContent('Access inactive · Excluded from current comparison');
     expect(within(organizationRow).getByRole('rowheader')).toHaveTextContent('Organization inactive · Excluded from current comparison');
     const result = within(card).getByText(/Lowest current offer/).closest('.buyer-board-result')!;
@@ -181,7 +184,7 @@ describe('BuyerBidBoardCard', () => {
     const eligibleRow = within(card).getByRole('rowheader', { name: /Award Eligible Low/ }).closest('tr')!;
     expect(ineligibleRow).toHaveClass('is-comparison-excluded');
     expect(within(ineligibleRow).getByText('—')).toBeInTheDocument();
-    expect(within(eligibleRow).getByText('Lowest advisory')).toBeInTheDocument();
+    expect(within(eligibleRow).getByText('1')).toHaveAttribute('title', 'Lowest award-eligible comparison offer');
     const result = within(card).getByText(/Lowest award-eligible offer/).closest('.buyer-board-result')!;
     expect(result).toHaveTextContent('Award Eligible Low · $100');
     expect(result).toHaveTextContent('Gap to second award-eligible offer: $25 (25%)');
@@ -218,7 +221,7 @@ describe('BuyerBidBoardCard', () => {
     const waitingRow = within(card).getByRole('rowheader', { name: /Waiting Seller/ }).closest('tr')!;
     const quotedRow = within(card).getByRole('rowheader', { name: /Quoted Seller/ }).closest('tr')!;
     expect(within(waitingRow).getAllByText('—')).toHaveLength(4);
-    expect(within(quotedRow).getByText('Lowest current')).toBeInTheDocument();
+    expect(within(quotedRow).getByText('1')).toHaveAttribute('title', 'Lowest current comparison offer');
     expect(within(quotedRow).getByText('Quoted')).toBeInTheDocument();
     expect(quotedRow.querySelector('.buyer-board-seller-status')).toHaveClass('status-quoted');
     expect(within(card).getByText(/Quoted Seller · \$100/)).toBeInTheDocument();
