@@ -134,7 +134,7 @@ async function waitForSignIn() {
 
 async function waitForAuthorized() {
   expect(
-    await screen.findByRole('heading', { name: /authorized workspace/i }),
+    await screen.findByRole('heading', { name: /bunker bidding/i }),
   ).toBeInTheDocument();
 }
 
@@ -209,7 +209,7 @@ describe('frontend Auth access gate', () => {
       await screen.findByRole('heading', { name: /access could not be verified/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
   });
 
   it('retries a transient context RPC failure', async () => {
@@ -277,7 +277,7 @@ describe('frontend Auth access gate', () => {
     await waitForSignIn();
     act(() => { client.emit('SIGNED_OUT', null); });
     expect(client.signOut).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument();
   });
 
@@ -345,7 +345,7 @@ describe('frontend Auth access gate', () => {
       pendingContext.resolve(success([buyerContext]));
     });
     await waitFor(() => {
-      expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
     });
   });
 
@@ -377,7 +377,7 @@ describe('frontend Auth access gate', () => {
     expect(
       await screen.findByRole('heading', { name: /verifying server access/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
     expect(screen.queryByText('operator@example.test')).not.toBeInTheDocument();
 
     pendingContext.resolve(success([buyerContext]));
@@ -394,7 +394,7 @@ describe('frontend Auth access gate', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/if an account exists/i);
     expect(client.requestPasswordReset).toHaveBeenCalledWith('operator@example.test');
     expect(client.getAccessContexts).not.toHaveBeenCalled();
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
   });
 
   it('preempts initial access verification for a password recovery session', async () => {
@@ -406,7 +406,7 @@ describe('frontend Auth access gate', () => {
     expect(await screen.findByRole('heading', { name: /choose a new password/i })).toBeInTheDocument();
     expect(client.getAccessContexts).not.toHaveBeenCalled();
     act(() => { initial.resolve(success(session)); });
-    await waitFor(() => expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument());
     expect(client.getAccessContexts).not.toHaveBeenCalled();
   });
 
@@ -448,7 +448,7 @@ describe('frontend Auth access gate', () => {
     expect(client.updatePassword).toHaveBeenCalledWith('new-password');
     expect(client.signOut).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
   });
 
   it('does not verify access when USER_UPDATED arrives while recovery sign-out is pending', async () => {
@@ -466,12 +466,12 @@ describe('frontend Auth access gate', () => {
 
     act(() => { client.emit('USER_UPDATED', session); });
     expect(client.getAccessContexts).not.toHaveBeenCalled();
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
 
     act(() => { pendingSignOut.resolve(success(null)); });
     await waitForSignIn();
     expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
 
     act(() => {
       client.emit('USER_UPDATED', session);
@@ -515,7 +515,7 @@ describe('frontend Auth access gate', () => {
 
     act(() => { client.emit('USER_UPDATED', session); client.emit('TOKEN_REFRESHED', session); });
     expect(client.getAccessContexts).not.toHaveBeenCalled();
-    expect(screen.queryByText(/authorized workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bunker bidding/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument();
   });
 

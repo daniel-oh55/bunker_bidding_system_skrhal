@@ -258,10 +258,12 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
   const renderBidCard = (bid: Bid, visibleIds: string[]) => <BuyerBidBoardCard key={bid.id} bid={bid} sellerState={boardSellers[bid.id] ?? { status: 'loading' }} currentTimeMs={nowMs} selected={selected?.id === bid.id} readOnly={readOnly} onManage={() => void loadDetail(bid, true)} reorder={readOnly ? undefined : { enabled: fullDateOrderAvailable && !orderPending, canMoveEarlier: visibleIds.indexOf(bid.id) > 0, canMoveLater: visibleIds.indexOf(bid.id) >= 0 && visibleIds.indexOf(bid.id) < visibleIds.length - 1, onMoveEarlier: () => void saveOrder(moveVisible(fullDateOrderedIds, visibleIds, bid.id, -1)), onMoveLater: () => void saveOrder(moveVisible(fullDateOrderedIds, visibleIds, bid.id, 1)), onDropBefore: (sourceId) => { if (visibleIds.includes(sourceId)) void saveOrder(moveBefore(fullDateOrderedIds, sourceId, bid.id)); } }} />;
   return <div className="workspace buyer-workspace">
     <section className="panel buyer-bids-header" aria-labelledby="buyer-bids-heading">
-      <div className="buyer-bids-title"><p className="eyebrow">BUYER operations</p><h2 id="buyer-bids-heading">BIDS</h2><p className="buyer-summary-metrics"><span><strong>{bids.length}</strong> total</span><span><strong>{effectiveOpenCount}</strong> bidding open</span><span><strong>{terminalCount}</strong> closed / terminal</span></p></div>
-      <div className="buyer-history-mode" role="group" aria-label="BID workspace mode">
-        <button type="button" className="secondary" aria-pressed={!readOnly} disabled={pending} onClick={() => changeMode('active')}>Active bids</button>
-        <button type="button" className="secondary" aria-pressed={readOnly} disabled={pending} onClick={() => changeMode('archived')}>Archived history</button>
+      <div className="buyer-bids-title-row">
+        <div className="buyer-bids-title"><p className="eyebrow">BUYER operations</p><h2 id="buyer-bids-heading">BIDS</h2></div>
+        <div className="buyer-history-mode" role="group" aria-label="BID workspace mode">
+          <button type="button" className="secondary" aria-pressed={!readOnly} disabled={pending} onClick={() => changeMode('active')}>Active bids</button>
+          <button type="button" className="secondary" aria-pressed={readOnly} disabled={pending} onClick={() => changeMode('archived')}>Archived history</button>
+        </div>
       </div>
       {readOnly ? <p className="notice" role="note">Archived history is read-only. History and commercial records are retained.</p> : null}
       <div className="buyer-bids-toolbar" aria-label="BID workspace toolbar">
@@ -270,6 +272,7 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
         {view === 'responsible_buyer' ? <label className="buyer-filter-select">Responsible BUYER<select aria-label="Responsible BUYER filter" value={responsible} onChange={(event) => { const target = event.target.value; setResponsible(target); if (target) void loadList('responsible_buyer', selectedDate, target); }}><option value="">Select an active BUYER</option>{buyers.map((buyer) => <option value={buyer.user_id} key={buyer.user_id}>{buyer.display_label}</option>)}</select></label> : null}
         <div className="buyer-toolbar-actions"><button type="button" className="secondary" onClick={refresh} disabled={loading || pending}>Refresh</button>{!readOnly ? <button type="button" className="buyer-new-bid" disabled={pending || historicalDateSelected || !!preparedItem} title={historicalDateSelected ? `New BIDs can be published only for today's Seoul operational date (${todayDate}).` : preparedItem ? 'Close the open prepared draft before starting a new BID.' : undefined} onClick={() => setManualComposerOpen(true)}>+ New BID</button> : null}</div>
       </div>
+      <p className="buyer-summary-metrics"><span><strong>{bids.length}</strong> total</span><span><strong>{effectiveOpenCount}</strong> bidding open</span><span><strong>{terminalCount}</strong> closed / terminal</span></p>
       {historicalDateSelected ? <p className="buyer-date-context" role="note">New BIDs and Mail Intake actions are available only for today’s Seoul operational date ({todayDate}).</p> : null}
     </section>
     {error ? <p className="notice error" role="alert">{error.message}</p> : null}
