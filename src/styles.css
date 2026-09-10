@@ -534,6 +534,18 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-board-seller-status.status-awaiting { color: #7a8797; }
 .buyer-board-seller-status.status-quoted::before, .buyer-board-seller-status.status-awaiting::before { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; content: ""; }
 .buyer-board-total { background: #eef3f8; }
+.buyer-board-total > span { display: block; }
+.buyer-board-select { min-height: 24px; margin-top: 5px; padding: 3px 8px; border-color: #9b6a0b; background: #b48719; font-size: .64rem; line-height: 1; }
+.buyer-board-select:hover:not(:disabled) { border-color: #7a5000; background: #936d12; }
+.buyer-board-select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.buyer-board-award-confirmation-row > td { padding: var(--space-2) !important; background: #fffaf0 !important; text-align: left; white-space: normal; }
+.buyer-board-award-confirmation { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid #d8b75e; border-left: 4px solid #b48719; border-radius: var(--radius-sm); color: var(--color-text); background: #fffdf7; }
+.buyer-board-award-confirmation > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.buyer-board-award-confirmation strong { color: #5c4100; font-size: .78rem; }
+.buyer-board-award-confirmation span { color: var(--color-primary); font-size: .68rem; font-weight: 750; }
+.buyer-board-award-confirmation small { color: #6e4d00; font-size: .65rem; line-height: 1.35; }
+.buyer-board-award-confirmation-actions { display: flex; flex: 0 0 auto; gap: var(--space-2); }
+.buyer-board-award-confirmation-actions button { min-height: 28px; padding: 4px 9px; font-size: .66rem; }
 .buyer-board-quote-scroll tbody tr.is-lowest-comparison > * { background: #fff9e8; box-shadow: inset 0 1px 0 #f3df9c, inset 0 -1px 0 #f3df9c; }
 .buyer-board-result { margin: 0 var(--space-4) var(--space-3); padding: var(--space-2) var(--space-3); }
 .buyer-board-result:not(.is-awarded) { border-color: #dec47c; border-left-color: #b48719; background: #fff9e9; }
@@ -546,6 +558,8 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
   .buyer-board-quote-scroll table { min-width: max-content; table-layout: auto; font-size: .74rem; }
   .buyer-board-quote-scroll th, .buyer-board-quote-scroll td { padding: 8px 9px; }
   .buyer-board-quote-scroll tbody th { min-width: 150px; max-width: 190px; }
+  .buyer-board-award-confirmation { align-items: stretch; flex-direction: column; }
+  .buyer-board-award-confirmation-actions button { flex: 1; }
   .buyer-bid-reorder-controls { justify-content: stretch; }
   .buyer-bid-reorder-controls button { flex: 1; }
 }

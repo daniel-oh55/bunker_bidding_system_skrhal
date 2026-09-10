@@ -826,6 +826,68 @@ describe('BUYER workspace', () => {
     expect(awardBid).not.toHaveBeenCalled();
   });
 
+  it('awards a non-lowest comparison SELLER exactly once with frozen revisions and uses the existing authoritative reload', async () => {
+    const closedBid = bid({ vessel_voyage: 'MV Direct Award', raw_status: 'closed', effective_status: 'closed', revision: 8, closed_at: now });
+    const awardedBid = bid({ vessel_voyage: 'MV Direct Award', raw_status: 'awarded', effective_status: 'awarded', revision: 9, closed_at: now, awarded_quote_id: '20000000-0000-4000-8000-000000000052', awarded_trader_organization_id: '30000000-0000-4000-8000-000000000052', awarded_trader_organization_label: 'Chosen Non-lowest', awarded_total_amount: 1200, awarded_at: now });
+    const low = boardQuote(closedBid, 'Lower Seller', '51', 900, { revision: 2 });
+    const chosen = boardQuote(closedBid, 'Chosen Non-lowest', '52', 1200, { revision: 4 });
+    const awardResponse = deferred<BiddingResult<Bid>>();
+    const { client, listBids } = fakeClient([closedBid]);
+    const listBidSellerComparisonForBuyers = vi.fn(() => Promise.resolve(ok([boardComparison(low), boardComparison(chosen)])));
+    const awardBid = vi.fn<BiddingClient['awardBid']>(() => awardResponse.promise);
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
+    client.awardBid = awardBid;
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    const card = await screen.findByRole('article', { name: 'MV Direct Award' });
+    const select = await within(card).findByRole('button', { name: 'Select Chosen Non-lowest' });
+    expect(awardBid).not.toHaveBeenCalled();
+    fireEvent.click(select);
+    expect(awardBid).not.toHaveBeenCalled();
+    const confirm = within(card).getByRole('button', { name: 'Confirm selection' });
+    listBids.mockResolvedValueOnce(ok([awardedBid]));
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(awardBid).toHaveBeenCalledExactlyOnceWith(id, closedBid.id, 8, chosen.id, 4);
+    expect(within(card).getByRole('button', { name: 'Confirm selection' })).toBeDisabled();
+    expect(listBids).toHaveBeenCalledOnce();
+
+    await act(async () => { awardResponse.resolve(ok(awardedBid)); await awardResponse.promise; });
+    await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(2));
+    const reloadedCard = screen.getByRole('article', { name: 'MV Direct Award' });
+    expect(reloadedCard).toHaveClass('status-awarded');
+    expect(within(reloadedCard).queryByRole('button', { name: /Select/ })).not.toBeInTheDocument();
+    expect(within(reloadedCard).getByRole('button', { name: 'Manage bid' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['conflict', '40001'],
+    ['lifecycle', '55000'],
+    ['not_found', 'P0002'],
+  ] as const)('reloads authoritative comparison state and retains a direct-award %s error', async (kind, code) => {
+    const closedBid = bid({ vessel_voyage: 'MV Direct Award Error', raw_status: 'closed', effective_status: 'closed', revision: 6, closed_at: now });
+    const refreshedBid = { ...closedBid, revision: 7 };
+    const currentQuote = boardQuote(closedBid, 'Error Seller', '53', 1100, { revision: 3 });
+    const { client, listBids } = fakeClient([closedBid]);
+    const listBidSellerComparisonForBuyers = vi.fn(() => Promise.resolve(ok([boardComparison(currentQuote)])));
+    const awardBid = vi.fn<BiddingClient['awardBid']>(() => Promise.resolve({ data: null, error: { kind, code, message: 'Direct award state changed' } }));
+    client.listBidSellerComparisonForBuyers = listBidSellerComparisonForBuyers;
+    client.awardBid = awardBid;
+    render(<BuyerWorkspace client={client} membershipId={id} onAuthorizationFailure={vi.fn()} />);
+
+    const card = await screen.findByRole('article', { name: 'MV Direct Award Error' });
+    fireEvent.click(await within(card).findByRole('button', { name: 'Select Error Seller' }));
+    listBids.mockResolvedValueOnce(ok([refreshedBid]));
+    fireEvent.click(within(card).getByRole('button', { name: 'Confirm selection' }));
+
+    await waitFor(() => expect(awardBid).toHaveBeenCalledExactlyOnceWith(id, closedBid.id, 6, currentQuote.id, 3));
+    await waitFor(() => expect(listBids).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listBidSellerComparisonForBuyers).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('alert')).toHaveTextContent('Direct award state changed');
+    expect(screen.getByRole('article', { name: 'MV Direct Award Error' })).toHaveTextContent('Revision 7');
+  });
+
   it('keeps the current detail when a prior bid detail request resolves late', async () => {
     const bidA = bid({ id: '10000000-0000-4000-8000-000000000004', vessel_voyage: 'MV Bid A' });
     const bidB = bid({ id: '10000000-0000-4000-8000-000000000005', vessel_voyage: 'MV Bid B' });

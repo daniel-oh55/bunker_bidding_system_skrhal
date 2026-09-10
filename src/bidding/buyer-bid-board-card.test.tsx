@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BuyerBidBoardCard } from './buyer-bid-board-card';
 import type { Bid, BuyerSellerComparison, Quote } from './types';
@@ -188,7 +188,7 @@ describe('BuyerBidBoardCard', () => {
     const result = within(card).getByText(/Lowest award-eligible offer/).closest('.buyer-board-result')!;
     expect(result).toHaveTextContent('Award Eligible Low · $100');
     expect(result).toHaveTextContent('Gap to second award-eligible offer: $25 (25%)');
-    expect(result).toHaveTextContent('Award actions remain exclusively in Manage bid.');
+    expect(result).toHaveTextContent('Eligible SELLER selection is available in this comparison. Manage bid remains available for full detail.');
     expect(result).not.toHaveTextContent('Ineligible Closed Low · $50');
   });
 
@@ -275,5 +275,115 @@ describe('BuyerBidBoardCard', () => {
     rerender(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'error' }} currentTimeMs={Date.parse(now)} selected onManage={vi.fn()} />);
     expect(screen.getByRole('status')).toHaveTextContent('SELLER comparison temporarily unavailable');
     expect(screen.getByRole('button', { name: 'Managing bid' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('enables every eligible CLOSED quote, including a non-lowest SELLER, and opens a frozen confirmation before calling the parent', async () => {
+    const currentBid = bid({ raw_status: 'closed', effective_status: 'closed', revision: 7, closed_at: now });
+    const low = quote('Lowest Seller', 900, { revision: 2 });
+    const chosen = quote('Non-lowest Seller', 1200, { revision: 5 });
+    const onAward = vi.fn(() => Promise.resolve(true));
+    render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [comparison(low), comparison(chosen)] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={onAward} />);
+
+    expect(screen.getByRole('button', { name: 'Select Lowest Seller' })).toBeEnabled();
+    const selectChosen = screen.getByRole('button', { name: 'Select Non-lowest Seller' });
+    expect(selectChosen).toBeEnabled();
+    fireEvent.click(selectChosen);
+    expect(onAward).not.toHaveBeenCalled();
+    const confirmation = screen.getByRole('group', { name: 'Confirm Non-lowest Seller selection' });
+    expect(confirmation).toHaveTextContent('Authoritative total: $1,200');
+    expect(confirmation).toHaveTextContent('BID revision 7 · Quote revision 5');
+    expect(confirmation).toHaveTextContent('This selection is final in V1.1. There is no unaward or replacement.');
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Confirm selection' }));
+    await waitFor(() => expect(onAward).toHaveBeenCalledExactlyOnceWith(currentBid.id, 7, chosen.id, 5));
+  });
+
+  it('shows quoted OPEN selection for discoverability but keeps it disabled with an explanation', () => {
+    const onAward = vi.fn(() => Promise.resolve(true));
+    render(<BuyerBidBoardCard bid={bid()} sellerState={{ status: 'success', sellers: [comparison(quote('Open Seller', 1000))] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={onAward} />);
+    const select = screen.getByRole('button', { name: 'Select Open Seller' });
+    expect(select).toBeDisabled();
+    expect(select).toHaveAttribute('title', 'Selection is available only after bidding closes.');
+    expect(select).toHaveAccessibleDescription('Selection is available only after bidding closes.');
+    fireEvent.click(select);
+    expect(onAward).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Confirm selection' })).not.toBeInTheDocument();
+  });
+
+  it('keeps gave-up, awaiting, revoked-access, inactive-organization, and ineligible CLOSED rows non-actionable', () => {
+    const currentBid = bid({ raw_status: 'closed', effective_status: 'closed', closed_at: now });
+    const gaveUp = comparison(quote('Gave Up', 700, { response_status: 'gave_up', eligible_for_award: false }));
+    const revoked = comparison(quote('Revoked', 800, { access_active: false, eligible_for_award: false }));
+    const inactive = comparison(quote('Inactive', 900, { organization_active: false, eligible_for_award: false }));
+    const ineligible = comparison(quote('Ineligible', 1000, { eligible_for_award: false }));
+    render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [gaveUp, revoked, inactive, ineligible, awaiting('Awaiting', '90')] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={() => Promise.resolve(true)} />);
+
+    expect(screen.queryByRole('button', { name: 'Select Gave Up' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Select Awaiting' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select Revoked' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Select Inactive' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Select Ineligible' })).toBeDisabled();
+  });
+
+  it.each([
+    ['awarded', bid({ raw_status: 'awarded', effective_status: 'awarded', awarded_quote_id: quote('Terminal', 1000).id, awarded_trader_organization_id: quote('Terminal', 1000).trader_organization_id, awarded_trader_organization_label: 'Terminal', awarded_total_amount: 1000, awarded_at: now })],
+    ['cancelled', bid({ raw_status: 'cancelled', effective_status: 'cancelled', cancelled_at: now })],
+  ] as const)('has no executable selection on an %s card', (_status, currentBid) => {
+    render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [comparison(quote('Terminal', 1000))] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={() => Promise.resolve(true)} />);
+    expect(screen.queryByRole('button', { name: 'Select Terminal' })).not.toBeInTheDocument();
+  });
+
+  it('has no executable selection in archived read-only history', () => {
+    const currentBid = bid({ raw_status: 'closed', effective_status: 'closed', closed_at: now });
+    render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [comparison(quote('Archived Seller', 1000))] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={() => Promise.resolve(true)} readOnly />);
+    expect(screen.queryByRole('button', { name: 'Select Archived Seller' })).not.toBeInTheDocument();
+  });
+
+  it('cancels confirmation without changing the BID', () => {
+    const currentBid = bid({ raw_status: 'closed', effective_status: 'closed', closed_at: now });
+    const onAward = vi.fn(() => Promise.resolve(true));
+    render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [comparison(quote('Review Seller', 1000))] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={onAward} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select Review Seller' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep reviewing' }));
+    expect(screen.queryByRole('button', { name: 'Confirm selection' })).not.toBeInTheDocument();
+    expect(onAward).not.toHaveBeenCalled();
+  });
+
+  it('prevents duplicate confirmation while the award mutation is pending', async () => {
+    const currentBid = bid({ raw_status: 'closed', effective_status: 'closed', closed_at: now });
+    let resolveAward!: (value: boolean) => void;
+    const award = new Promise<boolean>((resolve) => { resolveAward = resolve; });
+    const onAward = vi.fn(() => award);
+    render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [comparison(quote('Pending Seller', 1000))] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={onAward} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select Pending Seller' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm selection' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(onAward).toHaveBeenCalledOnce();
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Keep reviewing' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Select Pending Seller' })).toBeDisabled();
+    await act(async () => { resolveAward(true); await award; });
+  });
+
+  it.each([
+    ['BID revision', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: { ...currentBid, revision: currentBid.revision + 1 }, nextSeller: seller })],
+    ['BID status', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: { ...currentBid, raw_status: 'awarded' as const, effective_status: 'awarded' as const, awarded_quote_id: seller.quote!.id }, nextSeller: seller })],
+    ['quote revision', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: currentBid, nextSeller: comparison({ ...seller.quote!, revision: seller.quote!.revision + 1 }) })],
+    ['response status', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: currentBid, nextSeller: { ...seller, response_status: 'gave_up' as const, quote: { ...seller.quote!, response_status: 'gave_up' as const, eligible_for_award: false } } })],
+    ['access', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: currentBid, nextSeller: { ...seller, access_active: false, quote: { ...seller.quote!, access_active: false, eligible_for_award: false } } })],
+    ['organization', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: currentBid, nextSeller: { ...seller, organization_active: false, quote: { ...seller.quote!, organization_active: false, eligible_for_award: false } } })],
+    ['eligibility', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: currentBid, nextSeller: { ...seller, quote: { ...seller.quote!, eligible_for_award: false } } })],
+    ['awarded state', (currentBid: Bid, seller: BuyerSellerComparison) => ({ nextBid: { ...currentBid, awarded_quote_id: seller.quote!.id }, nextSeller: { ...seller, quote: { ...seller.quote!, is_awarded: true, eligible_for_award: false } } })],
+  ])('invalidates a frozen confirmation after a meaningful %s change', async (_field, change) => {
+    const currentBid = bid({ raw_status: 'closed', effective_status: 'closed', revision: 4, closed_at: now });
+    const seller = comparison(quote('Changing Seller', 1234, { revision: 3 }));
+    const onAward = vi.fn(() => Promise.resolve(true));
+    const { rerender } = render(<BuyerBidBoardCard bid={currentBid} sellerState={{ status: 'success', sellers: [seller] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={onAward} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select Changing Seller' }));
+    expect(screen.getByRole('button', { name: 'Confirm selection' })).toBeInTheDocument();
+    const { nextBid, nextSeller } = change(currentBid, seller);
+    rerender(<BuyerBidBoardCard bid={nextBid} sellerState={{ status: 'success', sellers: [nextSeller] }} currentTimeMs={Date.parse(now)} selected={false} onManage={vi.fn()} onAward={onAward} />);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirm selection' })).not.toBeInTheDocument());
+    expect(onAward).not.toHaveBeenCalled();
   });
 });

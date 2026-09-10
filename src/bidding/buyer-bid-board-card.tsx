@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type DragEvent } from 'react';
 import type { Bid, BuyerSellerComparison, Quote } from './types';
 import { StatusBadge } from '../ui/workspace-ui';
 
@@ -13,6 +13,15 @@ export type BuyerBidReorderControls = {
   onMoveEarlier: () => void;
   onMoveLater: () => void;
   onDropBefore: (sourceBidId: string) => void;
+};
+type AwardConfirmation = {
+  bidId: string;
+  bidRevision: number;
+  quoteId: string;
+  quoteRevision: number;
+  sellerLabel: string;
+  authoritativeTotal: number;
+  signature: string;
 };
 
 const number = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
@@ -60,6 +69,28 @@ const sellerMetadata = (bid: Bid, seller: BuyerSellerComparison, comparisonEligi
   if (!seller.organization_active) metadata.push('Organization inactive');
   return metadata.filter(Boolean).join(' · ');
 };
+const awardTargetSignature = (bid: Bid, seller: BuyerSellerComparison) => JSON.stringify([
+  bid.id,
+  bid.revision,
+  bid.raw_status,
+  bid.effective_status,
+  bid.awarded_quote_id,
+  bid.awarded_trader_organization_id,
+  bid.awarded_at,
+  seller.trader_organization_id,
+  seller.trader_organization_label,
+  seller.response_status,
+  seller.access_active,
+  seller.organization_active,
+  seller.quote?.id ?? null,
+  seller.quote?.revision ?? null,
+  seller.quote?.response_status ?? null,
+  seller.quote?.access_active ?? null,
+  seller.quote?.organization_active ?? null,
+  seller.quote?.eligible_for_award ?? null,
+  seller.quote?.is_awarded ?? null,
+  seller.quote?.total_amount ?? null,
+]);
 
 function AdvisoryComparison({ bid, quotes }: { bid: Bid; quotes: Quote[] }) {
   if (bid.effective_status !== 'open' && bid.effective_status !== 'closed') return null;
@@ -68,7 +99,7 @@ function AdvisoryComparison({ bid, quotes }: { bid: Bid; quotes: Quote[] }) {
   const label = isOpen ? 'Lowest current offer · comparison only' : 'Lowest award-eligible offer · advisory only';
   const empty = isOpen ? 'No current comparison offers' : 'No award-eligible offers';
   const gapLabel = isOpen ? 'Gap to second current offer' : 'Gap to second award-eligible offer';
-  const authorityNote = isOpen ? 'Awards are unavailable while the bid is open.' : 'Award actions remain exclusively in Manage bid.';
+  const authorityNote = isOpen ? 'Awards are unavailable while the bid is open.' : 'Eligible SELLER selection is available in this comparison. Manage bid remains available for full detail.';
   if (eligible.length === 0) return <div className="buyer-board-result"><span>{label}</span><strong>{empty}</strong><small>{authorityNote}</small></div>;
   const lowest = eligible[0]!;
   const second = eligible[1];
@@ -82,12 +113,14 @@ function AdvisoryComparison({ bid, quotes }: { bid: Bid; quotes: Quote[] }) {
   </div>;
 }
 
-export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, onManage, readOnly = false, reorder: requestedReorder }: {
+export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, onManage, onAward, awardPending = false, readOnly = false, reorder: requestedReorder }: {
   bid: Bid;
   sellerState: BuyerBidBoardSellerState;
   currentTimeMs: number;
   selected: boolean;
   onManage: () => void;
+  onAward?: (bidId: string, bidRevision: number, quoteId: string, quoteRevision: number) => Promise<boolean>;
+  awardPending?: boolean;
   reorder?: BuyerBidReorderControls;
   readOnly?: boolean;
 }) {
@@ -108,6 +141,28 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
   );
 
   const [dragOver, setDragOver] = useState(false);
+  const [awardConfirmation, setAwardConfirmation] = useState<AwardConfirmation | null>(null);
+  const [awardSubmitting, setAwardSubmitting] = useState(false);
+  const awardSubmittingRef = useRef(false);
+  const confirmedSeller = awardConfirmation
+    ? sellers.find((seller) => seller.quote?.id === awardConfirmation.quoteId)
+    : undefined;
+  const currentAwardSignature = confirmedSeller ? awardTargetSignature(bid, confirmedSeller) : null;
+  const confirmedTarget = awardConfirmation && currentAwardSignature === awardConfirmation.signature ? awardConfirmation : null;
+  useEffect(() => {
+    if (awardConfirmation && currentAwardSignature !== awardConfirmation.signature) setAwardConfirmation(null);
+  }, [awardConfirmation, currentAwardSignature]);
+  const confirmAward = async () => {
+    if (!confirmedTarget || !onAward || awardPending || awardSubmittingRef.current) return;
+    awardSubmittingRef.current = true;
+    setAwardSubmitting(true);
+    try {
+      await onAward(confirmedTarget.bidId, confirmedTarget.bidRevision, confirmedTarget.quoteId, confirmedTarget.quoteRevision);
+    } finally {
+      awardSubmittingRef.current = false;
+      setAwardSubmitting(false);
+    }
+  };
   const onDragStart = (event: DragEvent<HTMLElement>) => {
     if (!reorder?.enabled) return;
     event.dataTransfer.effectAllowed = 'move';
@@ -147,13 +202,40 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
                   const metadata = sellerMetadata(bid, seller, comparisonEligible);
                   const rank = quote ? comparisonRanks.get(quote.id) : undefined;
                   const status = quote?.is_awarded ? 'Awarded' : seller.response_status === 'quoted' ? 'Quoted' : seller.response_status === 'gave_up' ? 'Gave up' : 'Awaiting';
-                  return <tr className={`${quote?.is_awarded ? 'is-awarded ' : ''}${rank === 1 && !quote?.is_awarded ? 'is-lowest-comparison ' : ''}${!quote?.is_awarded && !comparisonEligible ? 'is-comparison-excluded' : ''}`.trim()} key={seller.trader_organization_id}>
+                  const showSelect = !readOnly && !!quote && seller.response_status === 'quoted' && (bid.effective_status === 'open' || bid.effective_status === 'closed');
+                  const awardEligible = !!quote
+                    && bid.effective_status === 'closed'
+                    && bid.awarded_quote_id === null
+                    && seller.response_status === 'quoted'
+                    && quote.response_status === 'quoted'
+                    && seller.access_active
+                    && quote.access_active
+                    && seller.organization_active
+                    && quote.organization_active
+                    && quote.eligible_for_award
+                    && !quote.is_awarded;
+                  const selectTitle = bid.effective_status === 'open'
+                    ? 'Selection is available only after bidding closes.'
+                    : !awardEligible
+                      ? 'This quote is not eligible for award.'
+                      : awardPending || awardSubmitting
+                        ? 'Another award action is in progress.'
+                        : !onAward
+                          ? 'Selection is not available in this view.'
+                          : `Select ${seller.trader_organization_label}`;
+                  const selectReasonId = `buyer-board-select-reason-${bid.id}-${quote?.id ?? seller.trader_organization_id}`;
+                  const selectDisabled = !awardEligible || awardPending || awardSubmitting || !onAward;
+                  const confirmed = !!quote && confirmedTarget?.quoteId === quote.id;
+                  return <Fragment key={seller.trader_organization_id}><tr className={`${quote?.is_awarded ? 'is-awarded ' : ''}${rank === 1 && !quote?.is_awarded ? 'is-lowest-comparison ' : ''}${!quote?.is_awarded && !comparisonEligible ? 'is-comparison-excluded' : ''}`.trim()}>
                   <td className="buyer-board-rank">{quote?.is_awarded ? 'Awarded' : hasActivePrice ? rank === 1 ? <span title={bid.effective_status === 'open' ? 'Lowest current comparison offer' : 'Lowest award-eligible comparison offer'} aria-label={bid.effective_status === 'open' ? 'Lowest current comparison offer' : 'Lowest award-eligible comparison offer'}>1</span> : rank ?? '—' : '—'}</td>
                   <th scope="row"><strong>{seller.trader_organization_label}</strong>{metadata ? <small>{metadata}</small> : null}</th>
                   <td className={`buyer-board-seller-status status-${seller.response_status}`}>{status}</td>
                   {bid.fuel_items.map((item) => <td key={item.fuel_grade}>{hasActivePrice ? quotePrice(quote, item.fuel_grade) : '—'}</td>)}
-                  <td>{hasActivePrice ? money(quote.barge_fee) : '—'}</td><td className="buyer-board-total">{hasActivePrice ? <>{money(quote.total_amount)}<small>Server total</small></> : '—'}</td>
-                </tr>;
+                  <td>{hasActivePrice ? money(quote.barge_fee) : '—'}</td><td className="buyer-board-total">{hasActivePrice ? <><span>{money(quote.total_amount)}</span><small>Server total</small>{showSelect ? <><button type="button" className="buyer-board-select" aria-label={`Select ${seller.trader_organization_label}`} aria-describedby={selectDisabled ? selectReasonId : undefined} title={selectTitle} disabled={selectDisabled} onClick={() => setAwardConfirmation({ bidId: bid.id, bidRevision: bid.revision, quoteId: quote.id, quoteRevision: quote.revision, sellerLabel: seller.trader_organization_label, authoritativeTotal: quote.total_amount, signature: awardTargetSignature(bid, seller) })}>Select</button>{selectDisabled ? <span className="visually-hidden" id={selectReasonId}>{selectTitle}</span> : null}</> : null}</> : '—'}</td>
+                </tr>{confirmed ? <tr className="buyer-board-award-confirmation-row"><td colSpan={bid.fuel_items.length + 5}><div className="buyer-board-award-confirmation" role="group" aria-label={`Confirm ${confirmedTarget.sellerLabel} selection`}>
+                  <div><strong>Select {confirmedTarget.sellerLabel}</strong><span>Authoritative total: {money(confirmedTarget.authoritativeTotal)}</span><span>BID revision {confirmedTarget.bidRevision} · Quote revision {confirmedTarget.quoteRevision}</span><small>This selection is final in V1.1. There is no unaward or replacement.</small></div>
+                  <div className="buyer-board-award-confirmation-actions"><button type="button" disabled={awardPending || awardSubmitting} onClick={() => void confirmAward()}>Confirm selection</button><button type="button" className="secondary" disabled={awardPending || awardSubmitting} onClick={() => setAwardConfirmation(null)}>Keep reviewing</button></div>
+                </div></td></tr> : null}</Fragment>;
                 })}</tbody>
               </table>
             </div>}
