@@ -14,8 +14,8 @@ const remainingTime = (deadline: string | null, nowMs: number) => {
   const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
   const minutes = Math.floor((remainingSeconds % 3_600) / 60);
   const seconds = remainingSeconds % 60;
-  if (days > 0) return `${days}d ${hours}h remaining`;
-  if (hours > 0) return `${hours}h ${minutes}m remaining`;
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s remaining`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s remaining`;
   return `${minutes}m ${seconds}s remaining`;
 };
 

@@ -63,6 +63,7 @@ describe('BuyerBidBoardCard', () => {
     const onManage = vi.fn(); const onMoveEarlier = vi.fn(); const onMoveLater = vi.fn();
     render(<BuyerBidBoardCard bid={bid()} sellerState={{ status: 'success', sellers: [] }} currentTimeMs={Date.parse(now)} selected={false} onManage={onManage} reorder={{ enabled: true, canMoveEarlier: false, canMoveLater: true, onMoveEarlier, onMoveLater, onDropBefore: vi.fn() }} />);
     const card = screen.getByRole('article', { name: /MV Synthetic/ });
+    expect(within(card).getByRole('button', { name: /Drag to reorder/ }).closest('.buyer-bid-drag-strip')).toBe(card.firstElementChild);
     expect(within(card).getByRole('button', { name: 'Move earlier' })).toBeDisabled();
     fireEvent.click(within(card).getByRole('button', { name: 'Move later' }));
     expect(onMoveLater).toHaveBeenCalledOnce();
@@ -71,14 +72,22 @@ describe('BuyerBidBoardCard', () => {
   });
   it('renders the operational bid summary and BUYER-visible quote table in one semantic card', () => {
     const { card, onManage } = renderCard(bid(), [quote('Synthetic Trader', 1007)]);
+    expect(within(card).getByText('Buyer Creator')).toBeInTheDocument();
     expect(within(card).getByText('Test Port')).toBeInTheDocument();
     expect(within(card).getByText('1–2 September')).toBeInTheDocument();
     expect(within(card).getByText('Buyer Operator')).toBeInTheDocument();
     expect(within(card).getByText('VLSFO')).toBeInTheDocument();
     expect(within(card).getByRole('table')).toBeInTheDocument();
-    expect(within(card).getByRole('region', { name: /Scrollable SELLER comparison table/ })).toHaveAttribute('tabindex', '0');
+    expect(within(card).getByRole('region', { name: /SELLER comparison table/ })).toHaveAttribute('tabindex', '0');
     fireEvent.click(within(card).getByRole('button', { name: 'Manage bid' }));
     expect(onManage).toHaveBeenCalledOnce();
+  });
+
+  it('keeps seconds in an advisory remaining-time value directly below the deadline', () => {
+    const { card } = renderCard(bid({ deadline_at: '2026-08-27T04:02:03.000Z' }));
+    const deadline = within(card).getByText('Deadline').closest('div')!;
+    expect(deadline).toHaveTextContent('Remaining time: 1d 1h 2m 3s remaining');
+    expect(deadline).toHaveTextContent('Client clock, advisory only');
   });
 
   it('follows the bid fuel-item order for dynamic unit-price columns', () => {

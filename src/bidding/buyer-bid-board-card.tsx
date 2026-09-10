@@ -26,8 +26,8 @@ const remainingTime = (deadline: string | null, nowMs: number) => {
   const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
   const minutes = Math.floor((remainingSeconds % 3_600) / 60);
   const seconds = remainingSeconds % 60;
-  if (days > 0) return `${days}d ${hours}h remaining`;
-  if (hours > 0) return `${hours}h ${minutes}m remaining`;
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s remaining`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s remaining`;
   return `${minutes}m ${seconds}s remaining`;
 };
 const quotePrice = (quote: Quote, grade: Bid['fuel_items'][number]['fuel_grade']) => {
@@ -123,14 +123,21 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
     if (reorder?.enabled && sourceId) reorder.onDropBefore(sourceId);
   };
   return <article className={`buyer-board-card status-${bid.effective_status}${selected ? ' is-selected' : ''}${dragOver ? ' is-reorder-target' : ''}`} aria-labelledby={headingId} onDragOver={(event) => { if (reorder?.enabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOver(true); } }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
+    {reorder ? <div className="buyer-bid-drag-strip" aria-label={`Reorder ${bid.vessel_voyage}`}>
+      <button type="button" className="buyer-bid-drag-handle" draggable={reorder.enabled} disabled={!reorder.enabled} aria-label={`Drag to reorder ${bid.vessel_voyage}`} title="Drag to reorder" onDragStart={onDragStart} onClick={(event) => event.stopPropagation()}><span aria-hidden="true">⠿</span> Drag to reorder</button>
+      <div className="buyer-bid-reorder-controls">
+        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveEarlier} onClick={reorder.onMoveEarlier}>Move earlier</button>
+        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveLater} onClick={reorder.onMoveLater}>Move later</button>
+      </div>
+    </div> : null}
     <header className="buyer-board-card-heading">
-      <div><p className="eyebrow">Vessel / voyage</p><h3 id={headingId}>{bid.vessel_voyage}</h3><p className="buyer-board-port">{bid.port_name}</p></div>
+      <div className="buyer-board-card-creator"><span className="buyer-card-label">Creator</span><span>{bid.created_by_label}</span></div>
       <div className="buyer-bid-card-status"><span className="buyer-card-label">Effective status</span><StatusBadge status={bid.effective_status} label={bid.effective_status === 'open' ? 'Bidding open' : bid.effective_status === 'closed' ? 'Bidding closed' : undefined} /></div>
+      <div className="buyer-board-card-vessel"><p className="eyebrow">Vessel / voyage</p><h3 id={headingId}>{bid.vessel_voyage}</h3><p className="buyer-board-port">{bid.port_name}</p></div>
     </header>
     <dl className="buyer-board-summary">
       <div><dt>Delivery window</dt><dd>{bid.delivery_window}</dd></div>
-      <div><dt>Deadline</dt><dd>{date(bid.deadline_at)}</dd></div>
-      <div><dt>Remaining time</dt><dd className={`deadline-countdown${remaining === 'Expired' ? ' is-expired' : ''}`}>{remaining}</dd></div>
+      <div className="buyer-board-deadline"><dt>Deadline</dt><dd>{date(bid.deadline_at)}<span className={`deadline-countdown${remaining === 'Expired' ? ' is-expired' : ''}`}><span className="deadline-countdown-label">Remaining time</span>: <span>{remaining}</span></span><small className="countdown-note">Client clock, advisory only</small></dd></div>
       <div><dt>Responsible BUYER</dt><dd>{bid.responsible_buyer_label}</dd></div>
       <div className="buyer-board-fuels"><dt>Fuel request</dt><dd>{bid.fuel_items.map((item) => <span key={item.fuel_grade}><strong>{item.fuel_grade.toUpperCase()}</strong> {number(item.quantity_mt)} MT</span>)}</dd></div>
     </dl>
@@ -139,7 +146,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
       {sellerState.status === 'loading' ? <p className="buyer-board-quote-state" role="status">Loading SELLER comparison…</p>
         : sellerState.status === 'error' ? <p className="buyer-board-quote-state is-error" role="status">SELLER comparison temporarily unavailable. Refresh to try again.</p>
           : sellers.length === 0 ? <p className="buyer-board-quote-state">No SELLER participants</p>
-            : <div className="buyer-board-quote-scroll" tabIndex={0} role="region" aria-label={`Scrollable SELLER comparison table for ${bid.vessel_voyage}`}>
+            : <div className="buyer-board-quote-scroll" tabIndex={0} role="region" aria-label={`SELLER comparison table for ${bid.vessel_voyage}`}>
               <table>
                 <thead><tr><th scope="col">Rank</th><th scope="col">SELLER</th><th scope="col">Status</th>{bid.fuel_items.map((item) => <th scope="col" key={item.fuel_grade}>{item.fuel_grade.toUpperCase()} ($/MT)</th>)}<th scope="col">Barge fee ($)</th><th scope="col">Authoritative total ($)</th></tr></thead>
                 <tbody>{sellers.map((seller) => {
@@ -152,7 +159,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
                   return <tr className={`${quote?.is_awarded ? 'is-awarded ' : ''}${rank === 1 && !quote?.is_awarded ? 'is-lowest-comparison ' : ''}${!quote?.is_awarded && !comparisonEligible ? 'is-comparison-excluded' : ''}`.trim()} key={seller.trader_organization_id}>
                   <td className="buyer-board-rank">{quote?.is_awarded ? 'Awarded' : hasActivePrice ? rank === 1 ? <span className="buyer-board-lowest">{bid.effective_status === 'open' ? 'Lowest current' : 'Lowest advisory'}</span> : rank ?? '—' : '—'}</td>
                   <th scope="row"><strong>{seller.trader_organization_label}</strong>{metadata ? <small>{metadata}</small> : null}</th>
-                  <td className="buyer-board-seller-status">{status}</td>
+                  <td className={`buyer-board-seller-status status-${seller.response_status}`}>{status}</td>
                   {bid.fuel_items.map((item) => <td key={item.fuel_grade}>{hasActivePrice ? quotePrice(quote, item.fuel_grade) : '—'}</td>)}
                   <td>{hasActivePrice ? money(quote.barge_fee) : '—'}</td><td className="buyer-board-total">{hasActivePrice ? <>{money(quote.total_amount)}<small>Server total</small></> : '—'}</td>
                 </tr>;
@@ -164,12 +171,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
       ? <div className="buyer-board-result is-awarded"><span>Awarded result · authoritative</span><strong>{bid.awarded_trader_organization_label} · {money(bid.awarded_total_amount)}</strong><small>Manual server-authorized award; not an automatic lowest-price selection.</small></div>
       : sellerState.status === 'success' && sellers.length > 0 ? <AdvisoryComparison bid={bid} quotes={quotes} /> : null}
     <footer className="buyer-board-card-footer">
-      {reorder ? <div className="buyer-bid-reorder-controls" aria-label={`Reorder ${bid.vessel_voyage}`}>
-        <button type="button" className="secondary buyer-bid-drag-handle" draggable={reorder.enabled} disabled={!reorder.enabled} aria-label={`Drag to reorder ${bid.vessel_voyage}`} title="Drag to reorder" onDragStart={onDragStart} onClick={(event) => event.stopPropagation()}>Reorder</button>
-        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveEarlier} onClick={reorder.onMoveEarlier}>Move earlier</button>
-        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveLater} onClick={reorder.onMoveLater}>Move later</button>
-      </div> : null}
-      <span>Creator: {bid.created_by_label} · Revision {bid.revision}</span>
+      <span>Revision {bid.revision}</span>
       <button type="button" aria-pressed={selected} onClick={onManage}>{readOnly ? selected ? 'Viewing history' : 'View history' : selected ? 'Managing bid' : 'Manage bid'}</button>
     </footer>
   </article>;

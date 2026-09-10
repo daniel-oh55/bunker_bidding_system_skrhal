@@ -450,3 +450,99 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-history-mode { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
 .buyer-history-mode button[aria-pressed="true"] { border-color: currentColor; font-weight: 700; }
 .archive-confirmation { margin-top: .75rem; }
+
+/* V1.1 BUYER visual foundation: presentation only; server contracts remain unchanged. */
+.workspace-header { align-items: center; margin-bottom: var(--space-3); padding: var(--space-3) 0; }
+.workspace-header .eyebrow { margin-bottom: 2px; font-size: .66rem; }
+.workspace-header h1 { color: var(--color-primary); font-size: clamp(1.35rem, 2vw, 1.7rem); letter-spacing: .01em; }
+.header-actions { gap: var(--space-2); }
+.context-chip { padding: 5px 9px; font-size: .76rem; }
+
+.buyer-bids-header { gap: var(--space-3); padding: var(--space-4); }
+.buyer-bids-title-row { display: flex; align-items: start; justify-content: space-between; gap: var(--space-3); }
+.buyer-bids-title .eyebrow { margin-bottom: 2px; }
+.buyer-history-mode { gap: 0; margin: 0; padding: 3px; border: 1px solid #bdcad9; border-radius: var(--radius-sm); background: #edf2f7; }
+.buyer-history-mode button { border: 0; border-radius: calc(var(--radius-sm) - 2px); color: var(--color-muted); background: transparent; box-shadow: none; }
+.buyer-history-mode button[aria-pressed="true"] { color: var(--color-primary); background: var(--color-surface); box-shadow: 0 1px 3px rgba(24, 52, 90, .14); }
+.buyer-history-mode button:focus-visible { position: relative; z-index: 1; }
+.buyer-bids-toolbar { align-items: end; gap: var(--space-2) var(--space-3); padding-top: var(--space-3); }
+.buyer-bids-toolbar .buyer-operational-date { min-width: 145px; font-size: .76rem; }
+.buyer-bids-toolbar .buyer-operational-date input { padding: 7px 8px; }
+.buyer-bids-toolbar legend { margin-bottom: 4px; }
+.buyer-bids-toolbar .buyer-filter-options { display: inline-flex; overflow: hidden; gap: 0; border: 1px solid #bdcad9; border-radius: var(--radius-sm); background: #edf2f7; }
+.buyer-bids-toolbar .buyer-filter-options label { position: relative; display: inline-flex; align-items: center; min-height: 34px; margin: 0; padding: 0; border: 0; border-right: 1px solid #bdcad9; border-radius: 0; background: transparent; cursor: pointer; }
+.buyer-bids-toolbar .buyer-filter-options label:last-child { border-right: 0; }
+.buyer-bids-toolbar .buyer-filter-options input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; }
+.buyer-bids-toolbar .buyer-filter-options span { display: block; padding: 8px 10px; color: var(--color-muted); font-size: .76rem; line-height: 1; }
+.buyer-bids-toolbar .buyer-filter-options label:has(input:checked) span { color: var(--color-primary); background: var(--color-surface); box-shadow: 0 1px 3px rgba(24, 52, 90, .14); }
+.buyer-bids-toolbar .buyer-filter-options label:focus-within { z-index: 1; outline: none; box-shadow: var(--focus-ring); }
+.buyer-filter-select { min-width: 175px; font-size: .76rem; }
+.buyer-filter-select select { padding: 7px 8px; }
+.buyer-toolbar-actions { gap: var(--space-2); }
+.buyer-toolbar-actions button { min-height: 34px; padding: 7px 10px; font-size: .8rem; }
+.buyer-new-bid { min-width: 108px; border-color: #8f5700; }
+.buyer-summary-metrics { order: 2; gap: var(--space-2) var(--space-3); margin: 0; padding-top: var(--space-2); border-top: 1px solid #e0e7ef; font-size: .78rem; }
+.buyer-summary-metrics strong { font-size: .95rem; }
+
+.buyer-creator-groups { gap: var(--space-2); }
+.buyer-creator-group { border-color: #d6dee8; border-radius: var(--radius-sm); background: transparent; }
+.buyer-creator-group-header { min-height: 46px; padding: var(--space-2) var(--space-3); border-left: 2px solid #8ea2ba; background: #f6f8fb; }
+.buyer-creator-identity .eyebrow { display: none; }
+.buyer-creator-identity h3 { font-size: .88rem; }
+.buyer-creator-group-counts { font-size: .72rem; }
+.buyer-creator-group-counts strong { font-size: .8rem; }
+.buyer-creator-toggle { min-width: 88px; padding: 5px 8px; font-size: .72rem; }
+.buyer-creator-bid-cards { padding: var(--space-2); border-top-color: #e1e7ee; }
+.buyer-bid-cards { gap: var(--space-3); margin-top: var(--space-3); }
+
+.buyer-board-card { border-top-width: 3px; box-shadow: 0 2px 8px rgba(24, 52, 90, .06); }
+.buyer-bid-drag-strip { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 38px; padding: 4px 8px; border-bottom: 1px solid #d7e0ea; background: #f3f6fa; }
+.buyer-bid-drag-handle { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 4px; color: #53667d; background: transparent; font-size: .74rem; font-weight: 800; letter-spacing: .02em; }
+.buyer-bid-drag-handle:hover:not(:disabled) { color: var(--color-primary); background: #e3eaf2; }
+.buyer-bid-drag-handle > span { color: var(--color-primary); font-size: 1rem; line-height: 1; }
+.buyer-bid-reorder-controls { gap: 4px; }
+.buyer-bid-reorder-controls button { padding: 5px 7px; font-size: .7rem; }
+.buyer-board-card-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); }
+.buyer-board-card-creator { display: flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--color-muted); font-size: .76rem; font-weight: 700; }
+.buyer-board-card-creator > span:last-child { overflow-wrap: anywhere; }
+.buyer-board-card-vessel { grid-column: 1 / -1; min-width: 0; padding-top: var(--space-1); border-top: 1px solid #e4eaf1; }
+.buyer-board-card-heading h3 { font-size: 1.1rem; }
+.buyer-board-port { font-size: .88rem; }
+.buyer-bid-card-status { gap: 3px; }
+.buyer-board-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); }
+.buyer-board-summary dd { font-size: .8rem; }
+.buyer-board-deadline .deadline-countdown { display: block; margin-top: 4px; font-size: .78rem; }
+.buyer-board-fuels dd { gap: 5px; }
+.buyer-board-fuels dd span { padding: 4px 7px; font-size: .72rem; }
+.buyer-board-quotes { padding: var(--space-3) var(--space-4); }
+.buyer-board-quotes-heading { align-items: center; }
+.buyer-board-quotes-heading h4 { font-size: .9rem; }
+.buyer-board-quote-scroll { overflow-x: visible; margin-top: var(--space-2); border-color: #d2dce7; }
+.buyer-board-quote-scroll table { min-width: 0; table-layout: fixed; font-size: .68rem; }
+.buyer-board-quote-scroll th, .buyer-board-quote-scroll td { padding: 7px 5px; border-color: #e0e6ed; }
+.buyer-board-quote-scroll thead th { color: #52667d; background: #f1f5f9; font-size: .61rem; white-space: normal; }
+.buyer-board-quote-scroll thead th:first-child { width: 9%; }
+.buyer-board-quote-scroll thead th:nth-child(2) { width: 22%; }
+.buyer-board-quote-scroll thead th:nth-child(3) { width: 12%; }
+.buyer-board-quote-scroll thead th:nth-last-child(2) { width: 12%; }
+.buyer-board-quote-scroll thead th:last-child { width: 16%; }
+.buyer-board-quote-scroll tbody th { min-width: 0; max-width: none; color: var(--color-primary); background: #fbfcfd; }
+.buyer-board-quote-scroll tbody th small, .buyer-board-total small { font-size: .58rem; line-height: 1.2; }
+.buyer-board-seller-status { color: #52667d; font-size: .65rem; }
+.buyer-board-seller-status.status-quoted { color: #176448; }
+.buyer-board-seller-status.status-awaiting { color: #7a8797; }
+.buyer-board-total { background: #eef3f8; }
+.buyer-board-quote-scroll tbody tr.is-lowest-comparison > * { background: #fff9e8; box-shadow: inset 0 1px 0 #f3df9c, inset 0 -1px 0 #f3df9c; }
+.buyer-board-lowest { padding: 2px 4px; font-size: .55rem; }
+.buyer-board-result { margin: 0 var(--space-4) var(--space-3); padding: var(--space-2) var(--space-3); }
+.buyer-board-card-footer { min-height: 48px; padding: var(--space-2) var(--space-4); }
+
+@media (max-width: 600px) {
+  .buyer-board-quote-scroll { overflow-x: auto; }
+  .buyer-board-quote-scroll table { min-width: max-content; table-layout: auto; font-size: .74rem; }
+  .buyer-board-quote-scroll th, .buyer-board-quote-scroll td { padding: 8px 9px; }
+  .buyer-board-quote-scroll tbody th { min-width: 150px; max-width: 190px; }
+  .buyer-bid-drag-strip { align-items: stretch; flex-direction: column; }
+  .buyer-bid-reorder-controls { justify-content: stretch; }
+  .buyer-bid-reorder-controls button { flex: 1; }
+}

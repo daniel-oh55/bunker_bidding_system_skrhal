@@ -887,7 +887,9 @@ describe('BUYER workspace', () => {
     expect(within(card).getByText('awarded', { selector: '.status-badge' })).toBeInTheDocument();
     expect(within(card).getByText('Remaining time')).toBeInTheDocument();
     expect(within(card).getByText('Expired')).toBeInTheDocument();
-    expect(within(card).getByText((_content, element) => element?.textContent === 'Creator: Creator · Revision 3')).toBeInTheDocument();
+    expect(within(card).getByText('Creator', { selector: '.buyer-card-label' })).toBeInTheDocument();
+    expect(within(card).getByText('Creator', { selector: '.buyer-board-card-creator span:last-child' })).toBeInTheDocument();
+    expect(within(card).getByText('Revision 3')).toBeInTheDocument();
     expect(within(card).getByText('Target buyer')).toBeInTheDocument();
     expect(within(card).getAllByText((_content, element) => element?.textContent === 'VLSFO 10 MT').length).toBeGreaterThan(0);
     expect(within(card).getByText(/Revision 3/)).toBeInTheDocument();
