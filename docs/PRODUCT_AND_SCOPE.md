@@ -6,7 +6,7 @@ Rebuild the SKRHAL bunker bidding system on a Supabase-backed stack while preser
 
 ## V1 closeout
 
-Final Production Acceptance is complete. PR #62 is merged and the `main` baseline is `3f6a3b7fa0f95393be2505443592875b404b4960` (`docs: reconcile Archive UI and Production smoke (#62)`). The agreed V1 core scope is complete with no known V1 blocker. This does not claim every future feature is complete: expanded editing of published BID commercial terms/participants and improved discoverability of the existing Award/final SELLER selection flow remain post-V1 / V1.1 improvements, while the exclusions below remain excluded.
+Final Production Acceptance is complete. PR #63 closeout work started from `main@3f6a3b7fa0f95393be2505443592875b404b4960`, the merge result of PR #62. The agreed V1 core scope is complete with no known V1 blocker. This does not claim every future feature is complete: expanded editing of published BID commercial terms/participants and improved discoverability of the existing Award/final SELLER selection flow remain post-V1 / V1.1 improvements, while the exclusions below remain excluded.
 
 ## Implemented baseline
 
