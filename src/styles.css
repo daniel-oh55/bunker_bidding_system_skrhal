@@ -462,8 +462,8 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-bids-title-row { display: flex; align-items: start; justify-content: space-between; gap: var(--space-3); }
 .buyer-bids-title .eyebrow { margin-bottom: 2px; }
 .buyer-history-mode { gap: 0; margin: 0; padding: 3px; border: 1px solid #bdcad9; border-radius: var(--radius-sm); background: #edf2f7; }
-.buyer-history-mode button { border: 0; border-radius: calc(var(--radius-sm) - 2px); color: var(--color-muted); background: transparent; box-shadow: none; }
-.buyer-history-mode button[aria-pressed="true"] { color: var(--color-primary); background: var(--color-surface); box-shadow: 0 1px 3px rgba(24, 52, 90, .14); }
+.buyer-history-mode button { border: 0; border-radius: calc(var(--radius-sm) - 2px); color: var(--color-muted); background: #f7f9fb; box-shadow: none; }
+.buyer-history-mode button[aria-pressed="true"] { color: #fff; background: var(--color-primary); box-shadow: 0 1px 3px rgba(24, 52, 90, .24); }
 .buyer-history-mode button:focus-visible { position: relative; z-index: 1; }
 .buyer-bids-toolbar { align-items: end; gap: var(--space-2) var(--space-3); padding-top: var(--space-3); }
 .buyer-bids-toolbar .buyer-operational-date { min-width: 145px; font-size: .76rem; }
@@ -496,10 +496,11 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-bid-cards { gap: var(--space-3); margin-top: var(--space-3); }
 
 .buyer-board-card { border-top-width: 3px; box-shadow: 0 2px 8px rgba(24, 52, 90, .06); }
-.buyer-bid-drag-strip { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 38px; padding: 4px 8px; border-bottom: 1px solid #d7e0ea; background: #f3f6fa; }
-.buyer-bid-drag-handle { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 4px; color: #53667d; background: transparent; font-size: .74rem; font-weight: 800; letter-spacing: .02em; }
-.buyer-bid-drag-handle:hover:not(:disabled) { color: var(--color-primary); background: #e3eaf2; }
-.buyer-bid-drag-handle > span { color: var(--color-primary); font-size: 1rem; line-height: 1; }
+.buyer-bid-drag-strip { display: flex; align-items: center; width: 100%; min-height: 38px; padding: 7px 10px; border-bottom: 1px solid #d7e0ea; color: #53667d; background: #f3f6fa; cursor: grab; font-size: .74rem; font-weight: 800; letter-spacing: .02em; user-select: none; }
+.buyer-bid-drag-strip:hover { color: var(--color-primary); background: #eaf0f6; }
+.buyer-bid-drag-strip:active { cursor: grabbing; }
+.buyer-bid-drag-strip[draggable="false"] { color: #8a97a7; cursor: not-allowed; }
+.buyer-bid-drag-strip > span { margin-right: 6px; color: var(--color-primary); font-size: 1rem; line-height: 1; }
 .buyer-bid-reorder-controls { gap: 4px; }
 .buyer-bid-reorder-controls button { padding: 5px 7px; font-size: .7rem; }
 .buyer-board-card-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); }
@@ -531,11 +532,15 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
 .buyer-board-seller-status { color: #52667d; font-size: .65rem; }
 .buyer-board-seller-status.status-quoted { color: #176448; }
 .buyer-board-seller-status.status-awaiting { color: #7a8797; }
+.buyer-board-seller-status.status-quoted::before, .buyer-board-seller-status.status-awaiting::before { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; content: ""; }
 .buyer-board-total { background: #eef3f8; }
 .buyer-board-quote-scroll tbody tr.is-lowest-comparison > * { background: #fff9e8; box-shadow: inset 0 1px 0 #f3df9c, inset 0 -1px 0 #f3df9c; }
 .buyer-board-lowest { padding: 2px 4px; font-size: .55rem; }
 .buyer-board-result { margin: 0 var(--space-4) var(--space-3); padding: var(--space-2) var(--space-3); }
+.buyer-board-result:not(.is-awarded) { border-color: #dec47c; border-left-color: #b48719; background: #fff9e9; }
+.buyer-board-result:not(.is-awarded) > strong { color: #5c4100; font-size: .95rem; }
 .buyer-board-card-footer { min-height: 48px; padding: var(--space-2) var(--space-4); }
+.buyer-board-card-footer > button:last-child { margin-left: auto; font-weight: 800; }
 
 @media (max-width: 600px) {
   .buyer-board-quote-scroll { overflow-x: auto; }
@@ -545,4 +550,20 @@ code { display: inline-block; margin-top: var(--space-2); padding: 6px 10px; bor
   .buyer-bid-drag-strip { align-items: stretch; flex-direction: column; }
   .buyer-bid-reorder-controls { justify-content: stretch; }
   .buyer-bid-reorder-controls button { flex: 1; }
+}
+
+/* Final V1.1 narrow-layout overrides, kept after legacy media queries. */
+@media (max-width: 600px) {
+  .buyer-bids-title-row { align-items: stretch; flex-direction: column; }
+  .buyer-bids-title, .buyer-board-card-vessel { min-width: 0; }
+  .buyer-history-mode { width: 100%; }
+  .buyer-history-mode button { flex: 1 1 0; min-width: 0; padding-inline: 7px; }
+  .buyer-board-card-heading { grid-template-columns: minmax(0, 1fr); }
+  .buyer-bid-card-status { grid-column: 1; justify-items: start; }
+  .buyer-board-summary { grid-template-columns: minmax(0, 1fr); }
+  .buyer-board-fuels { grid-column: auto; }
+  .buyer-bid-drag-strip { align-items: center; flex-direction: row; }
+  .buyer-board-card-footer { align-items: stretch; flex-wrap: wrap; }
+  .buyer-board-card-footer > span { flex: 1 0 100%; }
+  .buyer-board-card-footer > button:last-child { margin-left: 0; }
 }

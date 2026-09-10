@@ -10,13 +10,10 @@ const remainingTime = (deadline: string | null, nowMs: number) => {
   if (!deadline) return 'No deadline';
   const remainingSeconds = Math.ceil((new Date(deadline).getTime() - nowMs) / 1000);
   if (remainingSeconds <= 0) return 'Expired';
-  const days = Math.floor(remainingSeconds / 86_400);
-  const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
+  const hours = Math.floor(remainingSeconds / 3_600);
   const minutes = Math.floor((remainingSeconds % 3_600) / 60);
   const seconds = remainingSeconds % 60;
-  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s remaining`;
-  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s remaining`;
-  return `${minutes}m ${seconds}s remaining`;
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} remaining`;
 };
 
 const unknownError: WorkflowError = {

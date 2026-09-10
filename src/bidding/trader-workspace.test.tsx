@@ -198,7 +198,7 @@ describe('TRADER workspace', () => {
     expect(within(requirements).getByText('Deadline')).toBeInTheDocument();
     expect(within(requirements).getByText('Remaining time')).toBeInTheDocument();
     expect(within(requirements).getByText(/remaining$/)).toBeInTheDocument();
-    expect(within(requirements).getByText(/\d+s remaining$/)).toBeInTheDocument();
+    expect(within(requirements).getByText(/\d+:\d{2}:\d{2} remaining$/)).toBeInTheDocument();
     expect(within(requirements).getByText('Client clock, advisory only')).toBeInTheDocument();
     expect(within(requirements).getByText('Delivery window')).toBeInTheDocument();
     expect(within(requirements).getByText('LSMGO')).toBeInTheDocument();

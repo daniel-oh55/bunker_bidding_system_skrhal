@@ -22,13 +22,10 @@ const remainingTime = (deadline: string | null, nowMs: number) => {
   if (!deadline) return 'No deadline';
   const remainingSeconds = Math.ceil((new Date(deadline).getTime() - nowMs) / 1_000);
   if (remainingSeconds <= 0) return 'Expired';
-  const days = Math.floor(remainingSeconds / 86_400);
-  const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
+  const hours = Math.floor(remainingSeconds / 3_600);
   const minutes = Math.floor((remainingSeconds % 3_600) / 60);
   const seconds = remainingSeconds % 60;
-  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s remaining`;
-  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s remaining`;
-  return `${minutes}m ${seconds}s remaining`;
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} remaining`;
 };
 const quotePrice = (quote: Quote, grade: Bid['fuel_items'][number]['fuel_grade']) => {
   const price = quote.fuel_prices.find((candidate) => candidate.fuel_grade === grade);
@@ -111,7 +108,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
   );
 
   const [dragOver, setDragOver] = useState(false);
-  const onDragStart = (event: DragEvent<HTMLButtonElement>) => {
+  const onDragStart = (event: DragEvent<HTMLElement>) => {
     if (!reorder?.enabled) return;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', bid.id);
@@ -123,13 +120,7 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
     if (reorder?.enabled && sourceId) reorder.onDropBefore(sourceId);
   };
   return <article className={`buyer-board-card status-${bid.effective_status}${selected ? ' is-selected' : ''}${dragOver ? ' is-reorder-target' : ''}`} aria-labelledby={headingId} onDragOver={(event) => { if (reorder?.enabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOver(true); } }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
-    {reorder ? <div className="buyer-bid-drag-strip" aria-label={`Reorder ${bid.vessel_voyage}`}>
-      <button type="button" className="buyer-bid-drag-handle" draggable={reorder.enabled} disabled={!reorder.enabled} aria-label={`Drag to reorder ${bid.vessel_voyage}`} title="Drag to reorder" onDragStart={onDragStart} onClick={(event) => event.stopPropagation()}><span aria-hidden="true">⠿</span> Drag to reorder</button>
-      <div className="buyer-bid-reorder-controls">
-        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveEarlier} onClick={reorder.onMoveEarlier}>Move earlier</button>
-        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveLater} onClick={reorder.onMoveLater}>Move later</button>
-      </div>
-    </div> : null}
+    {reorder ? <div className="buyer-bid-drag-strip" role="group" draggable={reorder.enabled} aria-label={`Drag to reorder ${bid.vessel_voyage}`} title="Drag to reorder" onDragStart={onDragStart}><span aria-hidden="true">⠿</span> Drag to reorder</div> : null}
     <header className="buyer-board-card-heading">
       <div className="buyer-board-card-creator"><span className="buyer-card-label">Creator</span><span>{bid.created_by_label}</span></div>
       <div className="buyer-bid-card-status"><span className="buyer-card-label">Effective status</span><StatusBadge status={bid.effective_status} label={bid.effective_status === 'open' ? 'Bidding open' : bid.effective_status === 'closed' ? 'Bidding closed' : undefined} /></div>
@@ -172,6 +163,10 @@ export function BuyerBidBoardCard({ bid, sellerState, currentTimeMs, selected, o
       : sellerState.status === 'success' && sellers.length > 0 ? <AdvisoryComparison bid={bid} quotes={quotes} /> : null}
     <footer className="buyer-board-card-footer">
       <span>Revision {bid.revision}</span>
+      {reorder ? <div className="buyer-bid-reorder-controls" aria-label={`Reorder ${bid.vessel_voyage}`}>
+        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveEarlier} onClick={reorder.onMoveEarlier}>Move earlier</button>
+        <button type="button" className="secondary" disabled={!reorder.enabled || !reorder.canMoveLater} onClick={reorder.onMoveLater}>Move later</button>
+      </div> : null}
       <button type="button" aria-pressed={selected} onClick={onManage}>{readOnly ? selected ? 'Viewing history' : 'View history' : selected ? 'Managing bid' : 'Manage bid'}</button>
     </footer>
   </article>;

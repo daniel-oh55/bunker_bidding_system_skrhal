@@ -63,8 +63,16 @@ describe('BuyerBidBoardCard', () => {
     const onManage = vi.fn(); const onMoveEarlier = vi.fn(); const onMoveLater = vi.fn();
     render(<BuyerBidBoardCard bid={bid()} sellerState={{ status: 'success', sellers: [] }} currentTimeMs={Date.parse(now)} selected={false} onManage={onManage} reorder={{ enabled: true, canMoveEarlier: false, canMoveLater: true, onMoveEarlier, onMoveLater, onDropBefore: vi.fn() }} />);
     const card = screen.getByRole('article', { name: /MV Synthetic/ });
-    expect(within(card).getByRole('button', { name: /Drag to reorder/ }).closest('.buyer-bid-drag-strip')).toBe(card.firstElementChild);
-    expect(within(card).getByRole('button', { name: 'Move earlier' })).toBeDisabled();
+    const dragStrip = within(card).getByRole('group', { name: /Drag to reorder/ });
+    expect(dragStrip).toBe(card.firstElementChild);
+    expect(dragStrip).toHaveAttribute('draggable', 'true');
+    expect(dragStrip).toHaveAttribute('title', 'Drag to reorder');
+    const dataTransfer = { effectAllowed: '', setData: vi.fn() };
+    fireEvent.dragStart(dragStrip, { dataTransfer });
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', bidId);
+    const moveEarlier = within(card).getByRole('button', { name: 'Move earlier' });
+    expect(moveEarlier.closest('footer')).not.toBeNull();
+    expect(moveEarlier).toBeDisabled();
     fireEvent.click(within(card).getByRole('button', { name: 'Move later' }));
     expect(onMoveLater).toHaveBeenCalledOnce();
     expect(onMoveEarlier).not.toHaveBeenCalled();
@@ -86,7 +94,7 @@ describe('BuyerBidBoardCard', () => {
   it('keeps seconds in an advisory remaining-time value directly below the deadline', () => {
     const { card } = renderCard(bid({ deadline_at: '2026-08-27T04:02:03.000Z' }));
     const deadline = within(card).getByText('Deadline').closest('div')!;
-    expect(deadline).toHaveTextContent('Remaining time: 1d 1h 2m 3s remaining');
+    expect(deadline).toHaveTextContent('Remaining time: 25:02:03 remaining');
     expect(deadline).toHaveTextContent('Client clock, advisory only');
   });
 
@@ -197,6 +205,7 @@ describe('BuyerBidBoardCard', () => {
     const card = renderSellers(bid(), [awaiting('Waiting Seller', '71')]);
     const row = within(card).getByRole('rowheader', { name: /Waiting Seller/ }).closest('tr')!;
     expect(within(row).getByText('Awaiting')).toBeInTheDocument();
+    expect(row.querySelector('.buyer-board-seller-status')).toHaveClass('status-awaiting');
     expect(within(row).getAllByText('—')).toHaveLength(4);
     expect(row).toHaveClass('is-comparison-excluded');
     expect(within(card).getByText('No current comparison offers')).toBeInTheDocument();
@@ -211,6 +220,7 @@ describe('BuyerBidBoardCard', () => {
     expect(within(waitingRow).getAllByText('—')).toHaveLength(4);
     expect(within(quotedRow).getByText('Lowest current')).toBeInTheDocument();
     expect(within(quotedRow).getByText('Quoted')).toBeInTheDocument();
+    expect(quotedRow.querySelector('.buyer-board-seller-status')).toHaveClass('status-quoted');
     expect(within(card).getByText(/Quoted Seller · \$100/)).toBeInTheDocument();
     expect(within(card).getByText('2 SELLERs · 1 current quote')).toBeInTheDocument();
   });
