@@ -94,8 +94,14 @@ async function raceDeleteWins({ a, b, observer, pids }) {
     await waitForBlocking(observer, pids.b, pids.a, raceName);
     await a.query('commit'); aOpen = false;
     const insertion = await outcome(pendingDependency);
-    assert(!insertion.ok && insertion.error.code === '23503', `${raceName}: dependency insert succeeded after deletion instead of failing its FK.`);
-    await b.query('rollback'); bOpen = false;
+    if (insertion.ok) {
+      const commit = await outcome(b.query('commit'));
+      bOpen = false;
+      assert(!commit.ok && commit.error.code === '23503', `${raceName}: dependency insert committed after deletion instead of failing its FK.`);
+    } else {
+      assert(['23503', '23514'].includes(insertion.error.code), `${raceName}: dependency insert failed with unexpected SQLSTATE ${insertion.error.code}.`);
+      await b.query('rollback'); bOpen = false;
+    }
     const { rows } = await observer.query("select (select count(*)::int from app_private.organizations where id = $1) as seller_count, (select count(*)::int from app_private.trader_organization_admin_audit_events where trader_organization_id = $1 and event_type = 'deleted') as delete_audits", [fixture.sellerOrganizationId]);
     assert(rows[0].seller_count === 0 && rows[0].delete_audits === 1, `${raceName}: committed delete did not leave exactly one tombstone.`);
   } finally {

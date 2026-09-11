@@ -265,13 +265,13 @@ begin
     raise exception using errcode = '40001', message = 'SELLER organization changed; reload and try again';
   end if;
 
-  if exists (select 1 from app_private.organization_memberships where organization_id = v_organization.id)
-    or exists (select 1 from app_private.bid_trader_organization_access where trader_organization_id = v_organization.id)
-    or exists (select 1 from app_private.bid_trader_organization_responses where trader_organization_id = v_organization.id)
-    or exists (select 1 from app_private.quotes where trader_organization_id = v_organization.id)
-    or exists (select 1 from app_private.quote_audit_events where trader_organization_id = v_organization.id or actor_organization_id = v_organization.id)
-    or exists (select 1 from app_private.bid_trader_organization_response_audit_events where trader_organization_id = v_organization.id or actor_organization_id = v_organization.id)
-    or exists (select 1 from app_private.bid_audit_events where actor_organization_id = v_organization.id) then
+  if exists (select 1 from app_private.organization_memberships as membership where membership.organization_id = v_organization.id)
+    or exists (select 1 from app_private.bid_trader_organization_access as bid_access where bid_access.trader_organization_id = v_organization.id)
+    or exists (select 1 from app_private.bid_trader_organization_responses as response where response.trader_organization_id = v_organization.id)
+    or exists (select 1 from app_private.quotes as quote where quote.trader_organization_id = v_organization.id)
+    or exists (select 1 from app_private.quote_audit_events as quote_audit where quote_audit.trader_organization_id = v_organization.id or quote_audit.actor_organization_id = v_organization.id)
+    or exists (select 1 from app_private.bid_trader_organization_response_audit_events as response_audit where response_audit.trader_organization_id = v_organization.id or response_audit.actor_organization_id = v_organization.id)
+    or exists (select 1 from app_private.bid_audit_events as bid_audit where bid_audit.actor_organization_id = v_organization.id) then
     raise exception using errcode = '55000', message = 'SELLER organization has memberships or retained bidding history; deactivate it instead';
   end if;
 

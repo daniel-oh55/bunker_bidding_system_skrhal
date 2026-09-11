@@ -92,11 +92,20 @@ select is((select organization_status from public.rename_trader_organization('93
 select throws_ok($$select * from public.rename_trader_organization('93000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000003','Renamed Alpha','active','   ')$$, '22023', 'SELLER organization name is required', 'blank rename is rejected'); -- 21
 select throws_ok($$select * from public.rename_trader_organization('93000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000003','Renamed Alpha','active',repeat('x',121))$$, '22023', 'SELLER organization name must be at most 120 characters', 'long rename is rejected'); -- 22
 select throws_like($$select * from public.rename_trader_organization('93000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000003','Renamed Alpha','active',' duplicate seller ')$$, '%duplicate key%', 'normalized duplicate rename is rejected'); -- 23
+reset role;
 select is((select count(*) from app_private.trader_organization_admin_audit_events where trader_organization_id = '92000000-0000-4000-8000-000000000003' and event_type = 'renamed'), 1::bigint, 'normalized no-op has no audit event before repeat'); -- 24
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000001', true);
 select is((select organization_label from public.rename_trader_organization('93000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000003','Renamed Alpha','active',' renamed alpha ')), 'Renamed Alpha', 'case-insensitive normalized no-op returns current row'); -- 25
+reset role;
 select is((select count(*) from app_private.trader_organization_admin_audit_events where trader_organization_id = '92000000-0000-4000-8000-000000000003' and event_type = 'renamed'), 1::bigint, 'normalized no-op adds no audit event'); -- 26
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000001', true);
 select is((select organization_label from public.rename_trader_organization('93000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000003','Renamed Alpha','active','Renamed Beta')), 'Renamed Beta', 'second actual rename succeeds'); -- 27
+reset role;
 select is((select count(*) from app_private.trader_organization_admin_audit_events where trader_organization_id = '92000000-0000-4000-8000-000000000003' and event_type = 'renamed'), 2::bigint, 'multiple actual renames are append-only'); -- 28
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000001', true);
 select throws_ok($$select * from public.rename_trader_organization('93000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000003','Renamed Alpha','active','Stale')$$, '40001', 'SELLER organization changed; reload and try again', 'stale expected label is rejected'); -- 29
 select throws_ok($$select * from public.delete_trader_organization('93000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000003','Renamed Beta','inactive')$$, '40001', 'SELLER organization changed; reload and try again', 'stale expected status is rejected'); -- 30
 
