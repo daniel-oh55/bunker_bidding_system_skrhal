@@ -85,8 +85,18 @@ describe('BiddingClient RPC adapter', () => {
     expect(await deactivate.client.deactivateTraderOrganization!(id, other)).toMatchObject({ data: { organization_status: 'inactive' }, error: null });
     expect(deactivate.rpc).toHaveBeenCalledWith('deactivate_trader_organization', { p_actor_membership_id: id, p_trader_organization_id: other });
 
+    const rename = harness([{ ...sellerOrganization, organization_label: 'Renamed Ocean' }]);
+    expect(await rename.client.renameTraderOrganization!(id, other, 'Ocean Bunker', 'inactive', 'Renamed Ocean')).toMatchObject({ data: { organization_label: 'Renamed Ocean' }, error: null });
+    expect(rename.rpc).toHaveBeenCalledWith('rename_trader_organization', { p_actor_membership_id: id, p_trader_organization_id: other, p_expected_organization_label: 'Ocean Bunker', p_expected_organization_status: 'inactive', p_organization_name: 'Renamed Ocean' });
+
+    const remove = harness([sellerOrganization]);
+    expect(await remove.client.deleteTraderOrganization!(id, other, 'Ocean Bunker', 'active')).toMatchObject({ data: sellerOrganization, error: null });
+    expect(remove.rpc).toHaveBeenCalledWith('delete_trader_organization', { p_actor_membership_id: id, p_trader_organization_id: other, p_expected_organization_label: 'Ocean Bunker', p_expected_organization_status: 'active' });
+
     expect((await harness([]).client.createTraderOrganization!(id, 'Missing')).error?.kind).toBe('protocol');
     expect((await harness([sellerOrganization, sellerOrganization]).client.deactivateTraderOrganization!(id, other)).error?.kind).toBe('protocol');
+    expect((await harness([sellerOrganization, sellerOrganization]).client.renameTraderOrganization!(id, other, 'Ocean Bunker', 'active', 'Renamed Ocean')).error?.kind).toBe('protocol');
+    expect((await harness([]).client.deleteTraderOrganization!(id, other, 'Ocean Bunker', 'active')).error?.kind).toBe('protocol');
   });
 
   it('rejects malformed SELLER-admin list and mutation results as protocol failures', async () => {
