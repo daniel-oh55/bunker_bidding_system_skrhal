@@ -1,6 +1,11 @@
 -- SELLER administration evolution: preserve an append-only tombstone after a
 -- completely unused TRADER organization is physically deleted.
 
+alter table app_private.organization_memberships
+  drop constraint organization_memberships_organization_id_fkey,
+  add constraint organization_memberships_organization_id_fkey
+    foreign key (organization_id) references app_private.organizations (id) on delete restrict;
+
 do $$
 declare
   v_constraint name;

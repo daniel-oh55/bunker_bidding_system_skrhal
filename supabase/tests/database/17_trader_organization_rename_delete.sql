@@ -1,5 +1,5 @@
 begin;
-select plan(50);
+select plan(54);
 
 insert into auth.users (id, email) values
   ('91000000-0000-4000-8000-000000000001', 'admin@seller-rename-delete.test'),
@@ -144,6 +144,25 @@ select throws_like($$update app_private.organizations set name = 'Browser write'
 select throws_like($$delete from app_private.organizations where id = '92000000-0000-4000-8000-000000000003'$$, '%permission denied%', 'direct authenticated organization DELETE remains denied'); -- 49
 reset role;
 select throws_ok($$delete from app_private.trader_organization_admin_audit_events where trader_organization_id = '92000000-0000-4000-8000-000000000003'$$, '42501', 'TRADER organization administration audit is append-only', 'admin audit remains append-only'); -- 50
+
+select is(
+  (
+    select constraint_row.confdeltype
+    from pg_constraint as constraint_row
+    join pg_attribute as attribute_row
+      on attribute_row.attrelid = constraint_row.conrelid
+     and attribute_row.attnum = constraint_row.conkey[1]
+    where constraint_row.conrelid = 'app_private.organization_memberships'::regclass
+      and constraint_row.contype = 'f'
+      and constraint_row.confrelid = 'app_private.organizations'::regclass
+      and attribute_row.attname = 'organization_id'
+  ),
+  'r',
+  'organization_memberships.organization_id foreign key uses RESTRICT delete action'
+); -- 51
+select throws_ok($$delete from app_private.organizations where id = '92000000-0000-4000-8000-000000000008'$$, '23503', null, 'elevated direct delete cannot cascade-delete a membership'); -- 52
+select is((select count(*) from app_private.organizations where id = '92000000-0000-4000-8000-000000000008'), 1::bigint, 'foreign-key-rejected direct delete leaves organization intact'); -- 53
+select is((select count(*) from app_private.organization_memberships where organization_id = '92000000-0000-4000-8000-000000000008'), 1::bigint, 'foreign-key-rejected direct delete leaves membership intact'); -- 54
 
 select * from finish();
 rollback;

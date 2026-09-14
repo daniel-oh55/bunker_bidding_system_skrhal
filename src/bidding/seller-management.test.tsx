@@ -147,6 +147,18 @@ describe('SELLER management', () => {
     expect(screen.getByText('Active Ocean')).toBeInTheDocument();
   });
 
+  it('uses the SELLER delete lifecycle reason when the client maps it to the generic BID deadline text', async () => {
+    const { client, deleteTraderOrganization } = harness([organizations[0]!]);
+    deleteTraderOrganization.mockResolvedValueOnce({ data: null, error: { kind: 'lifecycle', code: '55000', message: 'The bid state or deadline changed. The latest data was loaded.' } });
+    open(client); const row = (await screen.findByText('Active Ocean')).closest('li')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm permanent delete' }));
+    await waitFor(() => expect(deleteTraderOrganization).toHaveBeenCalledOnce());
+    expect(await screen.findByText('SELLER organization has memberships or retained bidding history; deactivate it instead')).toBeInTheDocument();
+    expect(screen.queryByText('The bid state or deadline changed. The latest data was loaded.')).not.toBeInTheDocument();
+    expect(screen.getByText('Active Ocean')).toBeInTheDocument();
+  });
+
   it('cancels permanent deletion without mutation and removes the row only after an authoritative reload', async () => {
     const { client, deleteTraderOrganization, listTraderOrganizationsForAdmin } = harness([organizations[0]!]);
     listTraderOrganizationsForAdmin.mockResolvedValueOnce(ok([organizations[0]!])).mockResolvedValueOnce(ok([]));

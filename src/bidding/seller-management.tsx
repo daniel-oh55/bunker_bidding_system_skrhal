@@ -3,6 +3,7 @@ import type { BiddingClient, BiddingResult } from './bidding-client';
 import type { SellerOrganizationAdmin, WorkflowError } from './types';
 
 const unknownError: WorkflowError = { kind: 'unknown', code: null, message: 'The SELLER administration request could not be completed. Please try again.' };
+const sellerDeleteLifecycleMessage = 'SELLER organization has memberships or retained bidding history; deactivate it instead';
 const statusLabel: Record<SellerOrganizationAdmin['organization_status'], string> = {
   active: 'Active',
   inactive: 'Inactive',
@@ -134,9 +135,14 @@ export function SellerManagement({ client, membershipId, reloadVersion = 0, onAu
   const confirmDeletion = () => {
     const target = deletionTarget;
     if (!target || pending) return;
-    void runMutation(() => client.deleteTraderOrganization
-      ? client.deleteTraderOrganization(membershipId, target.organization_id, target.organization_label, target.organization_status)
-      : Promise.resolve({ data: null, error: unknownError }));
+    void runMutation(async () => {
+      const result = client.deleteTraderOrganization
+        ? await client.deleteTraderOrganization(membershipId, target.organization_id, target.organization_label, target.organization_status)
+        : { data: null, error: unknownError };
+      return result.error?.kind === 'lifecycle'
+        ? { ...result, error: { ...result.error, message: sellerDeleteLifecycleMessage } }
+        : result;
+    });
   };
 
   return <section className="panel seller-management" aria-label="SELLER management">
