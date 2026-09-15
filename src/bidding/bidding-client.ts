@@ -27,6 +27,8 @@ export interface BiddingClient {
   listTraderOrganizationsForAdmin?(membershipId: string): Promise<BiddingResult<SellerOrganizationAdmin[]>>;
   createTraderOrganization?(membershipId: string, organizationName: string): Promise<BiddingResult<SellerOrganizationAdmin>>;
   deactivateTraderOrganization?(membershipId: string, organizationId: string): Promise<BiddingResult<SellerOrganizationAdmin>>;
+  renameTraderOrganization?(membershipId: string, organizationId: string, expectedOrganizationLabel: string, expectedOrganizationStatus: SellerOrganizationAdmin['organization_status'], organizationName: string): Promise<BiddingResult<SellerOrganizationAdmin>>;
+  deleteTraderOrganization?(membershipId: string, organizationId: string, expectedOrganizationLabel: string, expectedOrganizationStatus: SellerOrganizationAdmin['organization_status']): Promise<BiddingResult<SellerOrganizationAdmin>>;
   listBidTraderAccess(membershipId: string, bidId: string): Promise<BiddingResult<BidTraderAccess[]>>;
   grantBidTraderAccess(membershipId: string, bidId: string, expectedRevision: number, organizationId: string): Promise<BiddingResult<Bid>>;
   revokeBidTraderAccess(membershipId: string, bidId: string, expectedRevision: number, organizationId: string): Promise<BiddingResult<Bid>>;
@@ -74,6 +76,8 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
     listTraderOrganizationsForAdmin: (m) => rpc('list_trader_organizations_for_admin', { p_actor_membership_id: m }, many(parseSellerOrganizationAdmin)),
     createTraderOrganization: (m, n) => rpc('create_trader_organization', { p_actor_membership_id: m, p_organization_name: n }, oneRow(parseSellerOrganizationAdmin)),
     deactivateTraderOrganization: (m, o) => rpc('deactivate_trader_organization', { p_actor_membership_id: m, p_trader_organization_id: o }, oneRow(parseSellerOrganizationAdmin)),
+    renameTraderOrganization: (m, o, l, s, n) => rpc('rename_trader_organization', { p_actor_membership_id: m, p_trader_organization_id: o, p_expected_organization_label: l, p_expected_organization_status: s, p_organization_name: n }, oneRow(parseSellerOrganizationAdmin)),
+    deleteTraderOrganization: (m, o, l, s) => rpc('delete_trader_organization', { p_actor_membership_id: m, p_trader_organization_id: o, p_expected_organization_label: l, p_expected_organization_status: s }, oneRow(parseSellerOrganizationAdmin)),
     listBidTraderAccess: (m, b) => rpc('list_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b }, many(parseBidTraderAccess)),
     grantBidTraderAccess: (m, b, r, o) => rpc('grant_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_trader_organization_id: o }, parseBid),
     revokeBidTraderAccess: (m, b, r, o) => rpc('revoke_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_trader_organization_id: o }, parseBid),

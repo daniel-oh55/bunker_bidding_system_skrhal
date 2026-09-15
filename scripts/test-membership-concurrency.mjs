@@ -133,6 +133,10 @@ async function deleteFixture(observer, fixture) {
     return;
   }
 
+  await observer.query(
+    'delete from app_private.organization_memberships where organization_id = $1',
+    [fixture.organizationId],
+  );
   await observer.query('delete from app_private.organizations where id = $1', [fixture.organizationId]);
   await observer.query('delete from auth.users where id = $1', [fixture.userId]);
 }

@@ -350,6 +350,18 @@ async function run() {
       }
     }
 
+    for (const organizationId of createdOrganizationIds) {
+      try {
+        await query(
+          'delete from app_private.organization_memberships where organization_id = $1',
+          [organizationId],
+          'delete fixture organization memberships',
+        );
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+
     for (const organizationId of createdOrganizationIds.reverse()) {
       try {
         await query(
