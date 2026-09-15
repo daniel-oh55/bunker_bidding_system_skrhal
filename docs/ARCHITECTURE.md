@@ -79,3 +79,6 @@ PR #47 adds a private operational-date authority alongside the existing lifecycl
 - no real operational bidding data has been migrated or is in use; retained Production records are synthetic smoke records only
 - manual browser-local `.msg` draft intake, the private normalized server intake boundary, active-BUYER provider-neutral pending list/explicit-Publish/dismiss RPC actions with frontend-prepared form state from listed candidates, and the shared required-deadline selected-SELLER Publish contract are implemented in Production. The active Gmail connector and five-minute polling remain unchanged. Webhook delivery, Microsoft Graph, manual `.eml`, automatic bid creation, and historical email migration/import remain outside the architecture
 - the connector tolerates unique-index lock waits and retries ingest SQLSTATE `40001` within a three-attempt bound; the unique source constraint remains the authoritative message identity boundary
+# V1.1 registration backend
+
+SELLER registration requests and audit events are private, RLS-protected records exposed only through narrow RPCs. Self-signup and invited identities both remain inactive pending approval; the Edge invite path authorizes the caller under that caller's JWT before calling Auth Admin. Production template, SMTP, and Auth activation remain owner-controlled deployment work.

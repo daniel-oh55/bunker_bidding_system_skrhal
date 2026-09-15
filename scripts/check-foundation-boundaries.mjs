@@ -31,9 +31,10 @@ const requiredLegacyFiles = [
 ];
 
 const requiredAuthSettings = [
-  { section: 'auth', key: 'enable_signup', expected: false },
+  { section: 'auth', key: 'enable_signup', expected: true },
   { section: 'auth', key: 'enable_anonymous_sign_ins', expected: false },
   { section: 'auth.email', key: 'enable_signup', expected: true },
+  { section: 'auth.email', key: 'enable_confirmations', expected: true },
   { section: 'auth.sms', key: 'enable_signup', expected: false },
 ];
 

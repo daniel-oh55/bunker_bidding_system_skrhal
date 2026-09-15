@@ -192,8 +192,14 @@ jobs:
       - name: Run SELLER organization administration concurrency regression tests
         run: node scripts/test-seller-organization-admin-concurrency.mjs "$LOCAL_DB_URL"
 
+      - name: Run SELLER registration concurrency regression tests
+        run: node scripts/test-seller-registration-concurrency.mjs "$LOCAL_DB_URL"
+
       - name: Run frontend Auth access integration tests
         run: npm run auth:test:integration -- "$LOCAL_API_URL" "$LOCAL_PUBLISHABLE_KEY" "$LOCAL_FIXTURE_KEY" "$LOCAL_DB_URL"
+
+      - name: Run SELLER registration invite Edge tests
+        run: npx vitest --run supabase/functions/tests/seller-registration-invite.test.ts
 
       - name: Run trader quote REST integration tests
         run: npm run quote:test:integration -- "$LOCAL_API_URL" "$LOCAL_PUBLISHABLE_KEY" "$LOCAL_FIXTURE_KEY" "$LOCAL_DB_URL"
