@@ -32,9 +32,10 @@ const requiredLegacyFiles = [
 ];
 
 const requiredAuthSettings = [
-  { section: 'auth', key: 'enable_signup', expected: false },
+  { section: 'auth', key: 'enable_signup', expected: true },
   { section: 'auth', key: 'enable_anonymous_sign_ins', expected: false },
   { section: 'auth.email', key: 'enable_signup', expected: true },
+  { section: 'auth.email', key: 'enable_confirmations', expected: true },
   { section: 'auth.sms', key: 'enable_signup', expected: false },
 ];
 
@@ -568,12 +569,12 @@ describe('foundation boundary checker', () => {
   it('does not accept an unrelated similarly named Auth setting', () => {
     const root = createPassingFixture();
     const config = renderConfig().replace(
-      'enable_signup = false',
-      'enable_signup_extra = false',
+      'enable_signup = true',
+      'enable_signup_extra = true',
     );
     writeFixtureFile(root, 'supabase/config.toml', config);
 
-    expectFailure(root, 'Missing required Auth setting: auth.enable_signup; expected false.');
+    expectFailure(root, 'Missing required Auth setting: auth.enable_signup; expected true.');
   });
 
   it('rejects a missing required documentation file', () => {
