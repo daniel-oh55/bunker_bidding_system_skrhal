@@ -107,7 +107,11 @@ begin
   select case when invited_at is not null then 'invited'::app_private.seller_registration_source else 'self_signup'::app_private.seller_registration_source end into v_source from auth.users where id = v_user_id and email_confirmed_at is not null;
   if not found then raise exception using errcode = '55000', message = 'A confirmed email is required'; end if;
   if exists (select 1 from app_private.organization_memberships where user_id = v_user_id) then raise exception using errcode = '55000', message = 'Users with memberships cannot submit a SELLER registration'; end if;
-  select * into v_request from app_private.seller_registration_requests where applicant_user_id = v_user_id and status = 'pending'::app_private.seller_registration_status for update;
+  select registration.* into v_request
+  from app_private.seller_registration_requests as registration
+  where registration.applicant_user_id = v_user_id
+    and registration.status = 'pending'::app_private.seller_registration_status
+  for update;
   if found then
     if v_request.requested_organization_name = v_name then return query select v_request.id, v_request.source::text, v_request.requested_organization_name, v_request.status::text, v_request.revision, v_request.submitted_at, v_request.decided_at, v_request.mapped_trader_organization_id; return; end if;
     raise exception using errcode = '55000', message = 'A different SELLER registration is already pending';
@@ -156,7 +160,16 @@ begin
   v_before := app_private.seller_registration_snapshot(v_request);
   insert into app_private.organization_memberships(user_id, organization_id, role, status) values (v_request.applicant_user_id, v_organization.id, 'trader'::app_private.membership_role, 'active'::app_private.membership_status);
   update app_private.user_accounts set status = 'active'::app_private.account_status where user_id = v_request.applicant_user_id;
-  update app_private.seller_registration_requests set status = 'approved'::app_private.seller_registration_status, revision = revision + 1, decided_at = timezone('utc', now()), decided_by_user_id = v_actor.user_id, decided_by_membership_id = v_actor.membership_id, decided_by_buyer_organization_id = v_actor.organization_id, mapped_trader_organization_id = v_organization.id where id = v_request.id returning * into v_request;
+  update app_private.seller_registration_requests as registration
+  set status = 'approved'::app_private.seller_registration_status,
+      revision = registration.revision + 1,
+      decided_at = timezone('utc', now()),
+      decided_by_user_id = v_actor.user_id,
+      decided_by_membership_id = v_actor.membership_id,
+      decided_by_buyer_organization_id = v_actor.organization_id,
+      mapped_trader_organization_id = v_organization.id
+  where registration.id = v_request.id
+  returning registration.* into v_request;
   perform app_private.append_seller_registration_audit(v_request, 'approved'::app_private.seller_registration_audit_event_type, v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_before);
   perform app_private.send_workspace_changed('workspace:buyer'); perform app_private.send_access_changed(v_request.applicant_user_id);
   return query select v_request.id, v_request.source::text, v_request.requested_organization_name, v_request.status::text, v_request.revision, v_request.submitted_at, v_request.decided_at, v_request.mapped_trader_organization_id;
@@ -175,7 +188,15 @@ begin
   select * into v_request from app_private.seller_registration_requests where id = p_request_id for update;
   if v_request.status <> 'pending'::app_private.seller_registration_status or v_request.revision <> p_expected_revision then raise exception using errcode = '40001', message = 'SELLER registration changed; reload and try again'; end if;
   v_before := app_private.seller_registration_snapshot(v_request);
-  update app_private.seller_registration_requests set status = 'rejected'::app_private.seller_registration_status, revision = revision + 1, decided_at = timezone('utc', now()), decided_by_user_id = v_actor.user_id, decided_by_membership_id = v_actor.membership_id, decided_by_buyer_organization_id = v_actor.organization_id where id = v_request.id returning * into v_request;
+  update app_private.seller_registration_requests as registration
+  set status = 'rejected'::app_private.seller_registration_status,
+      revision = registration.revision + 1,
+      decided_at = timezone('utc', now()),
+      decided_by_user_id = v_actor.user_id,
+      decided_by_membership_id = v_actor.membership_id,
+      decided_by_buyer_organization_id = v_actor.organization_id
+  where registration.id = v_request.id
+  returning registration.* into v_request;
   perform app_private.append_seller_registration_audit(v_request, 'rejected'::app_private.seller_registration_audit_event_type, v_actor.user_id, v_actor.membership_id, v_actor.organization_id, v_before);
   perform app_private.send_workspace_changed('workspace:buyer'); perform app_private.send_access_changed(v_request.applicant_user_id);
   return query select v_request.id, v_request.source::text, v_request.requested_organization_name, v_request.status::text, v_request.revision, v_request.submitted_at, v_request.decided_at, v_request.mapped_trader_organization_id;
