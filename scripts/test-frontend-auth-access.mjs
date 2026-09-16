@@ -238,7 +238,7 @@ async function run() {
         email: signupEmail,
         password: `Local-${randomUUID()}-9a!`,
       }),
-      'public signup rejection check',
+      'public seller candidate signup check',
     );
     if (signupResult.data.user) {
       createdUserIds.push(signupResult.data.user.id);
@@ -246,7 +246,22 @@ async function run() {
     if (signupResult.data.session) {
       authenticatedCallers.push(signupCaller);
     }
-    assert(signupResult.error, 'Public signup unexpectedly succeeded.');
+    assert(!signupResult.error && signupResult.data.user, 'Public SELLER candidate signup failed.');
+    assert(!signupResult.data.session, 'Unconfirmed public signup unexpectedly received a session.');
+    const signupAccount = await query(
+      'select status from app_private.user_accounts where user_id = $1',
+      [signupResult.data.user.id],
+      'read public signup account',
+    );
+    assert(signupAccount.rows[0]?.status === 'inactive', 'Public signup account was not inactive.');
+    const signupMemberships = await query(
+      'select count(*)::integer as count from app_private.organization_memberships where user_id = $1',
+      [signupResult.data.user.id],
+      'read public signup memberships',
+    );
+    assert(signupMemberships.rows[0]?.count === 0, 'Public signup unexpectedly received a membership.');
+    const anonymousResult = await withTimeout(signupCaller.auth.signInAnonymously(), 'anonymous sign-in rejection check');
+    assert(anonymousResult.error && !anonymousResult.data.session, 'Anonymous sign-in unexpectedly succeeded.');
 
     const noContextUser = await createUser('no-context');
     await setAccountStatus(noContextUser.id, 'active');
@@ -335,7 +350,7 @@ async function run() {
       'Multiple active memberships were collapsed or changed.',
     );
 
-    console.log('Frontend Auth/access integration tests passed: 7 boundary scenarios.');
+    console.log('Frontend Auth/access integration tests passed: 8 boundary scenarios.');
   } catch (error) {
     primaryError = error;
   } finally {

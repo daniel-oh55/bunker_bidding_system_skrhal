@@ -16,6 +16,7 @@
   },
   "include": [
     "_shared/**/*.ts",
-    "gmail-mail-intake/index.ts"
+    "gmail-mail-intake/index.ts",
+    "seller-registration-invite/index.ts"
   ]
 }

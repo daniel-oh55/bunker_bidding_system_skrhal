@@ -80,3 +80,6 @@ npm run db:stop
 - The current committed lockfile reports no known vulnerabilities in the full or production-only audit. Re-run the audit for every release candidate; do not carry historical advisory conclusions forward.
 - Do not run `npm audit fix --force`.
 - Do not upgrade ESLint to a new major version in this PR.
+# V1.1 SELLER candidate enrollment
+
+Local V1.1 permits confirmed-email SELLER candidate Auth enrollment only. It never creates business access: every new user is inactive and has zero memberships until an active server-verified BUYER administrator maps a pending applicant to an existing active TRADER organization. Public BUYER organization/membership creation and anonymous sign-in remain prohibited; user metadata is never authorization authority. Production Auth, SMTP, and email-template activation require separate owner approval.

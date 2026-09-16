@@ -24,3 +24,6 @@ Use this repository as a reviewer-first environment.
 - The local, server-verified account, organization, and membership baseline is implemented through migrations and pgTAP tests.
 - Frontend Auth UI, invitations, administration, bids, quotes, audits, deadline, and transition work remain out of scope.
 - No remote Supabase project is linked and no operational data is committed.
+# SELLER registration boundary
+
+V1.1 public enrollment is only for inactive, confirmed-email SELLER candidates. It is not business authorization; only the existing active BUYER-admin server verification can approve a mapping to an active TRADER organization. User metadata and Auth enrollment cannot create BUYER access.

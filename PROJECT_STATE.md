@@ -116,3 +116,6 @@
 ## Notes
 
 Keep this file focused on current state and durable contracts. Do not turn changing branch metadata, dates, PR numbers, or commit SHAs into hardcoded invariants.
+# V1.1 registration boundary
+
+SELLER candidates may enroll in local Auth with confirmed email, but remain inactive and unassigned pending server-verified BUYER-admin approval into an existing active TRADER organization. No production Auth configuration has been changed.
