@@ -153,7 +153,7 @@ begin
   if not found then raise exception using errcode = '40001', message = 'SELLER registration changed; reload and try again'; end if;
   select * into v_account from app_private.user_accounts where user_id = v_request.applicant_user_id for update;
   select * into v_request from app_private.seller_registration_requests where id = p_request_id for update;
-  if v_request.status <> 'pending'::app_private.seller_registration_status or v_request.revision <> p_expected_revision then raise exception using errcode = '40001', message = 'SELLER registration changed; reload and try again'; end if;
+  if v_request.status <> 'pending'::app_private.seller_registration_status or v_request.revision is distinct from p_expected_revision then raise exception using errcode = '40001', message = 'SELLER registration changed; reload and try again'; end if;
   if v_account.status <> 'inactive'::app_private.account_status or not exists (select 1 from auth.users where id = v_request.applicant_user_id and email_confirmed_at is not null) or exists (select 1 from app_private.organization_memberships where user_id = v_request.applicant_user_id) then raise exception using errcode = '55000', message = 'Applicant is no longer eligible for approval'; end if;
   select * into v_organization from app_private.organizations where id = p_trader_organization_id for update;
   if not found or v_organization.kind <> 'trader'::app_private.organization_kind or v_organization.status <> 'active'::app_private.organization_status then raise exception using errcode = '22023', message = 'Target must be an active TRADER organization'; end if;
@@ -186,7 +186,7 @@ begin
   if not found then raise exception using errcode = '40001', message = 'SELLER registration changed; reload and try again'; end if;
   select * into v_account from app_private.user_accounts where user_id = v_request.applicant_user_id for update;
   select * into v_request from app_private.seller_registration_requests where id = p_request_id for update;
-  if v_request.status <> 'pending'::app_private.seller_registration_status or v_request.revision <> p_expected_revision then raise exception using errcode = '40001', message = 'SELLER registration changed; reload and try again'; end if;
+  if v_request.status <> 'pending'::app_private.seller_registration_status or v_request.revision is distinct from p_expected_revision then raise exception using errcode = '40001', message = 'SELLER registration changed; reload and try again'; end if;
   v_before := app_private.seller_registration_snapshot(v_request);
   update app_private.seller_registration_requests as registration
   set status = 'rejected'::app_private.seller_registration_status,
