@@ -137,7 +137,7 @@ returns table (request_id uuid, applicant_user_id uuid, applicant_email text, so
 language plpgsql stable security definer set search_path = '' as $$
 begin
   perform 1 from app_private.require_active_buyer_admin_actor(p_actor_membership_id);
-  return query select request.id, request.applicant_user_id, users.email, request.source::text, request.requested_organization_name, request.revision, request.submitted_at
+  return query select request.id, request.applicant_user_id, users.email::text, request.source::text, request.requested_organization_name, request.revision, request.submitted_at
   from app_private.seller_registration_requests request join auth.users users on users.id = request.applicant_user_id
   where request.status = 'pending'::app_private.seller_registration_status order by request.submitted_at, request.id;
 end;
