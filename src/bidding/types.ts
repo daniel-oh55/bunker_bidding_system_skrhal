@@ -130,6 +130,7 @@ function boundedText(value: unknown, maximum: number, allowEmpty = false): strin
 }
 function nullableBoundedText(value: unknown, maximum: number): string | null | undefined { return value === null ? null : boundedText(value, maximum) ?? undefined; }
 function mailIntakeRevision(value: unknown): number | null { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : null; }
+function sellerRegistrationRevision(value: unknown): number | null { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : null; }
 function mailIntakeTimestamp(value: unknown): string | null {
   const candidate = text(value);
   const match = candidate?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/);
@@ -209,14 +210,14 @@ export function parseSellerOrganizationAdmin(value: unknown): SellerOrganization
 export function parseSellerRegistrationRequest(value: unknown): SellerRegistrationRequest | null {
   const r = record(value); const source = r && text(r.source); const status = r && text(r.status);
   const decidedAt = r && nullableMailIntakeTimestamp(r.decided_at); const mappedOrganizationId = r && nullableId(r.mapped_trader_organization_id);
-  if (!r || !exactKeys(r, sellerRegistrationRequestKeys) || !id(r.request_id) || !source || !['self_signup', 'invited'].includes(source) || boundedText(r.requested_organization_name, 120) === null || !status || !['pending', 'approved', 'rejected'].includes(status) || revision(r.revision) === null || !mailIntakeTimestamp(r.submitted_at) || decidedAt === undefined || mappedOrganizationId === undefined) return null;
+  if (!r || !exactKeys(r, sellerRegistrationRequestKeys) || !id(r.request_id) || !source || !['self_signup', 'invited'].includes(source) || boundedText(r.requested_organization_name, 120) === null || !status || !['pending', 'approved', 'rejected'].includes(status) || sellerRegistrationRevision(r.revision) === null || !mailIntakeTimestamp(r.submitted_at) || decidedAt === undefined || mappedOrganizationId === undefined) return null;
   if ((status === 'pending' && (decidedAt !== null || mappedOrganizationId !== null)) || (status === 'rejected' && (decidedAt === null || mappedOrganizationId !== null)) || (status === 'approved' && (decidedAt === null || mappedOrganizationId === null))) return null;
-  return { request_id: r.request_id as string, source: source as SellerRegistrationRequest['source'], requested_organization_name: r.requested_organization_name as string, status: status as SellerRegistrationRequest['status'], revision: revision(r.revision)!, submitted_at: r.submitted_at as string, decided_at: decidedAt, mapped_trader_organization_id: mappedOrganizationId };
+  return { request_id: r.request_id as string, source: source as SellerRegistrationRequest['source'], requested_organization_name: r.requested_organization_name as string, status: status as SellerRegistrationRequest['status'], revision: sellerRegistrationRevision(r.revision)!, submitted_at: r.submitted_at as string, decided_at: decidedAt, mapped_trader_organization_id: mappedOrganizationId };
 }
 export function parseSellerRegistrationAdminRequest(value: unknown): SellerRegistrationAdminRequest | null {
   const r = record(value); const source = r && text(r.source);
-  if (!r || !exactKeys(r, sellerRegistrationAdminRequestKeys) || !id(r.request_id) || !id(r.applicant_user_id) || boundedText(r.applicant_email, 254) === null || !source || !['self_signup', 'invited'].includes(source) || boundedText(r.requested_organization_name, 120) === null || revision(r.revision) === null || !mailIntakeTimestamp(r.submitted_at)) return null;
-  return { request_id: r.request_id as string, applicant_user_id: r.applicant_user_id as string, applicant_email: r.applicant_email as string, source: source as SellerRegistrationAdminRequest['source'], requested_organization_name: r.requested_organization_name as string, revision: revision(r.revision)!, submitted_at: r.submitted_at as string };
+  if (!r || !exactKeys(r, sellerRegistrationAdminRequestKeys) || !id(r.request_id) || !id(r.applicant_user_id) || boundedText(r.applicant_email, 254) === null || !source || !['self_signup', 'invited'].includes(source) || boundedText(r.requested_organization_name, 120) === null || sellerRegistrationRevision(r.revision) === null || !mailIntakeTimestamp(r.submitted_at)) return null;
+  return { request_id: r.request_id as string, applicant_user_id: r.applicant_user_id as string, applicant_email: r.applicant_email as string, source: source as SellerRegistrationAdminRequest['source'], requested_organization_name: r.requested_organization_name as string, revision: sellerRegistrationRevision(r.revision)!, submitted_at: r.submitted_at as string };
 }
 
 function fuelItems(value: unknown): BidFuelItem[] | null {

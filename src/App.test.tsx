@@ -112,11 +112,11 @@ class FakeAccessClient implements AccessClient {
   }
 }
 
-function renderWithClient(client: FakeAccessClient, wrapper?: (children: ReactNode) => ReactNode, realtimeClient?: RealtimeInvalidationClient) {
+function renderWithClient(client: FakeAccessClient, wrapper?: (children: ReactNode) => ReactNode, realtimeClient?: RealtimeInvalidationClient, registrationEnabled?: boolean, clientForBidding: BiddingClient = fakeBiddingClient) {
   return render(
     wrapper
-      ? wrapper(<App accessClient={client} biddingClient={fakeBiddingClient} realtimeClient={realtimeClient} />)
-      : <App accessClient={client} biddingClient={fakeBiddingClient} realtimeClient={realtimeClient} />,
+      ? wrapper(<App accessClient={client} biddingClient={clientForBidding} realtimeClient={realtimeClient} sellerRegistrationEnabled={registrationEnabled} />)
+      : <App accessClient={client} biddingClient={clientForBidding} realtimeClient={realtimeClient} sellerRegistrationEnabled={registrationEnabled} />,
   );
 }
 
@@ -355,13 +355,36 @@ describe('frontend Auth access gate', () => {
     });
   });
 
-  it('does not expose a signup control', async () => {
+  it.each([undefined, false])('does not expose signup or invite controls when the feature flag is %s', async (registrationEnabled) => {
     const client = new FakeAccessClient();
-    renderWithClient(client);
+    renderWithClient(client, undefined, undefined, registrationEnabled);
     await waitForSignIn();
 
-    expect(screen.queryByRole('button', { name: /sign up|register/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/create account/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create SELLER account' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use invitation code' })).not.toBeInTheDocument();
+  });
+
+  it('exposes signup and invite controls only when the feature flag is true', async () => {
+    const client = new FakeAccessClient();
+    renderWithClient(client, undefined, undefined, true);
+    await waitForSignIn();
+    expect(screen.getByRole('button', { name: 'Create SELLER account' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use invitation code' })).toBeInTheDocument();
+  });
+
+  it('keeps a valid session with zero contexts in candidate UI when registration is enabled', async () => {
+    const client = new FakeAccessClient(); client.sessionResult = success(session); client.accessResults = [success([])];
+    const bidding = { ...fakeBiddingClient, getMySellerRegistrationRequest: vi.fn(() => Promise.resolve({ data: null, error: null })) } as BiddingClient;
+    renderWithClient(client, undefined, undefined, true, bidding);
+    expect(await screen.findByRole('heading', { name: 'Request SELLER registration' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Bunker Bidding/i })).not.toBeInTheDocument();
+  });
+
+  it('mounts a workspace only after the server returns a real active context', async () => {
+    const client = new FakeAccessClient(); client.sessionResult = success(session); client.accessResults = [success([buyerContext])];
+    renderWithClient(client, undefined, undefined, true);
+    await waitForAuthorized();
+    expect(client.getAccessContexts).toHaveBeenCalledOnce();
   });
 
   it('does not expose a role or organization selector', async () => {

@@ -9,6 +9,8 @@ const sellerComparison = { bid_id: other, trader_organization_id: id, trader_org
 const pendingMail = { id, received_at: now, subject: 'Request', vessel_voyage: null, port_name: 'Busan', delivery_window: null, fuel_items: [{ grade: 'vlsfo', quantity: 10 }], warnings: [], status: 'pending', revision: 1, created_at: now, updated_at: now, dismissed_at: null };
 const dismissedMail = { ...pendingMail, status: 'dismissed', revision: 2, dismissed_at: now };
 const sellerOrganization = { organization_id: other, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 0, created_at: now, updated_at: now };
+const sellerRegistration = { request_id: id, source: 'self_signup', requested_organization_name: 'Ocean Bunker', status: 'pending', revision: 1, submitted_at: now, decided_at: null, mapped_trader_organization_id: null };
+const sellerRegistrationAdmin = { request_id: id, applicant_user_id: other, applicant_email: 'seller@example.test', source: 'self_signup', requested_organization_name: 'Ocean Bunker', revision: 1, submitted_at: now };
 const bidOrder = { revision: 0, ordered_bid_ids: [id, other] };
 type Rpc = BiddingRpcClient['rpc'];
 function harness(data: unknown = bid, error: { code?: string | null } | null = null) { const rpc = vi.fn<Rpc>(() => Promise.resolve({ data, error })); return { rpc, client: createSupabaseBiddingClient({ rpc }) }; }
@@ -72,6 +74,50 @@ describe('BiddingClient RPC adapter', () => {
     expect(save.rpc).toHaveBeenCalledWith('save_my_bid_order', { p_actor_membership_id: id, p_bid_date: '2026-08-03', p_expected_revision: 0, p_ordered_bid_ids: [other, id] });
     for (const [, args] of [...get.rpc.mock.calls, ...save.rpc.mock.calls]) expect(args).not.toHaveProperty('p_user_id');
   });
+
+  it('accepts zero rows as a valid absent SELLER registration request', async () => {
+    const { client, rpc } = harness([]);
+    expect(await client.getMySellerRegistrationRequest!()).toEqual({ data: null, error: null });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('get_my_seller_registration_request', {});
+  });
+
+  it('accepts exactly one valid SELLER registration request row', async () => {
+    expect(await harness([sellerRegistration]).client.getMySellerRegistrationRequest!()).toEqual({ data: sellerRegistration, error: null });
+  });
+
+  it('rejects multiple or malformed SELLER registration request rows', async () => {
+    expect(await harness([sellerRegistration, sellerRegistration]).client.getMySellerRegistrationRequest!()).toMatchObject({ data: null, error: { kind: 'protocol' } });
+    expect(await harness([{ ...sellerRegistration, revision: 0 }]).client.getMySellerRegistrationRequest!()).toMatchObject({ data: null, error: { kind: 'protocol' } });
+  });
+
+  it('preserves mapped server and transport failures for the nullable registration RPC', async () => {
+    expect(await harness(null, { code: '42501' }).client.getMySellerRegistrationRequest!()).toMatchObject({ data: null, error: { kind: 'authorization', code: '42501' } });
+    const rpc: Rpc = vi.fn(() => { throw new Error('private transport details'); });
+    const result = await createSupabaseBiddingClient({ rpc }).getMySellerRegistrationRequest!();
+    expect(result).toMatchObject({ data: null, error: { kind: 'unknown' } });
+    expect(result.error?.message).not.toContain('private');
+  });
+
+  it('maps exact SELLER registration submit/list/approve/reject RPC arguments', async () => {
+    const submit = harness([sellerRegistration]);
+    expect(await submit.client.submitSellerRegistrationRequest!('Ocean Bunker')).toEqual({ data: sellerRegistration, error: null });
+    expect(submit.rpc).toHaveBeenCalledExactlyOnceWith('submit_seller_registration_request', { p_requested_organization_name: 'Ocean Bunker' });
+
+    const list = harness([sellerRegistrationAdmin]);
+    expect(await list.client.listSellerRegistrationRequestsForAdmin!(other)).toEqual({ data: [sellerRegistrationAdmin], error: null });
+    expect(list.rpc).toHaveBeenCalledExactlyOnceWith('list_seller_registration_requests_for_admin', { p_actor_membership_id: other });
+
+    const approved = { ...sellerRegistration, status: 'approved', revision: 2, decided_at: now, mapped_trader_organization_id: other };
+    const approve = harness([approved]);
+    expect(await approve.client.approveSellerRegistrationRequest!(other, id, 1, other)).toEqual({ data: approved, error: null });
+    expect(approve.rpc).toHaveBeenCalledExactlyOnceWith('approve_seller_registration_request', { p_actor_membership_id: other, p_request_id: id, p_expected_revision: 1, p_trader_organization_id: other });
+
+    const rejected = { ...sellerRegistration, status: 'rejected', revision: 2, decided_at: now };
+    const reject = harness([rejected]);
+    expect(await reject.client.rejectSellerRegistrationRequest!(other, id, 1)).toEqual({ data: rejected, error: null });
+    expect(reject.rpc).toHaveBeenCalledExactlyOnceWith('reject_seller_registration_request', { p_actor_membership_id: other, p_request_id: id, p_expected_revision: 1 });
+  });
+
   it('maps exact SELLER-admin RPC names and arguments and requires one mutation result row', async () => {
     const list = harness([sellerOrganization]);
     expect(await list.client.listTraderOrganizationsForAdmin!(id)).toMatchObject({ data: [sellerOrganization], error: null });

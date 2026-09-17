@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArray, parseBid, parseBidAuditEvent, parseBidDate, parseBuyerBidOrder, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseTraderBid } from './types';
+import { parseArray, parseBid, parseBidAuditEvent, parseBidDate, parseBuyerBidOrder, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseSellerOrganizationAdmin, parseSellerRegistrationAdminRequest, parseSellerRegistrationRequest, parseTraderBid } from './types';
 
 const id = '10000000-0000-4000-8000-000000000001';
 const otherId = '10000000-0000-4000-8000-000000000002';
@@ -22,6 +22,12 @@ function sellerComparison(overrides: Record<string, unknown> = {}) {
 }
 function sellerOrganization(overrides: Record<string, unknown> = {}) {
   return { organization_id: id, organization_label: 'Ocean Bunker', organization_status: 'active', active_trader_membership_count: 2, created_at: now, updated_at: now, ...overrides };
+}
+function sellerRegistration(overrides: Record<string, unknown> = {}) {
+  return { request_id: id, source: 'self_signup', requested_organization_name: 'Ocean Bunker', status: 'pending', revision: 1, submitted_at: now, decided_at: null, mapped_trader_organization_id: null, ...overrides };
+}
+function sellerRegistrationAdmin(overrides: Record<string, unknown> = {}) {
+  return { request_id: id, applicant_user_id: otherId, applicant_email: 'seller@example.test', source: 'invited', requested_organization_name: 'Ocean Bunker', revision: 1, submitted_at: now, ...overrides };
 }
 
 describe('bidding protocol parsers', () => {
@@ -60,6 +66,58 @@ describe('bidding protocol parsers', () => {
     ]) expect(parseSellerOrganizationAdmin(candidate)).toBeNull();
     const missing: Record<string, unknown> = sellerOrganization(); delete missing.updated_at;
     expect(parseSellerOrganizationAdmin(missing)).toBeNull();
+  });
+
+  it('strictly parses coherent pending, rejected, and approved SELLER registrations', () => {
+    const pending = sellerRegistration();
+    const rejected = sellerRegistration({ status: 'rejected', revision: 2, decided_at: now });
+    const approved = sellerRegistration({ status: 'approved', revision: 2, decided_at: now, mapped_trader_organization_id: otherId });
+    expect(parseSellerRegistrationRequest(pending)).toEqual(pending);
+    expect(parseSellerRegistrationRequest(rejected)).toEqual(rejected);
+    expect(parseSellerRegistrationRequest(approved)).toEqual(approved);
+  });
+
+  it('rejects incoherent SELLER registration status shapes', () => {
+    for (const candidate of [
+      sellerRegistration({ status: 'pending', decided_at: now }),
+      sellerRegistration({ status: 'pending', mapped_trader_organization_id: otherId }),
+      sellerRegistration({ status: 'rejected', decided_at: null }),
+      sellerRegistration({ status: 'rejected', decided_at: now, mapped_trader_organization_id: otherId }),
+      sellerRegistration({ status: 'approved', decided_at: now, mapped_trader_organization_id: null }),
+      sellerRegistration({ status: 'approved', decided_at: null, mapped_trader_organization_id: otherId }),
+    ]) expect(parseSellerRegistrationRequest(candidate)).toBeNull();
+  });
+
+  it('rejects missing, extra, and malformed SELLER registration fields', () => {
+    const missing: Record<string, unknown> = sellerRegistration(); delete missing.submitted_at;
+    for (const candidate of [
+      missing,
+      { ...sellerRegistration(), role: 'buyer_admin' },
+      sellerRegistration({ request_id: 'not-a-uuid' }),
+      sellerRegistration({ revision: 0 }),
+      sellerRegistration({ revision: 1.5 }),
+      sellerRegistration({ revision: '1' }),
+      sellerRegistration({ revision: Number.MAX_SAFE_INTEGER + 1 }),
+      sellerRegistration({ submitted_at: '2026-02-30T03:00:00.000Z' }),
+      sellerRegistration({ decided_at: 'not-a-timestamp', status: 'rejected' }),
+      sellerRegistration({ mapped_trader_organization_id: 'not-a-uuid', status: 'approved', decided_at: now }),
+    ]) expect(parseSellerRegistrationRequest(candidate)).toBeNull();
+  });
+
+  it('strictly parses pending admin rows and rejects malformed or expanded rows', () => {
+    expect(parseSellerRegistrationAdminRequest(sellerRegistrationAdmin())).toEqual(sellerRegistrationAdmin());
+    for (const candidate of [
+      sellerRegistrationAdmin({ request_id: 'bad' }),
+      sellerRegistrationAdmin({ applicant_user_id: 'bad' }),
+      sellerRegistrationAdmin({ applicant_email: ' seller@example.test' }),
+      sellerRegistrationAdmin({ source: 'manual' }),
+      sellerRegistrationAdmin({ revision: 0 }),
+      sellerRegistrationAdmin({ revision: '1' }),
+      sellerRegistrationAdmin({ submitted_at: 'bad' }),
+      { ...sellerRegistrationAdmin(), status: 'pending' },
+    ]) expect(parseSellerRegistrationAdminRequest(candidate)).toBeNull();
+    const missing: Record<string, unknown> = sellerRegistrationAdmin(); delete missing.applicant_email;
+    expect(parseSellerRegistrationAdminRequest(missing)).toBeNull();
   });
 
   it('accepts valid pending and dismissed mail-intake results with only the narrow result fields', () => {
