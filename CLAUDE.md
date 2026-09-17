@@ -22,7 +22,7 @@ Use this repository as a reviewer-first environment.
 
 - Legacy Firebase assets are preserved for reference only.
 - The local, server-verified account, organization, and membership baseline is implemented through migrations and pgTAP tests.
-- Frontend Auth UI, invitations, administration, bids, quotes, audits, deadline, and transition work remain out of scope.
+- Production rollout of seller-registration Auth, SMTP, templates, Edge configuration, and feature activation remains out of scope; repository UI support is feature-flagged and defaults disabled.
 - No remote Supabase project is linked and no operational data is committed.
 # SELLER registration boundary
 

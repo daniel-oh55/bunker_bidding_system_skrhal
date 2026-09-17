@@ -84,6 +84,12 @@ class FakeAccessClient implements AccessClient {
 
   updatePassword = vi.fn(() => Promise.resolve(this.passwordUpdateResult));
 
+  signUpSeller = vi.fn(() => Promise.resolve(success(null)));
+
+  verifySellerInvite = vi.fn(() => Promise.resolve(success(null)));
+
+  inviteSellerRegistration = vi.fn(() => Promise.resolve(success(null)));
+
   getAccessContexts = vi.fn(async () => {
     const next = this.accessResults.shift();
     return await (next ?? success([]));

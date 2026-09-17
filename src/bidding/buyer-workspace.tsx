@@ -8,6 +8,7 @@ import { SellerManagement } from './seller-management';
 import type { ActiveBuyer, Bid, BidAuditEvent, BidTraderAccess, BuyerBidOrder, MailIntakeItem, Quote, TraderOrganization, WorkflowError } from './types';
 import { WorkspaceEmptyState } from '../ui/workspace-ui';
 import { currentSeoulDate } from './datetime';
+import type { AccessClient } from '../auth/access-client';
 
 type Mode = 'active' | 'archived';
 type View = 'all' | 'created_by_me' | 'responsible_buyer';
@@ -60,7 +61,7 @@ const moveVisible = (orderedIds: string[], visibleIds: string[], sourceId: strin
   return [...withoutSource.slice(0, insertionIndex), sourceId, ...withoutSource.slice(insertionIndex)];
 };
 
-export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_operator', onAuthorizationFailure, reloadVersion = 0 }: { client: BiddingClient; membershipId: string; membershipRole?: 'buyer_admin' | 'buyer_operator'; onAuthorizationFailure: () => void; reloadVersion?: number }) {
+export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_operator', onAuthorizationFailure, reloadVersion = 0, registrationEnabled = false, accessClient }: { client: BiddingClient; membershipId: string; membershipRole?: 'buyer_admin' | 'buyer_operator'; onAuthorizationFailure: () => void; reloadVersion?: number; registrationEnabled?: boolean; accessClient?: AccessClient }) {
   const [mode, setMode] = useState<Mode>('active');
   const modeRef = useRef<Mode>('active');
   const readOnly = mode === 'archived';
@@ -300,6 +301,6 @@ export function BuyerWorkspace({ client, membershipId, membershipRole = 'buyer_o
     </section>
     {selected ? <section className="panel bid-detail buyer-bid-detail" aria-label="Selected bid detail" aria-live="polite" ref={detailRegionRef} tabIndex={-1}><BuyerBidDetail key={`${selected.id}:${selected.revision}`} bid={selected} readOnly={readOnly} buyers={buyers} organizations={organizations} detail={detail} pending={pending} client={client} membershipId={membershipId} mutate={mutate} refresh={() => void loadDetail(selected)} currentTimeMs={nowMs} /></section> : null}
     {!readOnly ? <MailIntakeQueue client={client} membershipId={membershipId} selectedBidDate={selectedDate} reloadVersion={mailIntakeReloadVersion} canEdit={!historicalDateSelected && !preparedItem && !manualComposerOpen} editUnavailableMessage={historicalDateSelected ? `Edit BID is available only for today’s Seoul operational date (${todayDate}).` : 'Close the open BID editor before editing another Mail Intake item.'} canPublish={!historicalDateSelected && !preparedItem && !manualComposerOpen} publishUnavailableMessage={historicalDateSelected ? `Publish BID is available only for today’s Seoul operational date (${todayDate}).` : 'Close the open BID editor before directly publishing another Mail Intake item.'} activeSellerOrganizationIds={organizations.map((organization) => organization.organization_id)} onPrepare={prepareMailIntakeBid} onPublish={publishPrepared} onAuthorizationFailure={onAuthorizationFailure} /> : null}
-    {!readOnly && membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id)} /> : null}
+    {!readOnly && membershipRole === 'buyer_admin' ? <SellerManagement client={client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={() => loadList(view, selectedDate, responsible || undefined, selectedRef.current?.id)} registrationEnabled={registrationEnabled} accessClient={accessClient} /> : null}
   </div>;
 }

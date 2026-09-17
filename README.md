@@ -1,6 +1,6 @@
 # SKRHAL Bunker Bidding
 
-This repository hosts the Supabase V2 authorization and bidding baseline for the SKRHAL bunker bidding rebuild. The React application includes a sign-in-only Auth boundary backed by the server-verified `current_access_context()` RPC and an integrated BUYER/TRADER workspace.
+This repository hosts the Supabase V2 authorization and bidding baseline for the SKRHAL bunker bidding rebuild. The React application uses a server-verified `current_access_context()` boundary and feature-flagged SELLER candidate enrollment; enrollment never grants a workspace.
 
 The current scope is intentionally limited to:
 
