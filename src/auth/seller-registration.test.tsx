@@ -106,7 +106,11 @@ describe('SELLER candidate registration', () => {
   });
 
   it('fails closed when registration status cannot be parsed', async () => {
-    renderCandidate(vi.fn(() => Promise.resolve({ data: null, error: { kind: 'protocol', code: null, message: 'invalid' } })));
+    const protocolFailure: BiddingResult<SellerRegistrationRequest | null> = {
+      data: null,
+      error: { kind: 'protocol', code: null, message: 'invalid' },
+    };
+    renderCandidate(vi.fn(() => Promise.resolve(protocolFailure)));
     expect(await screen.findByRole('heading', { name: 'Registration status unavailable' })).toBeInTheDocument();
     expect(screen.getByText('No workspace has been opened.')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Organization / company name' })).not.toBeInTheDocument();
@@ -114,9 +118,15 @@ describe('SELLER candidate registration', () => {
 
   it('refreshes registration status and rechecks access on access_changed', async () => {
     let invalidate: (() => void) | undefined;
+    const subscribeToAccessInvalidations = vi.fn<RealtimeInvalidationClient['subscribeToAccessInvalidations']>(
+      (_userId, callback) => { invalidate = callback; return vi.fn(); },
+    );
+    const subscribeToWorkspaceInvalidations = vi.fn<RealtimeInvalidationClient['subscribeToWorkspaceInvalidations']>(
+      () => vi.fn(),
+    );
     const realtimeClient: RealtimeInvalidationClient = {
-      subscribeToAccessInvalidations: vi.fn((_userId, callback) => { invalidate = callback; return vi.fn(); }),
-      subscribeToWorkspaceInvalidations: vi.fn(() => vi.fn()),
+      subscribeToAccessInvalidations,
+      subscribeToWorkspaceInvalidations,
     };
     const getRequest = vi.fn()
       .mockResolvedValueOnce(result(request('pending')))
