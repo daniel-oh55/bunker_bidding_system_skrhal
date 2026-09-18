@@ -31,6 +31,9 @@ export interface AccessClient {
     email: string,
     password: string,
   ): Promise<AccessClientResult<AccessSession | null>>;
+  signUpSeller(email: string, password: string): Promise<AccessClientResult<null>>;
+  verifySellerInvite(email: string, token: string): Promise<AccessClientResult<null>>;
+  inviteSellerRegistration(actorMembershipId: string, email: string): Promise<AccessClientResult<null>>;
   signOut(): Promise<AccessClientResult<null>>;
   requestPasswordReset(email: string): Promise<AccessClientResult<null>>;
   updatePassword(password: string): Promise<AccessClientResult<null>>;
@@ -162,6 +165,24 @@ export function createSupabaseAccessClient(
         data: error ? null : toAccessSession(data.session),
         error: Boolean(error),
       };
+    },
+
+    async signUpSeller(email, password) {
+      if (!passwordRecoveryRedirectTo) return { data: null, error: true };
+      const { error } = await client.auth.signUp({ email, password, options: { emailRedirectTo: passwordRecoveryRedirectTo } });
+      return { data: null, error: Boolean(error) };
+    },
+
+    async verifySellerInvite(email, token) {
+      const { error } = await client.auth.verifyOtp({ email, token, type: 'invite' });
+      return { data: null, error: Boolean(error) };
+    },
+
+    async inviteSellerRegistration(actorMembershipId, email) {
+      const response = await client.functions.invoke('seller-registration-invite', {
+        body: { actor_membership_id: actorMembershipId, email },
+      }) as unknown as { data: unknown; error: unknown };
+      return { data: null, error: Boolean(response.error) || !response.data || typeof response.data !== 'object' || (response.data as Record<string, unknown>).status !== 'sent' };
     },
 
     async signOut() {

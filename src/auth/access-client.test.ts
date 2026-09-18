@@ -40,6 +40,9 @@ function createSupabaseHarness() {
   const signOut = vi.fn(() => Promise.resolve({ error: null }));
   const resetPasswordForEmail = vi.fn(() => Promise.resolve({ error: null }));
   const updateUser = vi.fn(() => Promise.resolve({ error: null }));
+  const signUp = vi.fn(() => Promise.resolve({ error: null }));
+  const verifyOtp = vi.fn(() => Promise.resolve({ error: null }));
+  const invoke = vi.fn(() => Promise.resolve({ data: { status: 'sent' }, error: null }));
   const overrideTypes = vi.fn(() => Promise.resolve(accessResponse));
   const rpc = vi.fn(() => {
     rpcCallStates.push(authCallbackActive);
@@ -54,7 +57,8 @@ function createSupabaseHarness() {
     };
   });
   const client = {
-    auth: { getSession, signInWithPassword, signOut, resetPasswordForEmail, updateUser, onAuthStateChange },
+    auth: { getSession, signInWithPassword, signOut, resetPasswordForEmail, updateUser, signUp, verifyOtp, onAuthStateChange },
+    functions: { invoke },
     rpc,
   } as unknown as SupabaseClient;
 
@@ -77,6 +81,9 @@ function createSupabaseHarness() {
     rpcCallStates,
     resetPasswordForEmail,
     updateUser,
+    signUp,
+    verifyOtp,
+    invoke,
     setAccessResponse(response: { data: unknown; error: unknown }) {
       accessResponse = response;
     },
@@ -202,6 +209,16 @@ describe('Supabase access client Auth adapter', () => {
     const client = createSupabaseAccessClient(harness.client);
     await expect(client.requestPasswordReset('operator@example.test')).resolves.toEqual({ data: null, error: true });
     expect(harness.resetPasswordForEmail).not.toHaveBeenCalled();
+  });
+
+  it('uses only normal publishable Auth and Functions calls for seller enrollment', async () => {
+    const harness = createSupabaseHarness(); const client = createSupabaseAccessClient(harness.client, 'https://app.example.test/');
+    await expect(client.signUpSeller('seller@example.test', 'password')).resolves.toEqual({ data: null, error: false });
+    await expect(client.verifySellerInvite('seller@example.test', '123456')).resolves.toEqual({ data: null, error: false });
+    await expect(client.inviteSellerRegistration('10000000-0000-4000-8000-000000000001', 'seller@example.test')).resolves.toEqual({ data: null, error: false });
+    expect(harness.signUp).toHaveBeenCalledWith({ email: 'seller@example.test', password: 'password', options: { emailRedirectTo: 'https://app.example.test/' } });
+    expect(harness.verifyOtp).toHaveBeenCalledWith({ email: 'seller@example.test', token: '123456', type: 'invite' });
+    expect(harness.invoke).toHaveBeenCalledWith('seller-registration-invite', { body: { actor_membership_id: '10000000-0000-4000-8000-000000000001', email: 'seller@example.test' } });
   });
 
   it('accepts the old four-field server shape during rollout', async () => {

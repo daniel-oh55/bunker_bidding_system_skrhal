@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { AccessContext } from '../auth/access-client';
+import type { AccessClient, AccessContext } from '../auth/access-client';
 import type { BiddingClient } from './bidding-client';
 import { ContextWorkspace } from './context-workspace';
 import type { RealtimeInvalidationClient } from '../realtime/realtime-client';
@@ -33,10 +33,13 @@ function fakeRealtime() {
 describe('workspace context routing', () => {
   it('propagates the server-returned BUYER role for SELLER-management presentation only', async () => {
     const admin = { ...buyer, membership_role: 'buyer_admin' as const };
-    const view = render(<ContextWorkspace contexts={[admin]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} />);
-    expect(await screen.findByRole('button', { name: 'Manage SELLERs' })).toBeInTheDocument();
-    view.rerender(<ContextWorkspace contexts={[buyer]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} />);
+    const accessClient = { inviteSellerRegistration: vi.fn() } as unknown as AccessClient;
+    const view = render(<ContextWorkspace contexts={[admin]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} registrationEnabled accessClient={accessClient} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage SELLERs' }));
+    expect(screen.getByRole('region', { name: 'SELLER registration administration' })).toBeInTheDocument();
+    view.rerender(<ContextWorkspace contexts={[buyer]} client={clientWithPendingBuyerLoad()} recheck={vi.fn()} registrationEnabled accessClient={accessClient} />);
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Manage SELLERs' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('region', { name: 'SELLER registration administration' })).not.toBeInTheDocument();
   });
 
   it('auto-selects a single server-returned context without offering a membership input', async () => {

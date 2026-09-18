@@ -1,4 +1,4 @@
-import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseBuyerBidOrder, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseQuoteResponse, parseSellerOrganizationAdmin, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type BuyerBidOrder, type BuyerSellerComparison, type MailIntakeItem, type Quote, type QuoteResponse, type SellerOrganizationAdmin, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
+import { mapWorkflowError, parseActiveBuyer, parseArray, parseBid, parseBidAuditEvent, parseBidTraderAccess, parseBuyerBidOrder, parseBuyerSellerComparison, parseDismissedMailIntakeItem, parsePendingMailIntakeItem, parseQuote, parseQuoteResponse, parseSellerOrganizationAdmin, parseSellerRegistrationAdminRequest, parseSellerRegistrationRequest, parseTraderBid, parseTraderOrganization, protocolError, type ActiveBuyer, type Bid, type BidAuditEvent, type BidTraderAccess, type BuyerBidOrder, type BuyerSellerComparison, type MailIntakeItem, type Quote, type QuoteResponse, type SellerOrganizationAdmin, type SellerRegistrationAdminRequest, type SellerRegistrationRequest, type TraderBid, type TraderOrganization, type WorkflowError } from './types';
 
 export type BiddingResult<T> = { data: T | null; error: WorkflowError | null };
 type BidTermsInput = { vesselVoyage: string; portName: string; deliveryWindow: string; fuelGrades: string[]; quantities: number[] };
@@ -29,6 +29,11 @@ export interface BiddingClient {
   deactivateTraderOrganization?(membershipId: string, organizationId: string): Promise<BiddingResult<SellerOrganizationAdmin>>;
   renameTraderOrganization?(membershipId: string, organizationId: string, expectedOrganizationLabel: string, expectedOrganizationStatus: SellerOrganizationAdmin['organization_status'], organizationName: string): Promise<BiddingResult<SellerOrganizationAdmin>>;
   deleteTraderOrganization?(membershipId: string, organizationId: string, expectedOrganizationLabel: string, expectedOrganizationStatus: SellerOrganizationAdmin['organization_status']): Promise<BiddingResult<SellerOrganizationAdmin>>;
+  getMySellerRegistrationRequest?(): Promise<BiddingResult<SellerRegistrationRequest | null>>;
+  submitSellerRegistrationRequest?(name: string): Promise<BiddingResult<SellerRegistrationRequest>>;
+  listSellerRegistrationRequestsForAdmin?(membershipId: string): Promise<BiddingResult<SellerRegistrationAdminRequest[]>>;
+  approveSellerRegistrationRequest?(membershipId: string, requestId: string, expectedRevision: number, traderOrganizationId: string): Promise<BiddingResult<SellerRegistrationRequest>>;
+  rejectSellerRegistrationRequest?(membershipId: string, requestId: string, expectedRevision: number): Promise<BiddingResult<SellerRegistrationRequest>>;
   listBidTraderAccess(membershipId: string, bidId: string): Promise<BiddingResult<BidTraderAccess[]>>;
   grantBidTraderAccess(membershipId: string, bidId: string, expectedRevision: number, organizationId: string): Promise<BiddingResult<Bid>>;
   revokeBidTraderAccess(membershipId: string, bidId: string, expectedRevision: number, organizationId: string): Promise<BiddingResult<Bid>>;
@@ -49,6 +54,15 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
     try { response = await client.rpc(name, args); } catch { return { data: null, error: mapWorkflowError(null) }; }
     if (response.error) return { data: null, error: mapWorkflowError(response.error) };
     const data = parser(response.data); return data === null ? { data: null, error: protocolError() } : { data, error: null };
+  }
+  async function rpcZeroOrOne<T>(name: string, args: Record<string, unknown>, parser: (value: unknown) => T | null): Promise<BiddingResult<T>> {
+    let response: RpcResponse;
+    try { response = await client.rpc(name, args); } catch { return { data: null, error: mapWorkflowError(null) }; }
+    if (response.error) return { data: null, error: mapWorkflowError(response.error) };
+    const rows = parseArray(response.data, parser);
+    return rows && rows.length <= 1
+      ? { data: rows[0] ?? null, error: null }
+      : { data: null, error: protocolError() };
   }
   const many = <T>(parser: (value: unknown) => T | null) => (value: unknown) => parseArray(value, parser);
   const oneRow = <T>(parser: (value: unknown) => T | null) => (value: unknown) => {
@@ -78,6 +92,11 @@ export function createSupabaseBiddingClient(client: BiddingRpcClient): BiddingCl
     deactivateTraderOrganization: (m, o) => rpc('deactivate_trader_organization', { p_actor_membership_id: m, p_trader_organization_id: o }, oneRow(parseSellerOrganizationAdmin)),
     renameTraderOrganization: (m, o, l, s, n) => rpc('rename_trader_organization', { p_actor_membership_id: m, p_trader_organization_id: o, p_expected_organization_label: l, p_expected_organization_status: s, p_organization_name: n }, oneRow(parseSellerOrganizationAdmin)),
     deleteTraderOrganization: (m, o, l, s) => rpc('delete_trader_organization', { p_actor_membership_id: m, p_trader_organization_id: o, p_expected_organization_label: l, p_expected_organization_status: s }, oneRow(parseSellerOrganizationAdmin)),
+    getMySellerRegistrationRequest: () => rpcZeroOrOne('get_my_seller_registration_request', {}, parseSellerRegistrationRequest),
+    submitSellerRegistrationRequest: (name) => rpc('submit_seller_registration_request', { p_requested_organization_name: name }, oneRow(parseSellerRegistrationRequest)),
+    listSellerRegistrationRequestsForAdmin: (m) => rpc('list_seller_registration_requests_for_admin', { p_actor_membership_id: m }, many(parseSellerRegistrationAdminRequest)),
+    approveSellerRegistrationRequest: (m, requestId, expectedRevision, traderOrganizationId) => rpc('approve_seller_registration_request', { p_actor_membership_id: m, p_request_id: requestId, p_expected_revision: expectedRevision, p_trader_organization_id: traderOrganizationId }, oneRow(parseSellerRegistrationRequest)),
+    rejectSellerRegistrationRequest: (m, requestId, expectedRevision) => rpc('reject_seller_registration_request', { p_actor_membership_id: m, p_request_id: requestId, p_expected_revision: expectedRevision }, oneRow(parseSellerRegistrationRequest)),
     listBidTraderAccess: (m, b) => rpc('list_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b }, many(parseBidTraderAccess)),
     grantBidTraderAccess: (m, b, r, o) => rpc('grant_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_trader_organization_id: o }, parseBid),
     revokeBidTraderAccess: (m, b, r, o) => rpc('revoke_bid_trader_access', { p_actor_membership_id: m, p_bid_id: b, p_expected_revision: r, p_trader_organization_id: o }, parseBid),

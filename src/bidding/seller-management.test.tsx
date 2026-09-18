@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { AccessClient } from '../auth/access-client';
 import type { BiddingClient, BiddingResult } from './bidding-client';
 import { SellerManagement } from './seller-management';
-import type { SellerOrganizationAdmin } from './types';
+import type { SellerOrganizationAdmin, SellerRegistrationAdminRequest, SellerRegistrationRequest, TraderOrganization } from './types';
 
 const membershipId = '10000000-0000-4000-8000-000000000001';
 const activeId = '20000000-0000-4000-8000-000000000001';
@@ -18,6 +19,10 @@ const organizations = [
   organization(inactiveId, 'Inactive Harbor', 'inactive', 0),
   organization(suspendedId, 'Suspended Marine', 'suspended', 1),
 ];
+const registrationRequest: SellerRegistrationAdminRequest = { request_id: '30000000-0000-4000-8000-000000000001', applicant_user_id: '40000000-0000-4000-8000-000000000001', applicant_email: 'candidate@example.test', source: 'self_signup', requested_organization_name: 'Active Ocean', revision: 3, submitted_at: now };
+const activeTrader: TraderOrganization = { organization_id: activeId, organization_label: 'Active Ocean' };
+const approvedRegistration: SellerRegistrationRequest = { request_id: registrationRequest.request_id, source: registrationRequest.source, requested_organization_name: registrationRequest.requested_organization_name, status: 'approved', revision: 4, submitted_at: now, decided_at: now, mapped_trader_organization_id: activeId };
+const rejectedRegistration: SellerRegistrationRequest = { ...approvedRegistration, status: 'rejected', mapped_trader_organization_id: null };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
 function harness(rows: SellerOrganizationAdmin[] = organizations) {
   const listTraderOrganizationsForAdmin = vi.fn(() => Promise.resolve(ok(rows)));
@@ -32,6 +37,22 @@ function open(client: BiddingClient, onAuthorizationFailure = vi.fn(), onActiveO
   const view = render(<SellerManagement client={client} membershipId={membershipId} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={onActiveOrganizationsChanged} />);
   fireEvent.click(screen.getByRole('button', { name: 'Manage SELLERs' }));
   return { ...view, onAuthorizationFailure, onActiveOrganizationsChanged };
+}
+function registrationHarness() {
+  const base = harness([organizations[0]!]);
+  const listSellerRegistrationRequestsForAdmin = vi.fn(() => Promise.resolve(ok([registrationRequest])));
+  const listActiveTraderOrganizations = vi.fn(() => Promise.resolve(ok([activeTrader])));
+  const approveSellerRegistrationRequest = vi.fn(() => Promise.resolve(ok(approvedRegistration)));
+  const rejectSellerRegistrationRequest = vi.fn(() => Promise.resolve(ok(rejectedRegistration)));
+  const inviteSellerRegistration = vi.fn(() => Promise.resolve({ data: null, error: false }));
+  const client = { ...base.client, listSellerRegistrationRequestsForAdmin, listActiveTraderOrganizations, approveSellerRegistrationRequest, rejectSellerRegistrationRequest } as BiddingClient;
+  const accessClient = { inviteSellerRegistration } as unknown as AccessClient;
+  return { ...base, client, accessClient, listSellerRegistrationRequestsForAdmin, listActiveTraderOrganizations, approveSellerRegistrationRequest, rejectSellerRegistrationRequest, inviteSellerRegistration };
+}
+function openRegistration(setup = registrationHarness(), reloadVersion = 0, onAuthorizationFailure = vi.fn(), onActiveOrganizationsChanged = vi.fn(() => Promise.resolve())) {
+  const view = render(<SellerManagement client={setup.client} membershipId={membershipId} reloadVersion={reloadVersion} onAuthorizationFailure={onAuthorizationFailure} onActiveOrganizationsChanged={onActiveOrganizationsChanged} registrationEnabled accessClient={setup.accessClient} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Manage SELLERs' }));
+  return { ...view, ...setup, onAuthorizationFailure, onActiveOrganizationsChanged };
 }
 
 describe('SELLER management', () => {
@@ -200,5 +221,66 @@ describe('SELLER management', () => {
     expect(await screen.findByText('Fresh Ocean')).toBeInTheDocument();
     await act(async () => { first.resolve(ok([organization(activeId, 'Stale Ocean', 'active', 1)])); await first.promise; });
     expect(screen.queryByText('Stale Ocean')).not.toBeInTheDocument();
+  });
+
+  it('loads BUYER-admin invitation and pending-registration administration', async () => {
+    const view = openRegistration();
+    expect(await screen.findByRole('region', { name: 'SELLER registration administration' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'SELLER email invitation' })).toBeInTheDocument();
+    expect(await screen.findByText(registrationRequest.applicant_email)).toBeInTheDocument();
+    expect(view.listSellerRegistrationRequestsForAdmin).toHaveBeenCalledExactlyOnceWith(membershipId);
+    expect(view.listActiveTraderOrganizations).toHaveBeenCalledExactlyOnceWith(membershipId);
+  });
+
+  it('does not infer an organization from requested text and approves with the exact selected target', async () => {
+    const view = openRegistration(); const row = (await screen.findByText(registrationRequest.applicant_email)).closest('li')!;
+    const selector = within(row).getByRole('combobox', { name: `Active SELLER organization for ${registrationRequest.applicant_email}` });
+    expect(selector).toHaveValue('');
+    expect(within(row).getByRole('button', { name: 'Approve' })).toBeDisabled();
+    fireEvent.change(selector, { target: { value: activeId } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Approve' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm approve' }));
+    await waitFor(() => expect(view.approveSellerRegistrationRequest).toHaveBeenCalledExactlyOnceWith(membershipId, registrationRequest.request_id, registrationRequest.revision, activeId));
+  });
+
+  it('rejects with the exact request id and displayed revision', async () => {
+    const view = openRegistration(); const row = (await screen.findByText(registrationRequest.applicant_email)).closest('li')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Reject' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm reject' }));
+    await waitFor(() => expect(view.rejectSellerRegistrationRequest).toHaveBeenCalledExactlyOnceWith(membershipId, registrationRequest.request_id, registrationRequest.revision));
+  });
+
+  it('reloads the authoritative pending list after a registration conflict', async () => {
+    const setup = registrationHarness();
+    setup.rejectSellerRegistrationRequest.mockResolvedValueOnce({ data: null, error: { kind: 'conflict', code: '40001', message: 'changed' } });
+    const view = openRegistration(setup); const row = (await screen.findByText(registrationRequest.applicant_email)).closest('li')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Reject' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm reject' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Registration changed. The latest pending requests were loaded.');
+    await waitFor(() => expect(view.listSellerRegistrationRequestsForAdmin).toHaveBeenCalledTimes(2));
+  });
+
+  it('clears protected registration data and rechecks access after authorization failure', async () => {
+    const setup = registrationHarness(); const recheck = vi.fn(); const view = openRegistration(setup, 0, recheck);
+    await screen.findByText(registrationRequest.applicant_email);
+    setup.listSellerRegistrationRequestsForAdmin.mockResolvedValueOnce({ data: null, error: { kind: 'authorization', code: '42501', message: 'denied' } });
+    view.rerender(<SellerManagement client={setup.client} membershipId={membershipId} reloadVersion={1} onAuthorizationFailure={recheck} onActiveOrganizationsChanged={view.onActiveOrganizationsChanged} registrationEnabled accessClient={setup.accessClient} />);
+    await waitFor(() => expect(recheck).toHaveBeenCalledOnce());
+    expect(screen.queryByText(registrationRequest.applicant_email)).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: activeTrader.organization_label })).not.toBeInTheDocument();
+  });
+
+  it('reloadVersion refreshes pending registrations and ignores stale list results', async () => {
+    const first = deferred<BiddingResult<SellerRegistrationAdminRequest[]>>(); const second = deferred<BiddingResult<SellerRegistrationAdminRequest[]>>();
+    const setup = registrationHarness(); setup.listSellerRegistrationRequestsForAdmin.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
+    const view = openRegistration(setup);
+    await waitFor(() => expect(setup.listSellerRegistrationRequestsForAdmin).toHaveBeenCalledOnce());
+    view.rerender(<SellerManagement client={setup.client} membershipId={membershipId} reloadVersion={1} onAuthorizationFailure={view.onAuthorizationFailure} onActiveOrganizationsChanged={view.onActiveOrganizationsChanged} registrationEnabled accessClient={setup.accessClient} />);
+    await waitFor(() => expect(setup.listSellerRegistrationRequestsForAdmin).toHaveBeenCalledTimes(2));
+    const fresh = { ...registrationRequest, applicant_email: 'fresh@example.test' };
+    await act(async () => { second.resolve(ok([fresh])); await second.promise; });
+    expect(await screen.findByText(fresh.applicant_email)).toBeInTheDocument();
+    await act(async () => { first.resolve(ok([{ ...registrationRequest, applicant_email: 'stale@example.test' }])); await first.promise; });
+    expect(screen.queryByText('stale@example.test')).not.toBeInTheDocument();
   });
 });
