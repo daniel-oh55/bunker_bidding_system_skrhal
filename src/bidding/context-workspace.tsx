@@ -4,11 +4,12 @@ import type { BiddingClient } from './bidding-client';
 import { BuyerWorkspace } from './buyer-workspace';
 import { TraderWorkspace } from './trader-workspace';
 import type { RealtimeInvalidationClient } from '../realtime/realtime-client';
+import type { AccessClient } from '../auth/access-client';
 
 const shortId = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;
 const contextLabel = (context: AccessContext) => `${context.organization_label ?? shortId(context.organization_id)} · ${context.organization_kind} · ${context.membership_role}`;
 
-export function ContextWorkspace({ contexts, client, recheck, realtimeClient }: { contexts: AccessContext[]; client: BiddingClient; recheck: () => void; realtimeClient?: RealtimeInvalidationClient }) {
+export function ContextWorkspace({ contexts, client, recheck, realtimeClient, registrationEnabled = false, accessClient }: { contexts: AccessContext[]; client: BiddingClient; recheck: () => void; realtimeClient?: RealtimeInvalidationClient; registrationEnabled?: boolean; accessClient?: AccessClient }) {
   const [selectedId, setSelectedId] = useState(() => contexts[0]?.membership_id ?? '');
   const [invalidation, setInvalidation] = useState({ membershipId: '', version: 0 });
   useEffect(() => { if (!contexts.some((context) => context.membership_id === selectedId)) setSelectedId(contexts[0]?.membership_id ?? ''); }, [contexts, selectedId]);
@@ -21,5 +22,5 @@ export function ContextWorkspace({ contexts, client, recheck, realtimeClient }: 
   }, [context, realtimeClient]);
   if (!context) return null;
   const reloadVersion = invalidation.membershipId === context.membership_id ? invalidation.version : 0;
-  return <><header className="workspace-header"><div><p className="eyebrow">SKRHAL</p><h1>Bunker Bidding</h1></div><div className="header-actions">{contexts.length > 1 ? <label>Membership context<select aria-label="Membership context" value={context.membership_id} onChange={(event) => setSelectedId(event.target.value)}>{contexts.map((option) => <option key={option.membership_id} value={option.membership_id}>{contextLabel(option)}</option>)}</select></label> : <p className="context-chip">{contextLabel(context)}</p>}</div></header><section key={context.membership_id} aria-label={`${context.organization_kind} workspace`}>{context.organization_kind === 'buyer' ? <BuyerWorkspace client={client} membershipId={context.membership_id} membershipRole={context.membership_role === 'buyer_admin' ? 'buyer_admin' : 'buyer_operator'} onAuthorizationFailure={recheck} reloadVersion={reloadVersion} /> : <TraderWorkspace client={client} membershipId={context.membership_id} onAuthorizationFailure={recheck} reloadVersion={reloadVersion} />}</section></>;
+  return <><header className="workspace-header"><div><p className="eyebrow">SKRHAL</p><h1>Bunker Bidding</h1></div><div className="header-actions">{contexts.length > 1 ? <label>Membership context<select aria-label="Membership context" value={context.membership_id} onChange={(event) => setSelectedId(event.target.value)}>{contexts.map((option) => <option key={option.membership_id} value={option.membership_id}>{contextLabel(option)}</option>)}</select></label> : <p className="context-chip">{contextLabel(context)}</p>}</div></header><section key={context.membership_id} aria-label={`${context.organization_kind} workspace`}>{context.organization_kind === 'buyer' ? <BuyerWorkspace client={client} membershipId={context.membership_id} membershipRole={context.membership_role === 'buyer_admin' ? 'buyer_admin' : 'buyer_operator'} onAuthorizationFailure={recheck} reloadVersion={reloadVersion} registrationEnabled={registrationEnabled} accessClient={accessClient} /> : <TraderWorkspace client={client} membershipId={context.membership_id} onAuthorizationFailure={recheck} reloadVersion={reloadVersion} />}</section></>;
 }

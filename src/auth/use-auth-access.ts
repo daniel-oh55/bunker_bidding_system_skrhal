@@ -215,7 +215,7 @@ export function useAuthAccess(client: AccessClient | null, configurationError: b
   }, [signOut, verifyAccess]);
   const recheckAccess = useCallback(() => {
     const current = stateRef.current;
-    if (current.status === 'authorized') void verifyAccess(current.session);
+    if (current.status === 'authorized' || current.status === 'access_denied') void verifyAccess(current.session);
   }, [verifyAccess]);
   return { state, signIn, signOut, requestPasswordReset, updatePassword, retry, recheckAccess };
 }

@@ -23,7 +23,7 @@
 - Account, organization, and membership status are evaluated in PostgreSQL, not from JWT metadata.
 - Private authorization tables live in the non-exposed `app_private` schema with RLS enabled and direct `anon`/`authenticated` table privileges revoked.
 - `public.current_access_context()` is executable only by `authenticated` callers and returns only the caller's active memberships through security-definer functions with fixed search paths. Its trimmed organization label comes from the verified active organization row and is presentation data, never authority.
-- The sign-in-only frontend calls that RPC after initial session hydration and after Auth state changes. It authorizes the shell only when at least one context is returned.
+- The frontend calls that RPC after initial session hydration and after Auth state changes. It authorizes the shell only when at least one context is returned; optional SELLER enrollment presentation never authorizes access.
 - The state machine immediately clears contexts on sign-out, ignores stale RPC results, distinguishes zero-context denial from transient errors, and preserves multiple active memberships.
 - Missing browser configuration fails closed. The browser client is never partially configured and accepts only the URL and publishable key.
 - The loopback-only integration harness isolates elevated local access to fixture preparation and cleanup; its sign-in and RPC checks use the publishable client.
